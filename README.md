@@ -17,6 +17,8 @@
   </a>
 </p>
 
+# Note: the readme of LLaMBO is in the README_BO.md file.
+
 ## Table of Contents
 - [Introduction](#introduction)
 - [Installation](#installation)
