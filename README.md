@@ -1,3 +1,6 @@
+
+## Note: the readme of LLaMBO is here [README_BO.md](./README_BO.md).
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="logo-dark.png">
@@ -17,7 +20,6 @@
   </a>
 </p>
 
-# Note: the readme of LLaMBO is in the README_BO.md file.
 
 ## Table of Contents
 - [Introduction](#introduction)
