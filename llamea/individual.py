@@ -1,5 +1,10 @@
+import os
 import json
+import pickle
 import uuid
+from datetime import datetime
+from abc import ABC, abstractmethod
+from typing import Callable, List, Optional
 
 
 class Individual:
@@ -101,6 +106,31 @@ class Individual:
         new_individual.metadata = self.metadata.copy()  # Copy the metadata as well
         return new_individual
 
+    @classmethod
+    def from_dict(cls, data):
+        """
+        Creates an individual from a dictionary.
+
+        Args:
+            data (dict): A dictionary containing the individual's attributes.
+
+        Returns:
+            Individual: An instance of Individual created from the dictionary.
+        """
+        individual = cls()
+        individual.id = data["id"]
+        individual.solution = data["solution"]
+        individual.name = data["name"]
+        individual.description = data["description"]
+        individual.generation = data["generation"]
+        individual.fitness = data["fitness"]
+        individual.feedback = data["feedback"]
+        individual.error = data["error"]
+        individual.parent_id = data["parent_id"]
+        individual.metadata = data["metadata"]
+        individual.mutation_prompt = data["mutation_prompt"]
+        return individual
+
     def to_dict(self):
         """
         Converts the individual to a dictionary.
@@ -136,3 +166,137 @@ class Individual:
             str: A JSON string representation of the individual.
         """
         return json.dumps(self.to_dict(), default=str, indent=4)
+
+class Population(ABC):
+    """
+    Represents a population of individuals in the evolutionary algorithm.
+    """
+    def __init__(self, max_size: int = None):
+        self.max_size = max_size
+        self.problem = None
+        self.model = None
+        self.name = None
+
+    @abstractmethod
+    def get_population_size(self):
+        """
+        Returns the number of individuals in the population.
+
+        Returns:
+            int: The number of individuals in the population.
+        """
+        pass
+
+    @abstractmethod
+    def add_individual(self, individual: Individual):
+        """
+        Adds an individual to the population.
+
+        Args:
+            individual (Individual): The individual to add to the population.
+        """
+        pass
+
+    @abstractmethod
+    def remove_individual(self, individual):
+        """
+        Removes an individual from the population.
+
+        Args:
+            individual (Individual): The individual to remove from the population.
+        """
+
+    def select_next_generation(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
+        """
+        Selects the next generation of individuals based on the selection strategy.
+
+        Args:
+            selection_strategy (SelectionStrategy): The selection strategy to use for selecting the next generation.
+        """
+        pass
+
+    @abstractmethod
+    def all_individuals(self):
+        """
+        Returns all individuals in the population.
+
+        Returns:
+            List[Individual]: A list of all individuals in the population.
+        """
+        pass
+
+class SequencePopulation(Population):
+    """
+    Represents a population of individuals in the evolutionary algorithm.
+    """
+
+    def __init__(self, max_size: int = None):
+        super().__init__(max_size)
+        self.individuals: List[Individual] = []
+
+    def to_dict(self):
+        d = self.__dict__
+        d["individuals"] = [ind.to_dict() for ind in self.individuals]
+        return d
+
+    def get_population_size(self):
+        """
+        Returns the number of individuals in the population.
+
+        Returns:
+            int: The number of individuals in the population.
+        """
+        return len(self.individuals)
+
+    def add_individual(self, individual):
+        """
+        Adds an individual to the population.
+
+        Args:
+            individual (Individual): The individual to add to the population.
+        """
+        super().add_individual(individual)
+        if self.max_size and len(self.individuals) >= self.max_size:
+            raise ValueError("Population size exceeds the maximum size.")
+        self.individuals.append(individual)
+
+    def remove_individual(self, individual):
+        """
+        Removes an individual from the population.
+
+        Args:
+            individual (Individual): The individual to remove from the population.
+        """
+        self.individuals = [ind for ind in self.individuals if ind.id != individual.id]
+
+    def select_next_generation(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
+        """
+        Selects the next generation of individuals based on the selection strategy.
+
+        Args:
+            selection_strategy (SelectionStrategy): The selection strategy to use for selecting the next generation.
+        """
+        if not self.individuals:
+            return None
+        sorted_individuals = []
+        if selection_strategy is None:
+            sorted_individuals = self.individuals
+        else:
+            sorted_individuals = sorted(self.individuals, cmp = selection_strategy, reverse=False)
+            
+        next_generation = []
+        if num_individuals > len(sorted_individuals):
+            next_generation = sorted_individuals
+        else:
+            # select last num_individuals from the sorted list 
+            next_generation = sorted_individuals[-num_individuals:]
+        return next_generation[0]
+
+    def all_individuals(self):
+        """
+        Returns all individuals in the population.
+
+        Returns:
+            List[Individual]: A list of all individuals in the population.
+        """
+        return self.individuals
