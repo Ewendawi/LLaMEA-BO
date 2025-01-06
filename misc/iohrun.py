@@ -31,7 +31,7 @@ code_files = [
 for code_file in code_files:
 
     #algorithm_name = re.findall("try-\d*-(\w*)\.py", code_file, re.IGNORECASE)[0]
-    algorithm_name = re.findall("ioh/(\w*)\.py", code_file, re.IGNORECASE)[0]
+    algorithm_name = re.findall(r"ioh/(\w*)\.py", code_file, re.IGNORECASE)[0]
     print("Benchmarking", algorithm_name)
 
     alg = ""

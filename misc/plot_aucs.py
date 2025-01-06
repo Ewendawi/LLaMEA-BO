@@ -128,10 +128,10 @@ for i in range(len(exp_dirs)): #len(exp_dirs)
                 #get code file
                 found = False
                 for filename in os.listdir(f"{d}/code/"):
-                    if re.search(f"try-{k}-\w*\.py", filename):
+                    if re.search(r"try-{k}-\w*\.py", filename):
                         #print(filename)
                         file = open(f"{d}/code/{filename}", "r")
-                        algorithm_name = re.findall("try-\d*-(\w*)\.py", filename, re.IGNORECASE)[0]
+                        algorithm_name = re.findall(r"try-\d*-(\w*)\.py", filename, re.IGNORECASE)[0]
                         #print(" ".join(re.findall(r'[A-Z](?:[a-z]+|[A-Z]*(?=[A-Z]|$))', algorithm_name)), end=' ')
                         new_code = file.read()
                         file.close()
@@ -228,17 +228,17 @@ for i in range(len(exp_dirs)): #len(exp_dirs)
                 #get code file
                 found = False
                 for filename in os.listdir(f"{d}/code/"):
-                    if re.search(f"try-{k}-\w*\.py", filename):
+                    if re.search(r"try-{k}-\w*\.py", filename):
                         #print(filename)
-                        algorithm_name = re.findall("try-\d*-(\w*)\.py", filename, re.IGNORECASE)[0]
+                        algorithm_name = re.findall(r"try-\d*-(\w*)\.py", filename, re.IGNORECASE)[0]
                         if k==0:
                             ratios_name[j].append(1)
                         else:
                             rat2 = jellyfish.jaro_similarity(previous_names[j], algorithm_name)
                             ratios[j].append(rat)
                             ratios_name[j].append(rat2)
-                        if os.path.isfile(f"{d}/try-{k}-aucs.txt"):
-                            aucs = np.loadtxt(f"{d}/try-{k}-aucs.txt")
+                        if os.path.isfile(r"{d}/try-{k}-aucs.txt"):
+                            aucs = np.loadtxt(r"{d}/try-{k}-aucs.txt")
                             #store all code files with at least an auc
                             
                             # with open(f"algorithms/{algorithm_name}.py", "w") as file:
@@ -326,17 +326,17 @@ for i in range(len(exp_dirs)): #len(exp_dirs)
                 #get code file
                 found = False
                 for filename in os.listdir(f"{d}/code/"):
-                    if re.search(f"try-{k}-\w*\.py", filename):
+                    if re.search(r"try-{k}-\w*\.py", filename):
                         #print(filename)
-                        algorithm_name = re.findall("try-\d*-(\w*)\.py", filename, re.IGNORECASE)[0]
+                        algorithm_name = re.findall(r"try-\d*-(\w*)\.py", filename, re.IGNORECASE)[0]
                         if k==0:
                             ratios_name[j].append(1)
                         else:
                             rat2 = jellyfish.jaro_similarity(previous_names[j], algorithm_name)
                             ratios[j].append(rat)
                             ratios_name[j].append(rat2)
-                        if os.path.isfile(f"{d}/try-{k}-aucs.txt"):
-                            aucs = np.loadtxt(f"{d}/try-{k}-aucs.txt")
+                        if os.path.isfile(r"{d}/try-{k}-aucs.txt"):
+                            aucs = np.loadtxt(r"{d}/try-{k}-aucs.txt")
                             #store all code files with at least an auc
                             
                             # with open(f"algorithms/{algorithm_name}.py", "w") as file:
