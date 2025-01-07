@@ -14,27 +14,24 @@ import openai
 #TODO: aisuite?
 class LLMClient(ABC):
     """Abstract base class for LLM backends."""
-    def __init__(self, api_key: str, model_name: str, base_url: Optional[str] = None): 
+    def __init__(self, api_key: str, model_name: str, base_url: Optional[str] = None):
         self.model_name = model_name
         self.base_url = base_url
         self.api_key = api_key
-    
+
     @abstractmethod
     def raw_completion(
         self,
-        messages: List[Dict[str, str]],
-        temperature: float = 0.7,
+        messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> str:
         """Generate a raw completion from the LLM.
         """
-        pass
-    
+
     @property
     def name(self) -> str:
         """Return the name of the LLM backend."""
         return f"{self.model_name}"
-        
 
 class OpenAIClient(LLMClient):
     """OpenAI GPT backend implementation."""
@@ -42,10 +39,10 @@ class OpenAIClient(LLMClient):
     def __init__(self, api_key: str, model_name: str, base_url: Optional[str] = None):
         super().__init__(api_key, model_name, base_url)
         self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
-        
+
     def raw_completion(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> str:
         """Generate a raw completion using OpenAI's API."""
@@ -62,7 +59,7 @@ class OpenAIClient(LLMClient):
 class RequestClient(LLMClient):
     def raw_completion(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> str:
         url = self.base_url + "/chat/completions"
@@ -76,8 +73,8 @@ class RequestClient(LLMClient):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
-        
-        response = requests.post(url, json=payload, headers=headers)
+
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
 
         return response.json()
 
@@ -123,7 +120,7 @@ class LLMmanager:
             if issubclass(cls, LLMClient):
                 self.client = cls(api_key, model, base_url)
             else:
-                raise ValueError(f"Invalid client string: {client_str}") 
+                raise ValueError(f"Invalid client string: {client_str}")
         else:
             self.client = OpenAIClient(api_key, model, base_url)
 
@@ -131,7 +128,7 @@ class LLMmanager:
         self.dynamic_interval = self.max_interval
         self.last_request = 0
         self.querying = False
-    
+
     def model_name(self) -> str:
         return self.client.name
 
@@ -141,7 +138,7 @@ class LLMmanager:
             sys.stdout.write("\rLoading... " + next(symbols))
             sys.stdout.flush()
             time.sleep(0.1)
-    
+
     def loading_indicator(self):
         thread = threading.Thread(target=self.__loading_indicator)
         thread.start()
@@ -150,7 +147,7 @@ class LLMmanager:
         if self.dynamic_interval > 0:
             current_time = time.time()
             if current_time - self.last_request < self.dynamic_interval:
-                logging.info(f"Sleeping for {self.dynamic_interval - (current_time - self.last_request):.2f} seconds")
+                logging.info("Sleeping for %.2f seconds", self.dynamic_interval - (current_time - self.last_request))
                 time.sleep(self.dynamic_interval - (current_time - self.last_request))
                 logging.info("Resuming")
         self.querying = True
@@ -168,9 +165,9 @@ class LLMmanager:
             return content
         except Exception:
             if hasattr(response, "error"):
-                logging.error(f"LLM: {self.model_name()}, {response.error}")
+                logging.error("LLM: %s, %s", self.model_name(), response.error)
             else:
-                logging.error(f"LLM: {self.model_name()}, {response}")
+                logging.error("LLM: %s, %s", self.model_name(), response)
             self.dynamic_interval *= 2
-            logging.error(f"Dynamic interval increased to {self.dynamic_interval}")
+            logging.error("Dynamic interval increased to %s", self.dynamic_interval)
             return ""

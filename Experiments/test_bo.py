@@ -61,7 +61,7 @@ def extract_key_words():
     individualLogger.load()
 
     count = 0
-    for key, value in individualLogger.individualMap.items():
+    for key, value in individualLogger.individual_map.items():
         if len(value['solution']) and "tags" not in value['metadata']:
             try:
                 code = value['solution']
@@ -81,8 +81,8 @@ def extract_key_words():
                 print(e)
                 continue
 
-    if len(individualLogger.individualMap):
-        print("Saving individualMap")
+    if len(individualLogger.individual_map):
+        print("Saving individual_map")
 
 
 def test_llambo(task=GenerationTask.INITIALIZE_SOLUTION):

@@ -4,6 +4,8 @@ from scipy.stats import norm
 import numpy as np
 from llamea.utils import random_search, RandomBoTorchTestEvaluator
 
+# mypy: ignore-errors
+
 class AckleyBO:
     def __init__(self, n_initial_points=5, acquisition_function="EI"):
         """Initialize the Bayesian Optimization class.

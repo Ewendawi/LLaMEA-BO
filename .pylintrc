@@ -1,0 +1,22 @@
+
+[MAIN]
+py-version = 3.10.0
+
+load-plugins = pylint.extensions.typing, pylint.extensions.docparams 
+
+jobs = 0
+
+[MESSAGES CONTROL]
+
+disable=
+    unused-import,
+    missing-module-docstring,
+    missing-function-docstring,
+    missing-class-docstring,
+    line-too-long,
+
+    global-statement,
+    exec-used,
+
+    broad-exception-caught,
+    broad-exception-raised,

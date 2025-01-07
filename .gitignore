@@ -179,3 +179,5 @@ ast/EoH_runs
 ast/*output*
 ast/img*
 ast/graphstats*
+
+logs_temp/

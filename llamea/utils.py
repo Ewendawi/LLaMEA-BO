@@ -5,7 +5,8 @@ import sys
 import io
 import json
 import uuid
-from typing import Callable, Any
+from typing import Any
+from collections.abc import Callable
 from datetime import datetime
 import logging
 import contextlib
@@ -23,12 +24,8 @@ from botorch.test_functions import synthetic
 from botorch.test_functions.synthetic import SyntheticTestFunction, ConstrainedSyntheticTestFunction
 from .individual import Individual
 
-
 class NoCodeException(Exception):
     """Could not extract generated code."""
-
-    pass
-
 
 def handle_timeout(signum, frame):
     raise TimeoutError
@@ -65,7 +62,7 @@ def setup_logger(logger = None, level=logging.INFO, filename=None):
         fh = logging.FileHandler(filename)
         fh.setLevel(level)
         logger.addHandler(fh)
-    
+
     ch = logging.StreamHandler()
     ch.setLevel(level)
     ch.setFormatter(CustomFormatter())
@@ -77,11 +74,16 @@ def get_logger(name = None, level=logging.INFO, filename=None):
     setup_logger(logger, level, filename)
     return logger
 
+class LogggerJSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        if hasattr(o, '__to_json__'):
+            return o.__to_json__()
+        return super().default(o)
 
 class IndividualLogger:
     def __init__(self):
-        self.individualMap:dict[str, Individual] = {}
-        self.experimentMap:dict[str, dict] = {}
+        self.individual_map:dict[str, Individual] = {}
+        self.experiment_map:dict[str, dict] = {}
         self.log_extract_error = False
         self.should_log_population = True
         self.should_log_experiment = True
@@ -92,7 +94,7 @@ class IndividualLogger:
     @property
     def file_name(self):
         return self._file_name
-    
+
     @file_name.setter
     def file_name(self, value):
         new_value = value
@@ -100,13 +102,13 @@ class IndividualLogger:
             new_value = value.replace(" ", "")
             new_value = new_value.replace(":", "_")
             new_value = new_value.replace("/", "_")
-        self._file_name = new_value 
+        self._file_name = new_value
 
     def log_individual(self, individual):
-        self.individualMap[individual.id] = individual
+        self.individual_map[individual.id] = individual
 
     def get_individual(self, ind_id):
-        return self.individualMap.get(ind_id, None)
+        return self.individual_map.get(ind_id, None)
 
     def log_experiment(self, name, id_list):
         exp_id = str(uuid.uuid4())
@@ -115,10 +117,10 @@ class IndividualLogger:
             "name": name,
             "id_list": id_list
         }
-        self.experimentMap[exp_id] = experiment
+        self.experiment_map[exp_id] = experiment
 
     def get_experiment(self, experiment_id):
-        return self.experimentMap.get(experiment_id, None)
+        return self.experiment_map.get(experiment_id, None)
 
     def save(self, filename=None, dirname=None):
         if dirname is None:
@@ -133,11 +135,11 @@ class IndividualLogger:
         time_stamp = datetime.now().strftime("%m%d%H%M%S")
         filename = os.path.join(dirname, f"{filename}_{time_stamp}.pkl")
         with open(filename, "wb") as f:
-            pickle.dump((self.individualMap,self.experimentMap), f)
-    
+            pickle.dump((self.individual_map,self.experiment_map), f)
+
     def get_successful_individuals(self):
         successful_individuals = []
-        for _, individual in self.individualMap.items():
+        for _, individual in self.individual_map.items():
             if isinstance(individual, dict):
                 # No longer compatible with older formats
                 continue
@@ -147,7 +149,7 @@ class IndividualLogger:
 
     def get_failed_individuals(self, error_type=None):
         failed_individuals = []
-        for _, individual in self.individualMap.items():
+        for _, individual in self.individual_map.items():
             if isinstance(individual, dict):
                 # No longer compatible with older formats
                 continue
@@ -180,7 +182,7 @@ class IndividualLogger:
 #     },
 #     "experiments": {
 #         "<experiment_id>": {
-#             "id": "", // single-choice filter. retrieve all the content in the id_list. 
+#             "id": "", // single-choice filter. retrieve all the content in the id_list.
 #             "name": "",
 #             "id_list": [] // id: content_id
 #         }
@@ -196,26 +198,23 @@ class IndividualLogger:
         filename = filename.replace(":", "_")
         filename = filename.replace("/", "_")
         filepath = os.path.join(self.dirname, f"reader_format_{filename}_{time_stamp}.json")
-        with open(f"{filepath}", "w") as f:
+        with open(f"{filepath}", "w", encoding="utf-8") as f:
             f.write(json_str)
 
     def covert_to_reader_format(self) -> str:
         reader_format = {
-            "experiments": self.experimentMap.copy()
+            "experiments": self.experiment_map.copy()
         }
         contents = {}
-        for ind_id, individual in self.individualMap.items():
-            ind_dict = individual
-            if not isinstance(ind_dict, dict):
-                ind_dict = individual.to_dict()
-            contents[ind_id] = ind_dict
+        for ind_id, individual in self.individual_map.items():
+            contents[ind_id] = individual
 
         reader_format["contents"] = contents
-            
-        for _, individual in reader_format["contents"].items():
-            individual["language"]= "python"
 
-        json_str = json.dumps(reader_format, indent=4)
+        for _, individual in reader_format["contents"].items():
+            individual.metadata["language"]= "python"
+
+        json_str = json.dumps(reader_format, indent=4, cls=LogggerJSONEncoder)
         return json_str
 
     @classmethod
@@ -224,16 +223,13 @@ class IndividualLogger:
         if filepath is None and not os.path.exists(filepath):
             return None
         logger = cls()
-        logger.__load(filepath)
-        return logger
-
-    def __load(self, filepath):
         if filepath is None:
             return
         if os.path.exists(filepath):
             with open(filepath, "rb") as f:
-                # self.individualMap = pickle.load(f)
-                self.individualMap, self.experimentMap = pickle.load(f)
+                # self.individual_map = pickle.load(f)
+                logger.individual_map, logger.experiment_map = pickle.load(f)
+        return logger
 
     @classmethod
     def merge_logs(cls, log_dir, save=True):
@@ -244,13 +240,12 @@ class IndividualLogger:
         log_files = [os.path.join(log_dir, f) for f in os.listdir(log_dir) if f.endswith(".pkl")]
         loggers = []
         for log_file in log_files:
-            logger = cls()
-            logger.__load(log_file)
+            logger = cls().load(log_file)
             loggers.append(logger)
         merged_logger = cls()
         for logger in loggers:
-            merged_logger.individualMap.update(logger.individualMap)
-            merged_logger.experimentMap.update(logger.experimentMap)
+            merged_logger.individual_map.update(logger.individual_map)
+            merged_logger.experiment_map.update(logger.experiment_map)
         if save:
             merged_logger.save()
         return merged_logger
@@ -260,13 +255,13 @@ class IndividualLogger:
 
 def get_all_synthetic_test_function_from_botorch() -> list[SyntheticTestFunction]:
     test_functions = {}
-    for module_name in [synthetic]: 
-      for name, obj in inspect.getmembers(module_name):
-        if name == "Cosine8":
-            # Cosine8 is a maximation problem
-            continue
-        if inspect.isclass(obj) and issubclass(obj, SyntheticTestFunction) and not issubclass(obj, ConstrainedSyntheticTestFunction) and obj != SyntheticTestFunction and obj != ConstrainedSyntheticTestFunction:
-            test_functions[name] = obj
+    for module_name in [synthetic]:
+        for name, obj in inspect.getmembers(module_name):
+            if name == "Cosine8":
+                # Cosine8 is a maximation problem
+                continue
+            if inspect.isclass(obj) and issubclass(obj, SyntheticTestFunction) and not issubclass(obj, ConstrainedSyntheticTestFunction) and obj != SyntheticTestFunction and obj != ConstrainedSyntheticTestFunction:
+                test_functions[name] = obj
 
     return test_functions
 
@@ -290,29 +285,14 @@ def get_test_function_by_name(name: str = None) -> SyntheticTestFunction:
 def random_search(objective_fn, bounds, budgets):
     """Random search."""
     X = np.random.uniform(bounds[0], bounds[1], size=(budgets, len(bounds[0])))
-    Y = np.array([objective_fn(x) for x in X])
-    
+    Y = objective_fn(X)
+    # Y = np.array([objective_fn(x) for x in X])
+
     return Y, X
-    
-    # best_value = float("inf")
-    # best_params = None
-    # for _ in range(budgets):
-    #     x = [random.uniform(bounds[0][i], bounds[1][i]) for i in range(len(bounds[0]))]
-    #     y = objective_fn(x)
-    #     if y < best_value:
-    #         best_value = y
-    #         best_params = x
-    # if isinstance(best_params, np.ndarray):
-    #     if len(best_params.shape) == 1:
-    #         best_value = best_value.item()
-    #     else:
-    #         best_params = best_params.tolist()
-    # return best_value, best_params
 
 #========================================
 #Track exec
 #========================================
-
 
 def track_exec(code_string, name, _globals=None, _locals=None):
     compiled_code = compile(code_string, f'<{name}>', 'exec')
@@ -328,21 +308,20 @@ def format_track_exec_with_code(name, code_str, exc_info, context_lines=2):
         if match:
             last_match_index = len(trace_lines) - i - 1
             break
-    
+
     for i, line in enumerate(trace_lines):
         formatted_trace.append(line)
         match = re.search(rf'File "<{name}>", line (\d+), in', line)
         if match:
             error_line = int(match.group(1))
-            
+
             _context_lines = 0
             if i == last_match_index:
                 _context_lines = context_lines
-                
-            formatted_trace.extend(get_code_snippet(code_str, error_line, _context_lines))
-    
-    return "".join(formatted_trace)
 
+            formatted_trace.extend(get_code_snippet(code_str, error_line, _context_lines))
+
+    return "".join(formatted_trace)
 
 def get_code_snippet(code_str, error_line, context_lines):
     """Extracts code snippet around a specific line."""
@@ -366,7 +345,7 @@ def default_exec(code, cls_name, objective_fn, bounds, budget) -> tuple[any, str
     try:
         namespace: dict[str, Any] = {}
         track_exec(code, cls_name, namespace)
-        
+
         if cls_name not in namespace:
             err = NameError(f"No '{cls_name}' found in the generated code")
         else:
@@ -379,7 +358,6 @@ def default_exec(code, cls_name, objective_fn, bounds, budget) -> tuple[any, str
         err = e.__class__(formatted_traceback)
 
     return res, captured_output.getvalue(), err
-            
 
 #========================================
 #Evaluator
@@ -387,11 +365,11 @@ def default_exec(code, cls_name, objective_fn, bounds, budget) -> tuple[any, str
 
 class ConvergenceCurveAnalyzer:
     """Analyzes optimization convergence curves and calculates AOC metric."""
-    
+
     def __init__(self, max_y=None, min_y=None):
         self.max_y = max_y
         self.min_y = min_y
-        
+
     def get_convergence_curve(self, y_history):
         """Calculate minimum values seen so far at each step."""
         if not isinstance(y_history, np.ndarray):
@@ -402,23 +380,23 @@ class ConvergenceCurveAnalyzer:
         """Calculate area over convergence curve."""
         if len(y_history) == 0:
             return 0.0
-            
+
         # Get convergence curve
         conv_curve = self.get_convergence_curve(y_history)
-        
+
         local_max_y = np.max(y_history)
         max_y = self.max_y if self.max_y is not None else local_max_y
 
         local_min_y = np.min(y_history)
         min_y = self.min_y if self.min_y is not None else local_min_y
-        
+
         # Normalize curve between 0 and 1
         norm_curve = (conv_curve - min_y) / (max_y - min_y)
-        
+
         # Calculate AOC using trapezoidal rule
         x_vals = np.linspace(0, 1, len(norm_curve))
         aoc = np.trapz(1 - norm_curve, x_vals)
-        
+
         return aoc
 
 # y = np.array([100, 9, 8, 7, 6, 5, 5, 5, 5, 5])
@@ -436,7 +414,7 @@ class EvaluatorBasicResult:
         self.model_loss_name:str = None
 
         #TODO: add acquisition function values
-        self.acquisition_function_values:np.ndarray = None 
+        self.acquisition_function_values:np.ndarray = None
 
         self.best_y = None
         self.best_x = None
@@ -450,7 +428,7 @@ class EvaluatorBasicResult:
         self.n_initial_points = 0
 
         # (initial, non-initial)
-        self.x_mean_tuple = None  
+        self.x_mean_tuple = None
         self.x_std_tuple = None
         self.y_mean_tuple = None
         self.y_std_tuple = None
@@ -460,13 +438,13 @@ class EvaluatorBasicResult:
     @property
     def surragate_model_losses(self):
         return self._surragate_model_losses
-    
+
     @surragate_model_losses.setter
     def surragate_model_losses(self, value):
         if isinstance(value, np.ndarray) and not value.dtype.hasobject:
             self._surragate_model_losses = value
 
-    def to_dict(self):
+    def __to_json__(self):
         d = {}
         d["name"] = self.name
         d["execution_time"] = self.execution_time
@@ -491,8 +469,9 @@ class EvaluatorBasicResult:
         d["x_std_tuple"] = (self.x_std_tuple[0].tolist(), self.x_std_tuple[1].tolist()) if self.x_std_tuple is not None else None
         d["y_mean_tuple"] = self.y_mean_tuple
         d["y_std_tuple"] = self.y_std_tuple
-        
+
         d["acquisition_function_values"] = np.nan_to_num(self.acquisition_function_values).tolist() if self.acquisition_function_values is not None else None
+
         return d
 
     def update_stats(self):
@@ -502,36 +481,35 @@ class EvaluatorBasicResult:
         best_index = np.argmin(self.y_hist)
         self.best_y = self.y_hist[best_index]
         self.best_x = self.x_hist[best_index]
-        
+
         y_hist = self.y_hist
         self.y_mean = np.mean(y_hist)
         self.y_std = np.std(y_hist)
-        
+
         if self.n_initial_points > 0 and len(y_hist) > self.n_initial_points:
             y_hist = self.y_hist[self.n_initial_points:]
             self.y_mean_tuple = (np.mean(self.y_hist[:self.n_initial_points]), np.mean(y_hist))
             self.y_std_tuple = (np.std(self.y_hist[:self.n_initial_points]), np.std(y_hist))
             self.y_best_tuple = (np.min(self.y_hist[:self.n_initial_points]), np.min(y_hist))
-        
+
         x_hist = self.x_hist
         self.x_mean = np.mean(x_hist, axis=0)
         self.x_std = np.std(x_hist, axis=0)
-        
+
         if self.n_initial_points > 0 and len(x_hist) > self.n_initial_points:
             x_hist = self.x_hist[self.n_initial_points:,:]
             self.x_mean_tuple = (np.mean(self.x_hist[:self.n_initial_points,:], axis=0), np.mean(x_hist, axis=0))
             self.x_std_tuple = (np.std(self.x_hist[:self.n_initial_points,:], axis=0), np.std(x_hist, axis=0))
 
-
     def update_aoc(self, optimal_value = None):
         if self.y_hist is None:
-            return 
-        
+            return
+
         y_hist = self.y_hist
         aoc = ConvergenceCurveAnalyzer(min_y=optimal_value).calculate_aoc(y_hist)
         self.y_aoc = aoc
 
-        if self.n_initial_points > 0 and len(y_hist) > self.n_initial_points: 
+        if self.n_initial_points > 0 and len(y_hist) > self.n_initial_points:
             y_hist = self.y_hist[self.n_initial_points:]
             aoc = ConvergenceCurveAnalyzer(min_y=optimal_value).calculate_aoc(y_hist)
             self.non_init_y_aoc = aoc
@@ -553,20 +531,20 @@ class EvaluatorResult:
             return
 
         self.metadata["ori_captured_output"] = captured_output
-        
+
         captured_output_list = captured_output.split("\n")
-        captured_output_list = [line for line in captured_output_list if line.strip() != ""] 
+        captured_output_list = [line for line in captured_output_list if line.strip() != ""]
 
         # find the unique lines
         captured_output_list = list(set(captured_output_list))
 
-        # filter do not contain anchor ":<number>:", then capture the sub string after the anchor. 
+        # filter do not contain anchor ":<number>:", then capture the sub string after the anchor.
         new_captured_output_list = []
         for line in captured_output_list:
             match = re.search(r"\:\d+\:", line)
             if match:
                 new_captured_output_list.append(line[match.end():])
-    
+
         # strip the leading and trailing white spaces
         new_captured_output_list = [line.strip() for line in new_captured_output_list]
         new_captured_output = "\n".join(new_captured_output_list)
@@ -574,8 +552,8 @@ class EvaluatorResult:
 
 class AbstractEvaluator(ABC):
     def __init__(self):
-        self.return_checker:Callable[[tuple], str] = None
-    
+        self.return_checker:Callable[[tuple], str] = lambda x: ""
+
     @abstractmethod
     def problem_prompt(self) -> str:
         pass
@@ -595,10 +573,10 @@ class AbstractEvaluator(ABC):
     @abstractmethod
     def evaluate(self, code, cls_name) -> EvaluatorResult:
         pass
-        
 
 class RandomBoTorchTestEvaluator(AbstractEvaluator):
     def __init__(self, budget: int = 40, dim: int = 6, obj_fn_name: str = None):
+        super().__init__()
         self.obj_fn_cls = get_test_function_by_name(obj_fn_name)
         self.dim = dim
         self.budget = budget
@@ -613,10 +591,10 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             except Exception:
                 self.obj_fn = self.obj_fn_cls()
                 self.dim = self.obj_fn.dim
-            
+
             self.bounds = self.obj_fn.bounds.numpy()
 
-            logging.info(f"{self.obj_name}:{self.bounds[0], self.bounds[1]},budget: {self.budget}")
+            logging.info("%s:%s,budget: %s", self.obj_name, (self.bounds[0], self.bounds[1]), self.budget)
 
     def problem_dim(self) -> int:
         return self.dim
@@ -651,7 +629,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
     def evaluate(self, code, cls_name) -> EvaluatorResult:
         """Evaluate an individual."""
 
-        class botorchObjectivexFn:
+        class BotorchObjectivexFn:
             def __init__(self, obj_fn, budget=None):
                 self.obj_fn = obj_fn
                 self.x_hist = None
@@ -662,7 +640,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             def __call__(self, x):
                 if self.x_hist is not None and self.budget is not None and len(self.x_hist) >= self.budget:
                     raise Exception("OverBudgetException")
-                
+
                 if self.x_hist is None:
                     self.x_hist = x
                 else:
@@ -687,7 +665,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             eval_result.error_type = "NoCodeGenerated"
             return eval_result
 
-        bo_obj_fn = botorchObjectivexFn(self.obj_fn, budget=self.budget)
+        bo_obj_fn = BotorchObjectivexFn(self.obj_fn, budget=self.budget)
         # self.evaluating = True
         # self.loading_indicator(f"{cls_name}")
         start_time = time.perf_counter()
@@ -699,7 +677,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         if err is not None:
             eval_result.error = str(err)
             eval_result.error_type = err.__class__.__name__
-        
+
         if eval_result.error is None and self.return_checker is not None:
             # check the return value
             return_check_str = self.return_checker(res)
@@ -708,7 +686,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
                 eval_result.error_type = "ReturnCheckError"
 
         if eval_result.error is None:
-            
+
             y_hist, x_hist, surragate_model_losses, n_initial_points = res
 
             optimal_value = None
@@ -727,7 +705,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             eval_result.result.update_aoc(optimal_value)
 
             # Random search
-            random_obj_fn = botorchObjectivexFn(self.obj_fn)
+            random_obj_fn = BotorchObjectivexFn(self.obj_fn)
             random_search_result = EvaluatorBasicResult()
             random_search_result.name = "Random Search"
             start_time = time.perf_counter()
@@ -740,4 +718,3 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             eval_result.other_results.append(random_search_result)
 
         return eval_result
-

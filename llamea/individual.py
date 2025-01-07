@@ -4,7 +4,8 @@ import pickle
 import uuid
 from datetime import datetime
 from abc import ABC, abstractmethod
-from typing import Callable, List, Optional
+from typing import List, Optional
+from collections.abc import Callable
 
 
 class Individual:
@@ -61,7 +62,7 @@ class Individual:
 
         Args:
             key (str): The key for the metadata.
-            value: The value associated with the key.
+            value (Any): The value associated with the key.
         """
         self.metadata[key] = value
 
@@ -141,7 +142,7 @@ class Individual:
         try:
             cs = self.configspace
             cs = cs.to_serialized_dict()
-        except Exception as e:
+        except Exception:
             cs = ""
         return {
             "id": self.id,
@@ -157,6 +158,10 @@ class Individual:
             "metadata": self.metadata,
             "mutation_prompt": self.mutation_prompt,
         }
+
+    # JSON serialization methods. Used by a custom JSON encoder in utils.py.
+    def __to_json__(self):
+        return self.to_dict()
 
     def to_json(self):
         """
@@ -179,22 +184,10 @@ class Population(ABC):
 
     @abstractmethod
     def get_population_size(self):
-        """
-        Returns the number of individuals in the population.
-
-        Returns:
-            int: The number of individuals in the population.
-        """
         pass
 
     @abstractmethod
     def add_individual(self, individual: Individual):
-        """
-        Adds an individual to the population.
-
-        Args:
-            individual (Individual): The individual to add to the population.
-        """
         pass
 
     @abstractmethod
@@ -207,22 +200,10 @@ class Population(ABC):
         """
 
     def select_next_generation(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
-        """
-        Selects the next generation of individuals based on the selection strategy.
-
-        Args:
-            selection_strategy (SelectionStrategy): The selection strategy to use for selecting the next generation.
-        """
         pass
 
     @abstractmethod
     def all_individuals(self):
-        """
-        Returns all individuals in the population.
-
-        Returns:
-            List[Individual]: A list of all individuals in the population.
-        """
         pass
 
 class SequencePopulation(Population):
@@ -232,12 +213,7 @@ class SequencePopulation(Population):
 
     def __init__(self, max_size: int = None):
         super().__init__(max_size)
-        self.individuals: List[Individual] = []
-
-    def to_dict(self):
-        d = self.__dict__
-        d["individuals"] = [ind.to_dict() for ind in self.individuals]
-        return d
+        self.individuals: list[Individual] = []
 
     def get_population_size(self):
         """
@@ -270,12 +246,6 @@ class SequencePopulation(Population):
         self.individuals = [ind for ind in self.individuals if ind.id != individual.id]
 
     def select_next_generation(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
-        """
-        Selects the next generation of individuals based on the selection strategy.
-
-        Args:
-            selection_strategy (SelectionStrategy): The selection strategy to use for selecting the next generation.
-        """
         if not self.individuals:
             return None
         sorted_individuals = []
@@ -283,12 +253,12 @@ class SequencePopulation(Population):
             sorted_individuals = self.individuals
         else:
             sorted_individuals = sorted(self.individuals, cmp = selection_strategy, reverse=False)
-            
+
         next_generation = []
         if num_individuals > len(sorted_individuals):
             next_generation = sorted_individuals
         else:
-            # select last num_individuals from the sorted list 
+            # select last num_individuals from the sorted list
             next_generation = sorted_individuals[-num_individuals:]
         return next_generation[0]
 

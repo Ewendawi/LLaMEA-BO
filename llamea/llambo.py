@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from .individual import Individual, Population
 from .llm import LLMmanager
-from .promptGenerator import BOPromptGenerator, GenerationTask
+from .promptGenerator import BOPromptGenerator, GenerationTask, BOResponseExtractor
 from .utils import AbstractEvaluator, EvaluatorResult, IndividualLogger
 
 class LLaMBO:
@@ -23,75 +23,82 @@ class LLaMBO:
 
             task_prompt = prompt_generator.task_description(task)
             final_prompt += f"{task_prompt}\n"
-            
+
             task_instruction_prompt = prompt_generator.task_instruction(task)
             final_prompt += f"{task_instruction_prompt}\n"
 
             problem_prompt = prompt_generator.problem_description(problem_desc)
             final_prompt += f"{problem_prompt}\n"
-            
+
             code_structure_prompt = prompt_generator.code_structure()
             final_prompt += f"{code_structure_prompt}\n"
-            
+
             response_format_prompt = prompt_generator.response_format(task=task)
             final_prompt += f"{response_format_prompt}\n"
         elif task == GenerationTask.FIX_ERRORS:
             if candidate is None:
                 return "", "No candidate available"
-            
+
             final_prompt = ""
 
             # problem_prompt = prompt_generator.problem_description(problem_desc)
             # final_prompt += f"{problem_prompt}\n"
-            
+
             task_prompt = prompt_generator.task_description(task)
             final_prompt += f"{task_prompt}\n"
-            
+
             task_instruction_prompt = prompt_generator.task_instruction(task)
             final_prompt += f"{task_instruction_prompt}\n"
 
             final_prompt += f"### Previous Solution\n```python\n{candidate.solution}\n```\n"
             final_prompt += f"### Previous Error\n```bash\n{candidate.error}\n```\n"
-            
+
             response_format_prompt = prompt_generator.response_format(task)
             final_prompt += f"{response_format_prompt}\n"
-        else:
+        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
             if candidate is None:
                 return "", "No candidate available"
-            
+
             final_prompt = ""
 
             task_prompt = prompt_generator.task_description(task)
             final_prompt += f"{task_prompt}\n"
-            
+
             task_instruction_prompt = prompt_generator.task_instruction(task)
             final_prompt += f"{task_instruction_prompt}\n"
 
             problem_prompt = prompt_generator.problem_description(problem_desc)
             final_prompt += f"{problem_prompt}\n"
 
+            if "extractor" in candidate.metadata:
+                extractor = candidate.metadata["extractor"]
+                # final_prompt += f"### Previous Problem Analysis\n{extractor.}\n"
+                # \n{extractor.get_description(task=task)}\n"
+
             final_prompt += f"### Previous Solution\n```python\n{candidate.solution}\n```\n"
 
             final_prompt += f"### Previous Feedback\n{candidate.feedback}\n"
 
-            #TODO: the feeeback of the trajectory? 
-            
+            #TODO: the feeeback of the trajectory?
+
             response_format_prompt = prompt_generator.response_format(task)
             final_prompt += f"{response_format_prompt}\n"
-        
+
         return "", final_prompt
 
     def extract_individual(self, task:GenerationTask, response:str, prompt_generator:BOPromptGenerator) -> Individual:
-        if task == GenerationTask.INITIALIZE_SOLUTION:
-            name, name_err = prompt_generator.extract_from_response(response, "class_name")
-            description, desc_err = prompt_generator.extract_from_response(response, "Description")
-            solution, solution_err = prompt_generator.extract_from_response(response, "Code")
-            
-            individual = Individual(solution, name, description, None, None, None)
+        if task == GenerationTask.INITIALIZE_SOLUTION or task == GenerationTask.FIX_ERRORS:
 
-            if name_err or solution_err:
+            extractor = BOResponseExtractor()
+            extractor.extract_response(response, task=task)
+            description = extractor.get_description(task=task)
+
+            individual = Individual(extractor.code, extractor.code_name, description, None, None, None)
+            individual.add_metadata("extractor", extractor)
+
+            if not extractor.code or not extractor.code_name:
                 individual.add_metadata("error_type", "ExtractionError")
-                individual.error = f"ExtractionError: Name-{name_err}, Description-{desc_err}, Solution-{solution_err}"
+                individual.error = f"ExtractionError: {response}"
 
             return individual
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
@@ -108,7 +115,7 @@ class LLaMBO:
             name, name_err = prompt_generator.extract_from_response(response, "class_name")
             description, desc_err = prompt_generator.extract_from_response(response, "Description")
             solution, solution_err = prompt_generator.extract_from_response(response, "Code")
-            
+
             individual = Individual(solution, name, description, None, None, None)
 
             if name_err or solution_err:
@@ -135,20 +142,20 @@ class LLaMBO:
         individual.add_metadata("error_type", res.error_type)
         individual.add_metadata("budget", res.budget)
         individual.add_metadata("captured_output", res.captured_output)
-        individual.add_metadata("result_values", res.result.to_dict())
+        individual.add_metadata("result_values", res.result)
         individual.error = res.error
         if len(res.other_results) > 0:
             other_results = {}
             for result in res.other_results:
-                other_results[result.name] = result.to_dict()
+                other_results[result.name] = result
             individual.add_metadata("other_results", other_results)
-        
+
         if res.error is None or res.error == "":
             feedback_prompt = "### Feedback\n"
             if res.optimal_value is not None:
                 feedback_prompt += f"- Optimal Value: {res.optimal_value}\n"
             feedback_prompt += f"- Budget: {res.budget}\n"
-            
+
             all_results = [res.result] + res.other_results
             for result in all_results:
                 feedback_prompt += f"#### {result.name}\n"
@@ -157,22 +164,22 @@ class LLaMBO:
                     if result.y_best_tuple is not None:
                         feedback_prompt += f"- initial best y: {result.y_best_tuple[0]:.2f}\n"
                         feedback_prompt += f"- non-initial best y: {result.y_best_tuple[1]:.2f}\n"
-                    feedback_prompt += f"- AOC for non-initial y: {result.non_init_y_aoc:.2f}\n" 
+                    feedback_prompt += f"- AOC for non-initial y: {result.non_init_y_aoc:.2f}\n"
                     if result.x_mean_tuple is not None and result.x_std_tuple is not None:
                         feedback_prompt += f"- mean and std of initial x: {np.array_str(result.x_mean_tuple[0], precision=2)} , {np.array_str(result.x_std_tuple[0], precision=2)}\n"
-                        feedback_prompt += f"- mean and std of non-initial x: {np.array_str(result.x_mean_tuple[1], precision=2)} , {np.array_str(result.x_std_tuple[1], precision=2)}\n" 
+                        feedback_prompt += f"- mean and std of non-initial x: {np.array_str(result.x_mean_tuple[1], precision=2)} , {np.array_str(result.x_std_tuple[1], precision=2)}\n"
                     feedback_prompt += f"- mean and std of non-initial y: {result.y_mean_tuple[1]:.2f} , {result.y_std_tuple[1]:.2f}\n"
                 else:
                     feedback_prompt += f"- AOC for all y: {result.y_aoc:.2f}\n"
                     if result.x_mean is not None and result.x_std is not None:
                         feedback_prompt += f"- mean and std of all x: {np.array_str(result.x_mean, precision=2)} , {np.array_str(result.x_std, precision=2)}\n"
                         feedback_prompt += f"- mean and std of all y: {result.y_mean:.2f} , {result.y_std:.2f}\n"
-                
+
                 if result.surragate_model_losses is not None:
                     feedback_prompt += f"- mean and std {result.model_loss_name} of suragate model: {np.mean(result.surragate_model_losses):.2f} , {np.std(result.surragate_model_losses):.2f}\n"
 
                 # feedback_prompt += f"Execution Time: {result.execution_time:.4f}\n"
-            feedback_prompt += """#### Note: 
+            feedback_prompt += """#### Note:
 - AOC(Area Over the Convergence Curve): a measure of the convergence speed of the algorithm, ranged between 0.0 and 1.0. A higher value is better.
 - non-initial x: the x that are sampled during the optimization process, excluding the initial points.
 - Budget: Maximum number of function evaluations allowed for the algorithm.
@@ -186,13 +193,13 @@ class LLaMBO:
         evaluator.return_checker = prompt_generator.get_return_checker()
 
         logging.info("Starting LLaMBO")
-        logging.info(f"Model: {llm.model_name()}")
+        logging.info("Model: %s", llm.model_name())
         logging.info(evaluator.problem_name())
 
         population.problem = evaluator.problem_name()
         population.model = llm.model_name()
         problem_description = evaluator.problem_prompt()
-        
+
         current_task = None
 
         generation = 0
@@ -215,19 +222,18 @@ class LLaMBO:
             if response is None or response == "":
                 n_retry += 1
                 sleep_time = 5*n_retry
-                logging.error(f"No response from the model. Sleeping for {sleep_time} seconds")
+                logging.error("No response from the model. Sleeping for %s seconds", sleep_time)
                 time.sleep(sleep_time)
                 if n_retry > retry:
                     logging.error("Max retry limit reached. Exiting")
                     break
-                logging.info(f"Retrying:{n_retry}")
+                logging.info("Retrying: %s", n_retry)
                 continue
-
 
             individual = self.extract_individual(current_task, response, prompt_generator)
             individual.parent_id = candidate.id if candidate is not None else None
             individual.generation = generation
-            individual.add_metadata("problem", evaluator.problem_name()) 
+            individual.add_metadata("problem", evaluator.problem_name())
             individual.add_metadata('dimention', evaluator.problem_dim())
             individual.add_metadata("role_setting", role_setting)
             individual.add_metadata("prompt", prompt)
@@ -236,7 +242,7 @@ class LLaMBO:
             individual.add_metadata("aggresiveness", prompt_generator.aggressiveness)
             tags = individual.metadata["tags"] if "tags" in individual.metadata else []
             tags.append(f"gen:{generation}")
-            tags.append(f"task:{current_task}")
+            tags.append(f"task:{current_task.name}")
             tags.append(f"aggr:{prompt_generator.aggressiveness}")
             tags.append(f"dim:{evaluator.problem_dim()}")
             if prompt_generator.use_botorch:
@@ -246,7 +252,7 @@ class LLaMBO:
             if individual.error:
                 # Retry if extraction error
                 n_retry += 1
-                logging.error("No suucessful extraction from the model. Retrying") 
+                logging.error("No suucessful extraction from the model. Retrying")
                 if ind_logger is not None and ind_logger.log_extract_error:
                     ind_logger.add_individual(individual)
                 continue
@@ -278,4 +284,3 @@ class LLaMBO:
                 ind_logger.save()
 
         progress_bar.close()
-
