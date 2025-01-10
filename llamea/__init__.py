@@ -6,6 +6,7 @@ from .promptGenerator import BOPromptGenerator, GenerationTask
 from .llm import LLMmanager, LLMS
 from .loggers import ExperimentLogger
 from .utils import NoCodeException
+from .evaluator import EvaluatorResult, AbstractEvaluator
 
 from dotenv import load_dotenv
 
