@@ -16,7 +16,7 @@ def log_aggressiveness_and_botorch(population:SequencePopulation, aggressiveness
         tags.append(f"aggr:{aggressiveness}")
         individual.add_metadata("tags", tags)
 
-def run_bo_exp_code_gereation(model:tuple, aggressiveness:float, use_botorch:bool):
+def run_bo_exp_code_generation(model:tuple, aggressiveness:float, use_botorch:bool):
     llambo = LLaMBO()
 
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
@@ -33,14 +33,16 @@ def run_bo_exp_code_gereation(model:tuple, aggressiveness:float, use_botorch:boo
     # p1_logger.dirname = "logs/p1_new_prompt"
     p1_logger.dirname = "logs_temp"
 
-
     n_iterations = 1
     n_generations = 6
     progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations")
     for _ in range(n_iterations):
         population = SequencePopulation()
         evaluator = RandomBoTorchTestEvaluator()
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, ind_logger=p1_logger, retry=3, verbose=2)
+
+        other_results = evaluator.evaluate_others()
+        
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, ind_logger=p1_logger, retry=3, verbose=2, sup_results=other_results)
         log_aggressiveness_and_botorch(population, aggressiveness, use_botorch)
         progress_bar.update(1)
 
@@ -190,11 +192,11 @@ def run_bo_exp_optimize_performance(model:tuple):
 
 
 
-MODEL = LLMS["deepseek/deepseek-chat"]
+# MODEL = LLMS["deepseek/deepseek-chat"]
 # MODEL = LLMS["gemini-2.0-flash-exp"]
 # MODEL = LLMS["gemini-exp-1206"]
 # MODEL = LLMS["llama-3.1-70b-versatile"]
-# MODEL = LLMS["llama-3.3-70b-versatile"]
+MODEL = LLMS["llama-3.3-70b-versatile"]
 # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
 # MODEL = LLMS["o_gemini-2.0-flash-exp"]
 # MODEL = LLMS['o_llama-3.1-405b-instruct']
@@ -204,7 +206,7 @@ setup_logger(level=logging.INFO)
 # code generation experiment
 AGGRESSIVENESS = 0.4
 USE_BOTROCH = False
-run_bo_exp_code_gereation(MODEL, AGGRESSIVENESS, USE_BOTROCH)
+run_bo_exp_code_generation(MODEL, AGGRESSIVENESS, USE_BOTROCH)
 
 
 # fix errors experiment

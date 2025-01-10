@@ -199,8 +199,11 @@ class Population(ABC):
             individual (Individual): The individual to remove from the population.
         """
 
-    def select_next_generation(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
-        pass
+    def select_next_candidate(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
+        return None
+
+    def get_last_successful_parent(self, candidate: Individual) -> Individual:
+        return None
 
     @abstractmethod
     def all_individuals(self):
@@ -245,7 +248,7 @@ class SequencePopulation(Population):
         """
         self.individuals = [ind for ind in self.individuals if ind.id != individual.id]
 
-    def select_next_generation(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
+    def select_next_candidate(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
         if not self.individuals:
             return None
         sorted_individuals = []
@@ -261,6 +264,30 @@ class SequencePopulation(Population):
             # select last num_individuals from the sorted list
             next_generation = sorted_individuals[-num_individuals:]
         return next_generation[0]
+
+    def get_last_successful_parent(self, candidate: Individual) -> Individual:
+        """
+        Returns the last successful parent of the given candidate individual.
+
+        Args:
+            candidate (Individual): The candidate individual to find the last successful parent for.
+
+        Returns:
+            Individual: The last successful parent of the candidate individual.
+        """
+        if candidate is None:
+            return None
+
+        # Find the last successful parent of the candidate
+        is_before_candidate = True 
+        for ind in reversed(self.individuals):
+            if is_before_candidate: 
+                if ind.id == candidate.id:
+                    is_before_candidate = False
+            else:
+                if ind.error is None:
+                    return ind
+        return None
 
     def all_individuals(self):
         """

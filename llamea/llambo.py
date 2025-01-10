@@ -11,13 +11,13 @@ from .individual import Individual, Population
 from .llm import LLMmanager
 from .promptGenerator import PromptGenerator, GenerationTask, ResponseHandler
 from .utils import IndividualLogger
-from .evaluator import EvaluatorResult, AbstractEvaluator
+from .evaluator import EvaluatorResult, AbstractEvaluator, EvaluatorABBasicResult
 
 class LLaMBO:
     """
     A class that represents the Language Model powered Bayesian Optimization(LLaMBO).
     """
-    def extract_individual(self, task:GenerationTask, response:str, handler:ResponseHandler) -> Individual:
+    def extract_individual(self, task:GenerationTask, response:str, handler:ResponseHandler,) -> Individual:
         handler.extract_response(response, task=task)
 
         individual = Individual(handler.code, handler.code_name, None, None, None, None)
@@ -33,12 +33,19 @@ class LLaMBO:
         if individual is None:
             return None
         return individual.metadata["res_handler"] if "res_handler" in individual.metadata else None
+    
+    def last_successful_eval_result(self, population:Population, individual:Individual) -> EvaluatorResult:
+        last_successful_candidate = population.get_last_successful_parent(individual)
+        if last_successful_candidate is not None:
+            if "eval_result" in last_successful_candidate.metadata:
+                return last_successful_candidate.metadata["eval_result"]
+        return None
 
     def update_current_task(self, population:Population, previous_task:GenerationTask) -> GenerationTask:
         if population.get_population_size() == 0:
             return GenerationTask.INITIALIZE_SOLUTION
         else:
-            individual = population.select_next_generation()
+            individual = population.select_next_candidate()
             if individual.error:
                 if previous_task == GenerationTask.FIX_ERRORS or previous_task == GenerationTask.FIX_ERRORS_FROM_ERROR:
                     return GenerationTask.FIX_ERRORS_FROM_ERROR
@@ -46,7 +53,10 @@ class LLaMBO:
             else:
                 return GenerationTask.OPTIMIZE_PERFORMANCE
 
-    def merge_evaluator_results(self, individual:Individual, res:EvaluatorResult, prompt_generator:PromptGenerator):
+    def merge_evaluator_results(self, individual:Individual, 
+                                res:EvaluatorResult, 
+                                prompt_generator:PromptGenerator, 
+                                other_results:tuple[EvaluatorABBasicResult, EvaluatorABBasicResult]=None):
         individual.fitness = res.result.best_y
         for key, value in res.metadata.items():
             individual.add_metadata(key, value)
@@ -54,26 +64,25 @@ class LLaMBO:
         individual.add_metadata("error_type", res.error_type)
         individual.add_metadata("budget", res.budget)
         individual.add_metadata("captured_output", res.captured_output)
-        individual.add_metadata("result_values", res.result)
+        individual.add_metadata("eval_result", res.result)
         individual.error = res.error
-        if len(res.other_results) > 0:
-            other_results = {}
-            for result in res.other_results:
-                other_results[result.name] = result
-            individual.add_metadata("other_results", other_results)
+        sup_results = other_results[1] if other_results is not None and len(other_results) > 0 else None
+        other_res = {}
+        for result in sup_results:
+            other_res[result.name] = result
+        individual.add_metadata("other_eval_results", other_res)
 
         if res.error is None or res.error == "":
-            individual.feedback = prompt_generator.evaluation_feedback_prompt(res)
+            individual.feedback = prompt_generator.evaluation_feedback_prompt(res, other_results)
 
-    def run_evolutions(self, llm: LLMmanager, evaluator: AbstractEvaluator, prompt_generator: PromptGenerator, population: Population, n_generation: int = 1, ind_logger: IndividualLogger = None, retry: int = 3, verbose: int = 1):
+    def run_evolutions(self, llm: LLMmanager, evaluator: AbstractEvaluator, prompt_generator: PromptGenerator, population: Population, n_generation: int = 1, ind_logger: IndividualLogger = None, retry: int = 3, verbose: int = 1, sup_results: list[EvaluatorABBasicResult] = None):
+        logging.info("Starting LLaMBO")
+        logging.info("Model: %s", llm.model_name())
+        logging.info(evaluator.problem_name())
 
         progress_bar = tqdm(total=n_generation)
 
         evaluator.return_checker = prompt_generator.get_return_checker()
-
-        logging.info("Starting LLaMBO")
-        logging.info("Model: %s", llm.model_name())
-        logging.info(evaluator.problem_name())
 
         population.problem = evaluator.problem_name()
         population.model = llm.model_name()
@@ -86,14 +95,25 @@ class LLaMBO:
         n_retry = 0
         while generation < n_generation:
             current_task = self.update_current_task(population, current_task)
-            candidate = population.select_next_generation()
-            parents_handler = self.get_handler_from_individual(candidate) if candidate is not None else None
-            parents = [parents_handler] if parents_handler is not None else None
-            role_setting, prompt = prompt_generator.get_prompt(task=current_task, problem_desc=problem_description, parents=parents, sharedborad=evolved_sharedbrard)
+
+            # Select candidate and get prompt
+            candidate = population.select_next_candidate()
+            last_res = self.last_successful_eval_result(population, candidate)
+            other_results = (last_res, sup_results)
+            
+            candidate_handler = self.get_handler_from_individual(candidate) if candidate is not None else None
+            candidates = [candidate_handler] if candidate_handler is not None else None
+            role_setting, prompt = prompt_generator.get_prompt(
+                task=current_task,
+                problem_desc=problem_description,
+                candidates=candidates,
+                other_results=other_results,
+                sharedborad=evolved_sharedbrard)
             session_messages = [
                 {"role": "system", "content": role_setting},
                 {"role": "user", "content": prompt},
             ]
+
             if verbose > 1:
                 logging.info(prompt) 
             response = llm.chat(session_messages)
@@ -112,6 +132,7 @@ class LLaMBO:
                 logging.info("Retrying: %s", n_retry)
                 continue
 
+            # Extract individual from the response
             response_handler = prompt_generator.get_response_handler()
             individual = self.extract_individual(current_task, response, response_handler)
             prompt_generator.update_sharedbrard(evolved_sharedbrard, response_handler)
@@ -141,7 +162,7 @@ class LLaMBO:
                 n_retry = 0
                 res = evaluator.evaluate(code=individual.solution, cls_name=individual.name)
                 response_handler.eval_result = res
-                self.merge_evaluator_results(individual, res, prompt_generator)
+                self.merge_evaluator_results(individual, res, prompt_generator, other_results)
 
                 population.add_individual(individual)
 

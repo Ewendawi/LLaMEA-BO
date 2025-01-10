@@ -302,7 +302,6 @@ class EvaluatorResult:
         self.error = None
         self.error_type = None
         self.result:EvaluatorABBasicResult = EvaluatorABBasicResult()
-        self.other_results:list[EvaluatorABBasicResult] = []
         self.metadata = {}
 
     def set_capture_output(self, captured_output):
@@ -354,6 +353,34 @@ class AbstractEvaluator(ABC):
     @abstractmethod
     def evaluate(self, code, cls_name) -> EvaluatorResult:
         pass
+
+class BotorchObjectivexFn:
+    def __init__(self, obj_fn, budget=None):
+        self.obj_fn = obj_fn
+        self.x_hist = None
+        self.y_hist = None
+        self.budget = budget
+        self.progres_bar = tqdm(total=budget, desc="Evaluating")
+
+    def __call__(self, x):
+        if self.x_hist is not None and self.budget is not None and len(self.x_hist) >= self.budget:
+            raise Exception("OverBudgetException", "The total number of evaluated points exceeds the budget")
+
+        if self.x_hist is None:
+            self.x_hist = x
+        else:
+            self.x_hist = np.vstack((self.x_hist, x))
+
+        tensor_x = torch.tensor(x, dtype=torch.float64)
+        tensor_y = self.obj_fn(tensor_x)
+
+        y = tensor_y.reshape(-1,1).numpy()
+        if self.y_hist is None:
+            self.y_hist = y
+        else:
+            self.y_hist = np.append(self.y_hist, y)
+        self.progres_bar.update(len(x))
+        return y
 
 class RandomBoTorchTestEvaluator(AbstractEvaluator):
     def __init__(self, budget: int = 40, dim: int = 6, obj_fn_name: str = None):
@@ -407,36 +434,26 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         thread = threading.Thread(target=self.__loading_indicator, args=(message,))
         thread.start()
 
+    def evaluate_others(self, optimal_value=None) -> list[EvaluatorABBasicResult]:
+        # Random search
+        other_results = []
+
+        random_obj_fn = BotorchObjectivexFn(self.obj_fn)
+        random_search_result = EvaluatorABBasicResult()
+        random_search_result.name = "Random Search"
+        start_time = time.perf_counter()
+        rs_Y, rs_X = random_search(random_obj_fn, self.bounds, self.budget)
+        random_search_result.y_hist = rs_Y.reshape(-1) if len(rs_Y.shape) > 1 else rs_Y
+        random_search_result.x_hist = rs_X
+        random_search_result.execution_time = time.perf_counter() - start_time
+        random_search_result.update_stats()
+        random_search_result.update_aoc(optimal_value)
+        other_results.append(random_search_result)
+
+        return other_results
+
     def evaluate(self, code, cls_name, cls=None) -> EvaluatorResult:
         """Evaluate an individual."""
-
-        class BotorchObjectivexFn:
-            def __init__(self, obj_fn, budget=None):
-                self.obj_fn = obj_fn
-                self.x_hist = None
-                self.y_hist = None
-                self.budget = budget
-                self.progres_bar = tqdm(total=budget, desc="Evaluating")
-
-            def __call__(self, x):
-                if self.x_hist is not None and self.budget is not None and len(self.x_hist) >= self.budget:
-                    raise Exception("OverBudgetException", "The total number of evaluated points exceeds the budget")
-
-                if self.x_hist is None:
-                    self.x_hist = x
-                else:
-                    self.x_hist = np.vstack((self.x_hist, x))
-
-                tensor_x = torch.tensor(x, dtype=torch.float64)
-                tensor_y = self.obj_fn(tensor_x)
-
-                y = tensor_y.reshape(-1,1).numpy()
-                if self.y_hist is None:
-                    self.y_hist = y
-                else:
-                    self.y_hist = np.append(self.y_hist, y)
-                self.progres_bar.update(len(x))
-                return y
 
         eval_result = EvaluatorResult()
         eval_result.budget = self.budget
@@ -474,7 +491,6 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
                 eval_result.error_type = "ReturnCheckError"
 
         if eval_result.error is None:
-
             y_hist, x_hist, surrogate_model_losses, n_initial_points = res
 
             optimal_value = None
@@ -493,20 +509,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             eval_result.result.update_stats()
             eval_result.result.update_aoc(optimal_value)
 
-            # Random search
-            random_obj_fn = BotorchObjectivexFn(self.obj_fn)
-            random_search_result = EvaluatorABBasicResult()
-            random_search_result.name = "Random Search"
-            start_time = time.perf_counter()
-            rs_Y, rs_X = random_search(random_obj_fn, self.bounds, self.budget)
-            random_search_result.y_hist = rs_Y.reshape(-1) if len(rs_Y.shape) > 1 else rs_Y
-            random_search_result.x_hist = rs_X
-            random_search_result.execution_time = time.perf_counter() - start_time
-            random_search_result.update_stats()
-            random_search_result.update_aoc(optimal_value)
-            eval_result.other_results.append(random_search_result)
-
-        return eval_result
+        return eval_result 
 
 
     @classmethod
