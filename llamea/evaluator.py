@@ -420,7 +420,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
 
             def __call__(self, x):
                 if self.x_hist is not None and self.budget is not None and len(self.x_hist) >= self.budget:
-                    raise Exception("OverBudgetException")
+                    raise Exception("OverBudgetException", "The total number of evaluated points exceeds the budget")
 
                 if self.x_hist is None:
                     self.x_hist = x

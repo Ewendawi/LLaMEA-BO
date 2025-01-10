@@ -1,27 +1,50 @@
 
-from typing import Dict, Optional, Any, Tuple
 from abc import ABC, abstractmethod
 from enum import Enum
 import re
 import random
+from typing import Any
 from collections.abc import Callable
 import numpy as np
-from .individual import Individual, Population
+from .evaluator import EvaluatorResult
 
 class GenerationTask(Enum):
     """Enum class for generation tasks."""
     INITIALIZE_SOLUTION = 0
     FIX_ERRORS = 1
-    OPTIMIZE_PERFORMANCE = 2
-    OPTIMIZE_PERFORMANCE_FROM_ERROR = 3
+    FIX_ERRORS_FROM_ERROR = 2
+    OPTIMIZE_PERFORMANCE = 3
+
+class ResponseHandler(ABC):
+    """Abstract base class for response handler."""
+
+    def __init__(self):
+        self._eval_result:EvaluatorResult = None
+
+    @property
+    def eval_result(self) -> EvaluatorResult:
+        return self._eval_result
+
+    @eval_result.setter
+    def eval_result(self, value:EvaluatorResult):
+        self._eval_result = value 
+
+    @abstractmethod
+    def extract_response(self, response:str, task:GenerationTask) -> None:
+        pass
+
+    @abstractmethod
+    def __to_json__(self) -> dict:
+        pass
+
+class ResponseImpReturnChecker(ABC):
+    """Abstract base class for response return checkers."""
+    @abstractmethod
+    def __call__(self, imp_return:tuple) -> str:
+        pass
 
 class PromptGenerator(ABC):
     """Abstract base class for prompt generators."""
-
-    @abstractmethod
-    def problem_description(self, extra:str="") -> str:
-        pass
-
     @abstractmethod
     def task_description(self, task:GenerationTask, extra:str="") -> str:
         pass
@@ -34,19 +57,222 @@ class PromptGenerator(ABC):
     def code_structure(self, extra:str="") -> str:
         pass
 
-    def get_return_checker(self) -> Callable:
-        return None
-
     @abstractmethod
     def response_format(self, task:GenerationTask, extra:str="") -> str:
         pass
 
-class BOPromptGenerator(PromptGenerator):
+    @abstractmethod
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult) -> str:
+        pass
 
+    @abstractmethod
+    def get_prompt(self, task:GenerationTask, problem_desc:str, parents:list[ResponseHandler]= None, sharedborad=None) -> tuple[str, str]:
+        pass
+
+    @abstractmethod
+    def get_response_handler(self) -> ResponseHandler:
+        pass
+
+    def get_return_checker(self) -> ResponseImpReturnChecker:
+        return None
+
+    def update_sharedbrard(self, sharedbrard: Any, handler:ResponseHandler):
+        pass
+
+    def get_prompt_sharedbrard(self) -> Any:
+        return None
+
+#================================================================================================
+# Zero BO Prompt Generator
+#================================================================================================
+
+class BOPromptGeneratorReturnChecker(ResponseImpReturnChecker):
+    def __call__(self, func_return: tuple) -> str:
+        # check if the return is correct
+        if not isinstance(func_return, tuple) or len(func_return) != 4:
+            return "The return value should be a tuple of four elements."
+        else:
+            err_str = ""
+            all_y = func_return[0]
+            if not isinstance(all_y, np.ndarray):
+                err_str += "The first element of the return value should be a numpy array."
+
+            all_x = func_return[1]
+            if not isinstance(all_x, np.ndarray):
+                err_str += "The second element of the return value should be a numpy array."
+
+            loss_tuple = func_return[2]
+            if not isinstance(loss_tuple, tuple) or len(loss_tuple) != 2:
+                err_str += "The third element of the return value should be a tuple of two elements."
+            # else:
+            #     model_losses = loss_tuple[0]
+            #     if not isinstance(model_losses, np.ndarray):
+            #         err_str += "The first element of the third element of the return value should be a numpy array."
+            #     loss_name = loss_tuple[1]
+            #     if not isinstance(loss_name, str):
+            #         err_str += "The second element of the third element of the return value should be a string"
+
+            return err_str
+
+class ZeroBOResponseHandler(ResponseHandler):
+    def __init__(self):
+        super().__init__()
+
+        self.problem_analysis = ""
+        self.feedback_analysis = ""
+        self.potential_techniques= ""
+        self.improvement = ""
+        self.proposed_strategies = ""
+        self.algorithm_design = ""
+        self.pseudocode = ""
+
+        self.error_analysis = ""
+        self.proposed_solutions = ""
+        # Feedback for error_analysis and proposed_solutions
+        self.error_feedback = ""
+
+        self.code = ""
+        self.code_name = ""
+        self.raw_response = ""
+
+    def __to_json__(self):
+        return {
+            "problem_analysis": self.problem_analysis,
+            "feedback_analysis": self.feedback_analysis,
+            "potential_techniques": self.potential_techniques,
+            "improvement": self.improvement,
+            "proposed_strategies": self.proposed_strategies,
+            "algorithm_design": self.algorithm_design,
+            "pseudocode": self.pseudocode,
+
+            "error_analysis": self.error_analysis,
+            "proposed_solutions": self.proposed_solutions,
+            "error_feedback": self.error_feedback,
+
+            "code": self.code,
+            "code_name": self.code_name,
+            "raw_response": self.raw_response
+        }
+
+    def extract_response(self, response:str, task:GenerationTask):
+        if not response:
+            return
+        if task == GenerationTask.INITIALIZE_SOLUTION:
+            self.__extract_for_initial_solution(response)
+        elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
+            self.__extract_for_error_fixing(response)
+        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
+            self.__extract_for_improvement(response)
+
+    def __extract_for_improvement(self, response:str):
+        self.raw_response = response
+        sections = ["Problem Analysis", 
+                    "Feedback Analysis", 
+                    "Potential Techniques", 
+                    "Improvements",
+                    "Proposed Strategies",
+                    "Proposed Strategies", 
+                    "Final Algorithm Design", 
+                    "Pseudocode", 
+                    "Code"]
+        for section in sections:
+            if section == "Code":
+                self.code, _ = self.extract_from_response(response, section)
+                self.code_name, _ = self.extract_from_response(response, "class_name")
+            elif section == "Final Algorithm Design":
+                self.algorithm_design, _ = self.extract_from_response(response, section)
+            elif section == "Pseudocode":
+                self.pseudocode, _ = self.extract_from_response(response, section)
+            elif section == "Proposed Strategies":
+                self.proposed_strategies, _ = self.extract_from_response(response, section)
+            elif section == "Potential Techniques":
+                self.potential_techniques, _ = self.extract_from_response(response, section)
+            elif section == "Feedback Analysis":
+                self.feedback_analysis, _ = self.extract_from_response(response, section)
+            elif section == "Problem Analysis":
+                self.problem_analysis, _ = self.extract_from_response(response, section)
+            elif section == "Improvements":
+                self.improvement, _ = self.extract_from_response(response, section)
+
+    def __extract_for_error_fixing(self, response:str):
+        self.raw_response = response
+        sections = ["Identified Errors", "Proposed Solutions", "Code", "Previous Analysis Feedback"]
+        for section in sections:
+            if section == "Identified Errors":
+                self.error_analysis, _ = self.extract_from_response(response, section)
+            elif section == "Proposed Solutions":
+                self.proposed_solutions, _ = self.extract_from_response(response, section)
+            elif section == "Code":
+                self.code, _ = self.extract_from_response(response, section)
+                self.code_name, _ = self.extract_from_response(response, "class_name")
+            elif section == "Previous Analysis Feedback":
+                self.error_feedback, _ = self.extract_from_response(response, section)
+
+    def __extract_for_initial_solution(self, response:str):
+        self.raw_response = response
+        sections = ["Problem Analysis", "Potential Techniques", "Proposed Strategies", "Final Algorithm Design", "Pseudocode", "Code"]
+        for section in sections:
+            if section == "Code":
+                self.code, _ = self.extract_from_response(response, section)
+                self.code_name, _ = self.extract_from_response(response, "class_name")
+            elif section == "Final Algorithm Design":
+                self.algorithm_design, _ = self.extract_from_response(response, section)
+            elif section == "Pseudocode":
+                self.pseudocode, _ = self.extract_from_response(response, section)
+            elif section == "Proposed Strategies":
+                self.proposed_strategies, _ = self.extract_from_response(response, section)
+            elif section == "Potential Techniques":
+                self.potential_techniques, _ = self.extract_from_response(response, section)
+            elif section == "Problem Analysis":
+                self.problem_analysis, _ = self.extract_from_response(response, section)
+
+    def extract_from_response(self, response: str, section: str, pattern=None) -> tuple[str, str]:
+        error_str = ""
+        res = ""
+        if pattern is None:
+            if section == "class_name":
+                # pattern = r"### Code[\s\S]*?class\s+(\w+BO):"
+                pattern = r"### Code[\s\S]*?class\s+(\w+):"
+            elif section == "Code":
+                pattern = r"### Code[\s\S]*?```\w*\s([\s\S]*?)```[\s\S]*?### /Code"
+            else:
+                pattern = rf"### {section}\s*([\s\S]*?)\s*### /{section}"
+        match = re.search(pattern, response, re.IGNORECASE)
+        if match:
+            res = match.group(1)
+        else:
+            error_str = f"{section} not found in the response."
+        return res, error_str
+
+class ZeroPlusBOPromptSharedboard():
+    def __init__(self):
+        self.problem_analysis = []
+        self.tech_base = []
+
+    def last_problem_analysis(self) -> str:
+        if self.problem_analysis:
+            last = self.problem_analysis[-1]
+            if len(last) > 0:
+                return last
+        return None
+
+    def last_tech_base(self) -> str:
+        if self.tech_base:
+            last = self.tech_base[-1]
+            if len(last) > 0:
+                return last
+        return None
+
+class ZeroPlusBOPromptGenerator(PromptGenerator):
     def __init__(self):
         super().__init__()
         self.aggressiveness = random.uniform(0.3, 1.0)
         self.use_botorch = False
+
+        self.evolved_techs = []
+        self.evolved_problem_analysis = []
+
+# method list
 
     def surrogate_models(self) -> list[str]:
         surrogate_models = [
@@ -134,125 +360,99 @@ class BOPromptGenerator(PromptGenerator):
         ]
         return other_techniques
 
-    def prompt_extract_keywords_from_code(self, code:str) -> str:
-        return f"""Extract and list up to 6 key technical components from the provided Python code implementing a Bayesian optimization algorithm.
-- Focus on the core techniques and mathematical concepts used. 
-- Exclude the general terms like 'BayesianOptimization', 'AcquisitionFunction', 'Minimization', etc.
-- Return keywords only, separated by commas.
+#================================================================================================
+# prompt generation
+#================================================================================================
+    def get_prompt(self, task:GenerationTask, problem_desc:str, parents:list[ZeroBOResponseHandler]= None, sharedborad:ZeroPlusBOPromptSharedboard=None) -> tuple[str, str]:
+        if task == GenerationTask.INITIALIZE_SOLUTION:
+            final_prompt = ""
 
-Code:
-```python
-{code}
-```
-    """
+            task_prompt = self.task_description(task)
+            final_prompt += f"{task_prompt}\n"
 
-    def problem_description(self, extra:str="") -> str:
-        return f"""## Problem Description\n{extra}"""
+            task_instruction_prompt = self.task_instruction(task)
+            final_prompt += f"{task_instruction_prompt}\n"
+
+            problem_prompt = f"""## Problem Description\n{problem_desc}"""
+            final_prompt += f"{problem_prompt}\n"
+
+            code_structure_prompt = self.code_structure()
+            final_prompt += f"{code_structure_prompt}\n"
+
+            response_format_prompt = self.response_format(task=task)
+            final_prompt += f"{response_format_prompt}\n"
+        elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
+            if parents is None or len(parents) == 0:
+                return "", ""
+
+            parent = parents[0]
+
+            final_prompt = ""
+
+            task_prompt = self.task_description(task)
+            final_prompt += f"{task_prompt}\n"
+
+            task_instruction_prompt = self.task_instruction(task)
+            final_prompt += f"{task_instruction_prompt}\n"
+
+            if task == GenerationTask.FIX_ERRORS_FROM_ERROR and parent.error_analysis and parent.proposed_solutions:
+                final_prompt = f"""### Previous Error Analysis\n{parent.error_analysis}\n### Previous Proposed Solutions\n{parent.proposed_solutions}\n"""
+            final_prompt += f"### Errors\n```bash\n{parent.eval_result.error}\n```\n"
+            final_prompt += f"### Previous Solution\n```python\n{parent.code}\n```\n"
+
+            response_format_prompt = self.response_format(task)
+            final_prompt += f"{response_format_prompt}\n"
+        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
+            if parents is None or len(parents) == 0:
+                return "", ""
+
+            parent = parents[0]
+
+            final_prompt = ""
+
+            task_prompt = self.task_description(task)
+            final_prompt += f"{task_prompt}\n"
+
+            task_instruction_prompt = self.task_instruction(task)
+            final_prompt += f"{task_instruction_prompt}\n"
+
+            problem_prompt = f"""## Problem Description\n{problem_desc}"""
+            final_prompt += f"{problem_prompt}\n"
+
+            feedback_prompt = self.evaluation_feedback_prompt(parent.eval_result)
+            final_prompt += f"### Previous Feedback\n{feedback_prompt}\n"
+
+            previous_problem_analysis = parent.problem_analysis
+            previous_proposed_teniques = parent.proposed_strategies
+            if sharedborad is not None:
+                if sharedborad.last_problem_analysis():
+                    previous_problem_analysis = sharedborad.last_problem_analysis()
+                if sharedborad.last_tech_base():
+                    previous_proposed_teniques = sharedborad.last_tech_base()
+            if len(previous_problem_analysis) > 0:
+                final_prompt += f"""### Previous Problem Analysis\n{previous_problem_analysis}\n"""
+            if len(previous_problem_analysis) > 0:
+                final_prompt += f"""### Previous Potential Techniques\n{previous_proposed_teniques}\n"""
+
+            # if task == GenerationTask.OPTIMIZE_PERFORMANCE:
+            #     final_prompt += f"### Previous Proposed Strategies\n{parent.proposed_strategies}\n### Previous Final Algorithm Design\n{parent.algorithm_design}\n"
+
+            final_prompt += f"### Previous Solution\n```python\n{parent.code}\n```\n"
+            response_format_prompt = self.response_format(task)
+            final_prompt += f"{response_format_prompt}\n"
+
+        return "", final_prompt
 
     def task_description(self, task:GenerationTask, extra:str="") -> str:
         desc = """## Task Description\n"""
         if task == GenerationTask.INITIALIZE_SOLUTION:
-            desc += "You will be given minimization optimization problems. Your tasks are to analyze the problem, design a feasible algorithm, and implement it using Bayesian Optimization."
-        elif task == GenerationTask.FIX_ERRORS:
+            desc += "You will be given minimization optimization problems. Your tasks are to analyze the problem, design a feasible Bayesian Optimization algorithm, and implement it."
+        elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
             desc += "You will be given a Bayesian Optimization solution with errors. Your task is to identify and correct the errors in the provided solution."
-        elif task == GenerationTask.OPTIMIZE_PERFORMANCE or task == GenerationTask.OPTIMIZE_PERFORMANCE_FROM_ERROR:
+        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
             desc += "You will be given a Bayesian Optimization solution with evaluation feedback, problem analysis, and other information. Your task is to optimize the performance of the solution."
         desc += extra
         return desc
-
-    def task_instruction_for_mathematician(self, task:GenerationTask) -> str:
-        instruction = """\n**as a mathematician speciliazed in optimization**
-"""
-        if task == GenerationTask.INITIALIZE_SOLUTION or task == GenerationTask.OPTIMIZE_PERFORMANCE_FROM_ERROR:
-            instruction += """- Identify the key characteristics of the problelms relevant to optimization, not limited to its multi-modality, separability, and the location of its global minimum.
-- Analyze the problem, focusing on the challenges posed by the problems for optimization algorithms. Consider aspects should be included but not limited to local optima, ruggedness, and the search space dimensionality.
-"""
-        elif task == GenerationTask.FIX_ERRORS:
-            instruction += ""
-        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
-            instruction += """- Review the provided promblem analysis.
-- Correct the wrong colusions if exist.
-- Suplement the analysis with additional insights if necessary.
-"""
-        return instruction
-
-    def task_instruction_for_programmer(self, task:GenerationTask, use_botorch:bool=False) -> str:
-        instruction = "\n**as a programmer specialized in python and libraries on Bayesian Optimization such as GPy, gpytorch, botorch, etc.**\n"
-
-        lib_instruction = "You are allowed to use numpy, scipy scikit-learn and GPy."
-        if use_botorch:
-            lib_instruction = "You are allowed to use numpy, scipy, scikit-learn, GPy, torch, gpytorch and botorch."
-
-        if task == GenerationTask.INITIALIZE_SOLUTION:
-            instruction += f"""- Name the algorithm using a descriptive name that reflects the chosen components, potentially highlighting the novel aspect of the algorithm.
-- Implement the algorithm in Python strictly following the provided code structure guide. Ensure that the implementation aligns with the pseudocode developed in the previous step, paying particular attention to the implementation of any novel methods.
-- Code Implementation only contain the algorithm class. No usage examples
-- {lib_instruction}
-- Use other libraries only if they can not be repalced by the above libraries. 
-"""
-        elif task == GenerationTask.FIX_ERRORS:
-            instruction += f"""- Identify the cause of the errors in the provided Bayesian Optimization solution.
-- Review all the code for potential errors. and correct them.
-- Propose solutions for the identified errors, ensuring that the proposed modifications align with the original algorithm's design and intent.
-- Correct the errors based on the identified causes and proposed solutions
-{lib_instruction}
-- Use other libraries only if they can not be repalced by the above libraries. 
-- Keep the algorithm class structure intact and only modify the necessary parts to fix the errors.
-- Code Implementation only contain the algorithm class. No usage examples
-- Do not change the name and the function signatures of __init__ and optimize methods.
-"""
-        elif task == GenerationTask.OPTIMIZE_PERFORMANCE or task == GenerationTask.OPTIMIZE_PERFORMANCE_FROM_ERROR:
-            instruction += f"""- Implement the algorithm in Python strictly following the previous code structure. Ensure that the implementation aligns with the pseudocode developed in the previous step, paying particular attention to the modification.
-- Code Implementation only contain the algorithm class. No usage examples
-- {lib_instruction}
-- Use other libraries only if they can not be repalced by the above libraries. 
-"""
-        return instruction
-
-
-    def task_instruction_for_scientist(self, task:GenerationTask, aggressiveness:float = None) -> str:
-        instruction = """\n**as a computer scientist specialized in bayesian optimization**\n"""
-        if task == GenerationTask.INITIALIZE_SOLUTION:
-            if aggressiveness is None:
-                aggressiveness = random.uniform(0.3, 1.0)
-            else:
-                aggressiveness = max(0.1, min(1.0, aggressiveness))
-            instruction += f"""1. Based on the problem analysis, what techniques in Bayesian Optimization could address the challenges of the problem? The options should be state-of-the-art and specific to the problem.
-2. Consider above techniques and propose at least three strategies to design a Bayesian Optimization algorithm.
-    - Sampling Strategy: Briefly compare popular strategies. Then, explore and justify the selection of a potentially more advanced or specialized sampling technique relevant to the problems' characteristics, such as a quasi-Monte Carlo method with desirable discrepancy properties or a sequential design strategy tailored for exploration.
-    - Surrogate Model: Briefly compare the standard Gaussian Process Regression (GPR) with common kernels. Then, investigate and justify the choice of a potentially more advanced or specialized surrogate model. Explain the potential advantages of this choice over standard GPR.
-    - Choose a metric to evaluate the model, e.g., negative log-likelihood, or other relevant metrics. Justify your choice.
-    - Acquisition Function: Briefly compare standard acquisition functions. Then, consider and justify the selection of a potentially more innovative acquisition function designed to handle multi-modality or improve exploration efficiency, such as Thompson Sampling, Information Gain-based approaches, or those incorporating risk or regret considerations. Explain the rationale behind your choice.
-    - Hyperparameters: Choose the promising hyperparameters for the acquisition function, surrogate model, and other components.
-    - Budget Strategy:The budget will be provided as a hyperparameter. Choose a strategy to balance n_initial_points and n_iterations. The total number of evaluations should not exceed the budget.
-    - Other Possible Techniques: Discuss the potential benefits of incorporating cutting-edge techniques within the Bayesian Optimization framework for this specific problem. Explain how these techniques could address the identified challenges.
-3. Review your options and design a specific Bayesian Optimization algorithm. Justify your choices in detail.
-    - You can choose from less complex and more widely applicable approaches(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. Banlance the trade-offs between reward and risk based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f} 
-4. Pseudocode: Write down the detailed steps of your chosen Bayesian Optimization algorithm in plain pseudocode, highlighting any novel components or adaptations.
-"""
-        elif task == GenerationTask.FIX_ERRORS:
-            instruction += """- Identify the cause of the errors in the provided Bayesian Optimization solution.
-- If the errors are related to the algorithm design, propose alternative strategies that could address the identified issues. The proposed strategies should be conceptually similar to the original algorithm but with modifications to fix the errors.
-- If the errors are related to the implementation, leave it to the programmer to correct the code. 
-"""
-        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
-            instruction += """1. Analyze the feedback and identify the key areas where the algorithm can be improved to enhance its performance.
-2. Review the previous Potential Techniques, Proposed Strategies , final algorithm design and code, propose your opinions.
-3. Based above analysis, propose your vesion of Potential Techniques and Proposed Strategies. 
-4. Consider the potential improvements and the corresponding workload required to implement them.Make a smart choice on the final algorithm design and provide a detailed explanation 
-- You can choose from less complex and more widely applicable approaches(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. Banlance the trade-offs between reward and risk based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f} 
-5. Pseudocode: Write down the detailed steps of your chosen statregy in plain pseudocode, highlighting the changes from the original algorithm.
-"""
-        elif task == GenerationTask.OPTIMIZE_PERFORMANCE_FROM_ERROR:
-            instruction += """1. Analyze the feedback and identify the key areas where the algorithm can be improved to enhance its performance.
-2. Review the previous code, identify the key components and the technqiues used. They should include Surrogate Model, Acquisition Function, Initialization Strategy, Sampling Strategy, and other relevant techniques.
-3. Based on above analysis, propose your best techniques in Bayesian Optimization to address the challenges of the problem. The options should be state-of-the-art and specific to the problem.
-4. Offer at least three strategies to design a Bayesian Optimization algorithm. Justify your choices.
-5. Consider the potential improvements and the corresponding workload required to implement them.Make a smart choice on the final algorithm design and provide a detailed explanation 
-- You can choose from less complex and more widely applicable approaches(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. Banlance the trade-offs between reward and risk based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f} 
-6. Pseudocode: Write down the detailed steps of your chosen statregy in plain pseudocode, highlighting the changes from the original algorithm.
-"""
-        return instruction
 
     def task_instruction(self, task:GenerationTask, extra:str="") -> str:
         desc = """## Task Instruction\n"""
@@ -261,7 +461,7 @@ Code:
             desc += self.task_instruction_for_mathematician(task)
             desc += self.task_instruction_for_scientist(task, self.aggressiveness)
             desc += self.task_instruction_for_programmer(task, self.use_botorch)
-        elif task == GenerationTask.FIX_ERRORS:
+        elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
             # desc += "You need to act as computer scientist and programmer independently.\n"
             # desc += self.task_instruction_for_scientist(task)
             desc += self.task_instruction_for_programmer(task)
@@ -273,14 +473,159 @@ Code:
         desc += extra
         return desc
 
+    def task_instruction_for_mathematician(self, task:GenerationTask) -> str:
+        instruction = """\n**as a mathematician specialized in optimization**
+"""
+        if task == GenerationTask.INITIALIZE_SOLUTION: 
+            instruction += """- Identify the key characteristics of the problems relevant to optimization, not limited to its multi-modality, separability, and the location of its global minimum.
+- Analyze the problem, focusing on the challenges posed by the problems for optimization algorithms. Consider aspects should be included but not limited to local optima, ruggedness, and the search space dimensionality.
+"""
+        elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
+            instruction += ""
+        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
+            instruction += """- Review the provided problem analysis.
+- Correct the wrong conclusions if exist.
+- Suplement the analysis with additional insights if necessary.
+- Output the final problem analysis.
+"""
+        return instruction
+
+    def task_instruction_for_programmer(self, task:GenerationTask, use_botorch:bool=False) -> str:
+        instruction = """\n**as a programmer specialized in python and libraries such as GPy, gpytorch etc..**\n"""
+        lib_instruction = "- You are allowed to use numpy, scipy, scikit-learn, GPy, torch, gpytorch."
+        if use_botorch:
+            instruction = "\n**as a programmer specialized in python and libraries such as GPy, gpytorch, botorch etc.**\n"
+            lib_instruction = "- You are allowed to use numpy, scipy, scikit-learn, GPy, torch, gpytorch, botorch.\n"
+        lib_instruction += "\n- Do not use any other libraries unless they are necessary and cannot be replaced by the above libraries."
+        lib_instruction += "\n- Code Implementation only contain the algorithm class. No usage examples"
+        doc_string_instruction = "- Add docstrings only to the class, not not the function. The docstring of the class should include all the necessary techniques used in the algorithm and the parameters they use."
+
+        if task == GenerationTask.INITIALIZE_SOLUTION:
+            instruction += f"""- Name the algorithm using a descriptive name that reflects the chosen components, potentially highlighting the novel aspect of the algorithm.
+{doc_string_instruction}
+- Implement the algorithm in Python strictly following the provided code structure guide. Ensure that the implementation aligns with the pseudocode developed in the previous step, paying particular attention to the implementation of any novel methods.
+{lib_instruction}
+"""
+        elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
+            previous_instruction = "\n- The errors come from previous error fixing. So Review the previous Problem Analysis and previous Proposed Solutions, and identify how they could have contributed to the errors." if task == GenerationTask.FIX_ERRORS_FROM_ERROR else ""
+
+            instruction += f"""- Identify the cause of the previous errors.{previous_instruction}
+- Review all the code for potential errors. Here, only make most confident guesses.
+- Propose solutions for the identified errors, ensuring that the proposed modifications align with the original algorithm's design and intent.
+{doc_string_instruction}
+- Correct the errors based on the identified causes and proposed solutions
+{lib_instruction}
+- Keep the algorithm class structure intact and only modify the necessary parts to fix the errors.
+- Do not change the name. 
+"""
+        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
+            instruction += f"""- Implement the algorithm in Python strictly following the previous code structure. Ensure that the implementation aligns with the pseudocode developed in the previous step, paying particular attention to the modification.
+{doc_string_instruction}
+{lib_instruction}
+"""
+        return instruction
+
+    def task_instruction_for_scientist(self, task:GenerationTask, aggressiveness:float = None) -> str:
+        instruction = """\n**as a computer scientist specialized in bayesian optimization**\n"""
+        if task == GenerationTask.INITIALIZE_SOLUTION:
+            # ss_candidates = ", ".join(self.initialization_strategies())
+            # sm_candidates = ", ".join(self.surrogate_models())
+            # af_candidates = ", ".join(self.acquisition_functions())
+            # bs_candidates = ", ".join(self.other_techniques())
+            if aggressiveness is None:
+                aggressiveness = random.uniform(0.3, 1.0)
+            else:
+                aggressiveness = max(0.1, min(1.0, aggressiveness))
+            instruction += f"""1. Based on the problem analysis, take a brainstorming session to identify the potential techniques with their suitable hyperparameters in Bayesian Optimization that could address the challenges of the problem. Here, **state-of-the-art**, **diversity**, and **innovation** are the key factors to consider for each group. Tag each technique. The groups should include but not limited to:
+- Sampling Strategies
+- Surrogate Models and their corresponding metrics: the options beyond Gaussian Process are encouraged.
+- Acquisition Functions
+- Budget Strategies:The budget will be provided as a hyperparameter. Choose a strategy to balance n_initial_points and n_iterations. The total number of evaluations should not exceed the budget.
+- Other Possible Techniques: Embrace the creativity and imagination.
+2. Consider the options from step 1 and propose at least **three** algorithms. Here, you should just focus on the **diversity** and **performance** of the algorithms.
+3. Review your options from step 2 and design a specific Bayesian Optimization algorithm based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f}. Justify your choices in detail. 
+- You can combine from less complex and more widely applicable techniques(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. 
+- Be aware: AGGRESSIVENESS only affects the choice of techniques, not the implementation as a parameter.
+4. Pseudocode: Write down the key steps of your chosen Bayesian Optimization algorithm in plain pseudocode, highlighting any novel components or adaptations.
+"""
+        elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
+            instruction += """- Identify the cause of the errors in the provided Bayesian Optimization solution.
+- If the errors are related to the algorithm design, propose alternative strategies that could address the identified issues. The proposed strategies should be conceptually similar to the original algorithm but with modifications to fix the errors.
+- If the errors are related to the implementation, leave it to the programmer to correct the code. 
+"""
+        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
+            instruction += f"""1. Analyze the feedback.
+- What does the feedback tell you about the algorithm's performance?
+- What are the key areas for improvement?
+2. Review the previous proprosed techniques, take a brainstorming session about the correctness and comprehensiveness. 
+- Correct them or propose new ones if needed. 
+- Update the proposed strategies 
+- Here, **state-of-the-art**, **diversity**, and **innovation** are the key factors to consider for each group. 
+3. Based on problem analysis, feedback analysis, and potential techniques, identify the potential improvements and propose at least **three** algorithms. 
+- you focus on the **diversity** and **performance** of the algorithms.
+- You could modify the existing techniques by adjusting hyperparameters
+- You could choose different techniques. 
+4. Consider the potential improvements and the corresponding workload required to implement them.Make a smart choice on the final algorithm design based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f}, and provide a detailed explanation 
+- You can combine from less complex and more widely applicable techniques(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. 
+- Be aware: AGGRESSIVENESS only affects the choice of techniques, not the implementation.
+6. Pseudocode: Write down the key changes of your chosen strategy in plain pseudocode. 
+"""
+        return instruction
+
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult) -> str:
+        if eval_res is None:
+            return ""
+        res = eval_res
+        feedback_prompt = "### Feedback\n"
+        if res.optimal_value is not None:
+            feedback_prompt += f"- Optimal Value: {res.optimal_value}\n"
+        feedback_prompt += f"- Budget: {res.budget}\n"
+
+        all_results = [res.result] + res.other_results
+        for result in all_results:
+            feedback_prompt += f"#### {result.name}\n"
+            feedback_prompt += f"- best y: {result.best_y:.2f}\n"
+            if result.n_initial_points > 0:
+                if result.y_best_tuple is not None:
+                    feedback_prompt += f"- initial best y: {result.y_best_tuple[0]:.2f}\n"
+                    feedback_prompt += f"- non-initial best y: {result.y_best_tuple[1]:.2f}\n"
+                feedback_prompt += f"- AOC for non-initial y: {result.non_init_y_aoc:.2f}\n"
+                if result.x_mean_tuple is not None and result.x_std_tuple is not None:
+                    feedback_prompt += f"- mean and std of initial x: {np.array_str(result.x_mean_tuple[0], precision=2)} , {np.array_str(result.x_std_tuple[0], precision=2)}\n"
+                    feedback_prompt += f"- mean and std of non-initial x: {np.array_str(result.x_mean_tuple[1], precision=2)} , {np.array_str(result.x_std_tuple[1], precision=2)}\n"
+                if result.y_mean_tuple is not None and result.y_std_tuple is not None:
+                    feedback_prompt += f"- mean and std of non-initial y: {result.y_mean_tuple[1]:.2f} , {result.y_std_tuple[1]:.2f}\n"
+            else:
+                feedback_prompt += f"- AOC for all y: {result.y_aoc:.2f}\n"
+                if result.x_mean is not None and result.x_std is not None:
+                    feedback_prompt += f"- mean and std of all x: {np.array_str(result.x_mean, precision=2)} , {np.array_str(result.x_std, precision=2)}\n"
+                    feedback_prompt += f"- mean and std of all y: {result.y_mean:.2f} , {result.y_std:.2f}\n"
+
+            if result.surrogate_model_losses is not None:
+                feedback_prompt += f"- mean and std {result.model_loss_name} of suragate model: {np.mean(result.surrogate_model_losses):.2f} , {np.std(result.surrogate_model_losses):.2f}\n"
+
+            # feedback_prompt += f"Execution Time: {result.execution_time:.4f}\n"
+        bounds_prompt = f"bounded by {np.array_str(eval_res.bounds, precision=2)}" if eval_res.bounds is not None else ""
+        # bounds_prompt = ""
+        feedback_prompt += f"""#### Note:
+- AOC(Area Over the Convergence Curve): a measure of the convergence speed of the algorithm, ranged between 0.0 and 1.0. A higher value is better.
+- non-initial x: the x that are sampled during the optimization process, excluding the initial points.
+- Budget: Maximum number of function evaluations allowed for the algorithm.
+- mean and std of x: indicate exploration and exploitation in search space {bounds_prompt}.
+- mean and std of y: indicate the search efficiency. 
+"""
+        return feedback_prompt
+
     def code_structure(self, extra:str="") -> str:
-# {"from botorch.fit import fit_gpytorch_mll //If you are using BoTorch, otherwise remove this line" if self.use_botorch else ""}
+        # botorch_import = "from botorch.fit import fit_gpytorch_mll //If you are using BoTorch, otherwise remove this line" if self.use_botorch else ""
+        prompt_list_tech = """# add the docstring of tech list and their hyperparameters"""
         return f"""## Code Structure Guide
 ```python
 from typing import Callable
 from scipy.stats import qmc # If you are using QMC sampling. Otherwise or you have a better alternative, remove this line.
 import numpy as np
 class <AlgorithmName>:
+    {prompt_list_tech}
     def __init__(self):
         # Initialize optimizer settings
         # Configure acquisition function
@@ -302,7 +647,7 @@ class <AlgorithmName>:
     
     def optimize(self, objective_fn:Callable[[np.ndarray], np.ndarray], bounds:np.ndarray, budget:int) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, str], int]:
         # Main minimize optimization loop
-        # objective_fn: Callable[[np.ndarray], np.ndarray], takes array of shape (n_points, n_dims) and returns array of shape (n_points, 1)
+        # objective_fn: Callable[[np.ndarray], np.ndarray], takes array of shape (n_points, n_dims) and returns array of shape (n_points, 1).
         # bounds has shape (2,<dimemsion>), bounds[0]: lower bound, bounds[1]: upper bound
         # Do not change the function signature
         # Evaluate the model using the metric you choose and record the value as model_loss after each training. the size of the model_loss should be equal to the number of iterations plus one for the fit on initial points.
@@ -312,40 +657,10 @@ class <AlgorithmName>:
         pass
 
     ## You are free to add additional methods as needed and modify the existing ones except for the optimize method and __init__ method.
-    ## Rename the class based on the characteristics of the algorithm as '<any_name>BO'
+    ## Rename the class based on the characteristics of the algorithm as '<anyName>BO'
     {extra}
 ```
 """
-
-    def get_return_checker(self) -> Callable:
-        class BOPromptGeneratorReturnChecker:
-            def __call__(self, func_return: tuple) -> str:
-                # check if the return is correct
-                if not isinstance(func_return, tuple) or len(func_return) != 4:
-                    return "The return value should be a tuple of four elements."
-                else:
-                    err_str = ""
-                    all_y = func_return[0]
-                    if not isinstance(all_y, np.ndarray):
-                        err_str += "The first element of the return value should be a numpy array."
-
-                    all_x = func_return[1]
-                    if not isinstance(all_x, np.ndarray):
-                        err_str += "The second element of the return value should be a numpy array."
-
-                    loss_tuple = func_return[2]
-                    if not isinstance(loss_tuple, tuple) or len(loss_tuple) != 2:
-                        err_str += "The third element of the return value should be a tuple of two elements."
-                    # else:
-                    #     model_losses = loss_tuple[0]
-                    #     if not isinstance(model_losses, np.ndarray):
-                    #         err_str += "The first element of the third element of the return value should be a numpy array."
-                    #     loss_name = loss_tuple[1]
-                    #     if not isinstance(loss_name, str):
-                    #         err_str += "The second element of the third element of the return value should be a string"
-
-                    return err_str
-        return BOPromptGeneratorReturnChecker()
 
     def response_format(self, task:GenerationTask, extra:str="") -> str:
         if task == GenerationTask.INITIALIZE_SOLUTION:
@@ -377,15 +692,19 @@ class <AlgorithmName>:
 ```
 ### /Code
 """
-        elif task == GenerationTask.FIX_ERRORS:
+        elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
+            previous_feedback = "\n### Previous Analysis Feedback\n- feedback analysis\n- contributions to errors\n### /Previous Analysis Feedback\n" if task == GenerationTask.FIX_ERRORS_FROM_ERROR else ""
             return f"""
-## Response Format('### <section_name>' and '### /<section_name>' are used to mark the start and end of each section. Do not remove them.)
+## Response Format('### <section_name>' and '### /<section_name>' are used to mark the start and end of each section. Do not remove them.){previous_feedback}
 ### Identified Errors
 - error and cause
 ### /Identified Errors
+
 ### Proposed Solutions
 ### /Proposed Solutions
+
 {extra}
+
 ### Code
 ```
 <Corrected Code>
@@ -393,15 +712,31 @@ class <AlgorithmName>:
 ### /Code
 """
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
+            # comment_prompt = "\n### Comment\n- correctness and comprehensiveness\n### /Comment\n"
             return f"""
 ## Response Format('### <section_name>' and '### /<section_name>' are used to mark the start and end of each section. Do not remove them.)
-### Description
-- Feedback of Problems Analysis
-- Feedback of Previous Algorithm Design
-- Proposed Strategies
-- Pseudocode
-- Main Changes of the implementation
-### /Description
+
+### Problem Analysis
+### /Problem Analysis
+
+### Feedback Analysis
+### /Feedback Analysis
+
+### Potential Techniques
+### /Potential Techniques
+
+### Improvements
+### /Improvements
+
+### Proposed Strategies
+### /Proposed Strategies
+
+### Final Algorithm Design
+### /Final Algorithm Design
+
+### Pseudocode
+### /Pseudocode
+
 {extra}
 ### Code
 ```
@@ -410,112 +745,32 @@ class <AlgorithmName>:
 ### /Code
 """
 
-class BOResponseExtractor:
-    def __init__(self):
-        self.problem_analysis = ""
-        self.pa_feedback = ""
+#================================================================================================
+# Helper functions
+#================================================================================================
+    def prompt_extract_keywords_from_code(self, code:str) -> str:
+        return f"""Extract and list up to 6 key technical components from the provided Python code implementing a Bayesian optimization algorithm.
+- Focus on the core techniques and mathematical concepts used. 
+- Exclude the general terms like 'BayesianOptimization', 'AcquisitionFunction', 'Minimization', etc.
+- Return keywords only, separated by commas.
 
-        self.potential_techniques= ""
-        self.pt_feedback = ""
+Code:
+```python
+{code}
+```
+"""
 
-        self.proposed_strategies = ""
-        self.ps_feedback = ""
+    def get_response_handler(self):
+        return ZeroBOResponseHandler()
 
-        self.algorithm_design = ""
-        self.ad_feedback = ""
+    def get_return_checker(self) -> BOPromptGeneratorReturnChecker:
+        return BOPromptGeneratorReturnChecker()
 
-        self.pseudocode = ""
+    def update_sharedbrard(self, sharedbrard:ZeroPlusBOPromptSharedboard, handler:ZeroBOResponseHandler):
+        if handler.problem_analysis and len(handler.problem_analysis) > 0:
+            sharedbrard.problem_analysis.append(handler.problem_analysis)
+        if handler.potential_techniques and len(handler.potential_techniques) > 0:
+            sharedbrard.tech_base.append(handler.potential_techniques)
 
-        # For Error Fixing
-        self.error_analysis = ""
-        self.proposed_solutions = ""
-
-        # For Performance Optimization
-
-        self.code = ""
-        self.code_name = ""
-        self.raw_response = ""
-
-    def __to_json__(self):
-        return {
-            "problem_analysis": self.problem_analysis,
-            "potential_techniques": self.potential_techniques,
-            "proposed_strategies": self.proposed_strategies,
-            "algorithm_design": self.algorithm_design,
-            "pseudocode": self.pseudocode,
-            "error_analysis": self.error_analysis,
-            "proposed_solutions": self.proposed_solutions,
-            "code": self.code,
-            "code_name": self.code_name,
-            "raw_response": self.raw_response
-        }
-
-    def extract_response(self, response:str, task:GenerationTask):
-        if not response:
-            return
-        if task == GenerationTask.INITIALIZE_SOLUTION:
-            self.__extract_for_initial_solution(response)
-        elif task == GenerationTask.FIX_ERRORS:
-            self.__extract_for_error_fixing(response)
-        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
-            self.__extract_for_improvement(response)
-
-    def get_description(self, task) -> str:
-        if task == GenerationTask.INITIALIZE_SOLUTION:
-            return f"""\n### Problem Analysis\n{self.problem_analysis}\n### Potential Techniques\n{self.potential_techniques}\n### Proposed Strategies\n{self.proposed_strategies}\n### Final Algorithm Design{self.algorithm_design}\n### Pseudocode{self.pseudocode}"""
-        elif task == GenerationTask.FIX_ERRORS:
-            return f"""\n### Error Analysis\n{self.error_analysis}\n### Proposed Solutions\n{self.proposed_solutions}"""
-        elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
-            return f"""### Code{self.code}"""
-
-    def __extract_for_improvement(self, response:str):
-        pass
-
-    def __extract_for_error_fixing(self, response:str):
-        self.raw_response = response
-        sections = ["Identified Errors", "Proposed Solutions", "Code"]
-        for section in sections:
-            if section == "Identified Errors":
-                self.error_analysis, _ = self.extract_from_response(response, section)
-            elif section == "Proposed Solutions":
-                self.proposed_solutions, _ = self.extract_from_response(response, section)
-            elif section == "Code":
-                self.code, _ = self.extract_from_response(response, section)
-                self.code_name, _ = self.extract_from_response(response, "class_name")
-
-    def __extract_for_initial_solution(self, response:str):
-        self.raw_response = response
-        sections = ["Problem Analysis", "Potential Techniques", "Proposed Strategies", "Final Algorithm Design", "Pseudocode", "Code"]
-        for section in sections:
-            if section == "Code":
-                self.code, _ = self.extract_from_response(response, section)
-                self.code_name, _ = self.extract_from_response(response, "class_name")
-            elif section == "Final Algorithm Design":
-                self.algorithm_design, _ = self.extract_from_response(response, section)
-            elif section == "Pseudocode":
-                self.pseudocode, _ = self.extract_from_response(response, section)
-            elif section == "Proposed Strategies":
-                self.proposed_strategies, _ = self.extract_from_response(response, section)
-            elif section == "Potential Techniques":
-                self.potential_techniques, _ = self.extract_from_response(response, section)
-            elif section == "Problem Analysis":
-                self.problem_analysis, _ = self.extract_from_response(response, section)
-
-    def extract_from_response(self, response: str, section: str, pattern=None) -> tuple[str, str]:
-        error_str = ""
-        res = ""
-        if pattern is None:
-            if section == "class_name":
-                # pattern = r"### Code[\s\S]*?class\s+(\w+BO):"
-                pattern = r"### Code[\s\S]*?class\s+(\w+):"
-            elif section == "Code":
-                pattern = r"### Code[\s\S]*?```\w*\s([\s\S]*?)```[\s\S]*?### /Code"
-            else:
-                pattern = rf"### {section}\s*([\s\S]*?)\s*### /{section}"
-        match = re.search(pattern, response, re.IGNORECASE)
-        if match:
-            res = match.group(1)
-        else:
-            error_str = f"{section} not found in the response."
-        return res, error_str
-                
+    def get_prompt_sharedbrard(self) -> ZeroPlusBOPromptSharedboard:
+        return ZeroPlusBOPromptSharedboard()
