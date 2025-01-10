@@ -180,4 +180,4 @@ ast/*output*
 ast/img*
 ast/graphstats*
 
-logs_temp/
+logs_*/
