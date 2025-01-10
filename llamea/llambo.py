@@ -33,7 +33,7 @@ class LLaMBO:
         if individual is None:
             return None
         return individual.metadata["res_handler"] if "res_handler" in individual.metadata else None
-    
+
     def last_successful_eval_result(self, population:Population, individual:Individual) -> EvaluatorResult:
         last_successful_candidate = population.get_last_successful_parent(individual)
         if last_successful_candidate is not None:
@@ -53,9 +53,9 @@ class LLaMBO:
             else:
                 return GenerationTask.OPTIMIZE_PERFORMANCE
 
-    def merge_evaluator_results(self, individual:Individual, 
-                                res:EvaluatorResult, 
-                                prompt_generator:PromptGenerator, 
+    def merge_evaluator_results(self, individual:Individual,
+                                res:EvaluatorResult,
+                                prompt_generator:PromptGenerator,
                                 other_results:tuple[EvaluatorABBasicResult, EvaluatorABBasicResult]=None):
         individual.fitness = res.result.best_y
         for key, value in res.metadata.items():
@@ -75,7 +75,16 @@ class LLaMBO:
         if res.error is None or res.error == "":
             individual.feedback = prompt_generator.evaluation_feedback_prompt(res, other_results)
 
-    def run_evolutions(self, llm: LLMmanager, evaluator: AbstractEvaluator, prompt_generator: PromptGenerator, population: Population, n_generation: int = 1, ind_logger: IndividualLogger = None, retry: int = 3, verbose: int = 1, sup_results: list[EvaluatorABBasicResult] = None):
+    def run_evolutions(self, llm: LLMmanager,
+                       evaluator: AbstractEvaluator,
+                       prompt_generator: PromptGenerator,
+                       population: Population,
+                       ind_logger: IndividualLogger = None,
+                       sup_results: list[EvaluatorABBasicResult] = None,
+                       n_generation: int = 1,
+                       retry: int = 3,
+                       max_error_in_a_row: int = 3,
+                       verbose: int = 1):
         logging.info("Starting LLaMBO")
         logging.info("Model: %s", llm.model_name())
         logging.info(evaluator.problem_name())
@@ -93,6 +102,7 @@ class LLaMBO:
 
         generation = 0
         n_retry = 0
+        n_eroor_in_a_row = 0
         while generation < n_generation:
             current_task = self.update_current_task(population, current_task)
 
@@ -100,7 +110,7 @@ class LLaMBO:
             candidate = population.select_next_candidate()
             last_res = self.last_successful_eval_result(population, candidate)
             other_results = (last_res, sup_results)
-            
+
             candidate_handler = self.get_handler_from_individual(candidate) if candidate is not None else None
             candidates = [candidate_handler] if candidate_handler is not None else None
             role_setting, prompt = prompt_generator.get_prompt(
@@ -115,7 +125,7 @@ class LLaMBO:
             ]
 
             if verbose > 1:
-                logging.info(prompt) 
+                logging.info(prompt)
             response = llm.chat(session_messages)
             if verbose > 1:
                 logging.info(response)
@@ -166,6 +176,13 @@ class LLaMBO:
 
                 population.add_individual(individual)
 
+                if res.error is not None and res.error != "":
+                    n_eroor_in_a_row += 1
+                    if n_eroor_in_a_row >= max_error_in_a_row:
+                        logging.error("Max error in a row reached %d. Exiting", n_eroor_in_a_row)
+                        break
+                else:
+                    n_eroor_in_a_row = 0
                 generation += 1
                 progress_bar.update(1)
 
