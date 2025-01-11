@@ -9,6 +9,9 @@ from .individual import Individual
 class NoCodeException(Exception):
     """Could not extract generated code."""
 
+class BOOverBudgetException(Exception):
+    """Exceeded the budget for the number of evaluations."""
+
 def handle_timeout(signum, frame):
     raise TimeoutError
 
@@ -210,6 +213,8 @@ class IndividualLogger:
         if os.path.exists(filepath):
             with open(filepath, "rb") as f:
                 logger.individual_map, logger.experiment_map = pickle.load(f)
+        else:
+            raise FileNotFoundError(f"File {filepath} not found")
         return logger
 
     @classmethod

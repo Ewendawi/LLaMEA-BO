@@ -19,6 +19,7 @@ from botorch.test_functions import synthetic
 from botorch.test_functions.synthetic import SyntheticTestFunction, ConstrainedSyntheticTestFunction
 
 from .individual import Individual
+from .utils import BOOverBudgetException
 
 #========================================
 #BoTorch test functions
@@ -364,7 +365,7 @@ class BotorchObjectivexFn:
 
     def __call__(self, x):
         if self.x_hist is not None and self.budget is not None and len(self.x_hist) >= self.budget:
-            raise Exception("OverBudgetException", "The total number of evaluated points exceeds the budget")
+            raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by objective_fn should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the objective_fn to evaluate the points is a alternative option.")
 
         if self.x_hist is None:
             self.x_hist = x

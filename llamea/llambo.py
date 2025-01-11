@@ -34,11 +34,17 @@ class LLaMBO:
             return None
         return individual.metadata["res_handler"] if "res_handler" in individual.metadata else None
 
+    def get_eval_result_from_individual(self, individual:Individual) -> EvaluatorResult:
+        if individual is None:
+            return None
+        if individual.error is not None and individual.error != "":
+            return None
+        return individual.metadata["eval_result"] if "eval_result" in individual.metadata else None
+
     def last_successful_eval_result(self, population:Population, individual:Individual) -> EvaluatorResult:
         last_successful_candidate = population.get_last_successful_parent(individual)
         if last_successful_candidate is not None:
-            if "eval_result" in last_successful_candidate.metadata:
-                return last_successful_candidate.metadata["eval_result"]
+            return self.get_eval_result_from_individual(last_successful_candidate)
         return None
 
     def update_current_task(self, population:Population, previous_task:GenerationTask) -> GenerationTask:
@@ -68,8 +74,9 @@ class LLaMBO:
         individual.error = res.error
         sup_results = other_results[1] if other_results is not None and len(other_results) > 0 else None
         other_res = {}
-        for result in sup_results:
-            other_res[result.name] = result
+        if sup_results is not None:
+            for result in sup_results:
+                other_res[result.name] = result
         individual.add_metadata("other_eval_results", other_res)
 
         if res.error is None or res.error == "":
@@ -172,7 +179,8 @@ class LLaMBO:
                 n_retry = 0
                 res = evaluator.evaluate(code=individual.solution, cls_name=individual.name)
                 response_handler.eval_result = res
-                self.merge_evaluator_results(individual, res, prompt_generator, other_results)
+                next_other_results = (self.get_eval_result_from_individual(candidate), sup_results)
+                self.merge_evaluator_results(individual, res, prompt_generator, next_other_results)
 
                 population.add_individual(individual)
 

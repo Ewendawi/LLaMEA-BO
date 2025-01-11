@@ -401,8 +401,8 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
             task_instruction_prompt = self.task_instruction(task)
             final_prompt += f"{task_instruction_prompt}\n"
 
-            if task == GenerationTask.FIX_ERRORS_FROM_ERROR and candidate.error_analysis and candidate.proposed_solutions:
-                final_prompt = f"""### Previous Error Analysis\n{candidate.error_analysis}\n### Previous Proposed Solutions\n{candidate.proposed_solutions}\n"""
+            # if task == GenerationTask.FIX_ERRORS_FROM_ERROR and candidate.error_analysis and candidate.proposed_solutions:
+            #     final_prompt = f"""### Previous Error Analysis\n{candidate.error_analysis}\n### Previous Proposed Solutions\n{candidate.proposed_solutions}\n"""
             final_prompt += f"### Errors\n```bash\n{candidate.eval_result.error}\n```\n"
             final_prompt += f"### Solution\n```python\n{candidate.code}\n```\n"
 
@@ -465,8 +465,8 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
             desc += self.task_instruction_for_scientist(task, self.aggressiveness)
             desc += self.task_instruction_for_programmer(task, self.use_botorch)
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
-            # desc += "You need to act as computer scientist and programmer independently.\n"
-            # desc += self.task_instruction_for_scientist(task)
+            desc += "You need to act as computer scientist and programmer independently.\n"
+            desc += self.task_instruction_for_scientist(task)
             desc += self.task_instruction_for_programmer(task)
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
             desc += "You need to act as a mathematician, computer scientist, and programmer independently.\n"
@@ -510,13 +510,12 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
 {lib_instruction}
 """
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
-            previous_instruction = "\n- The errors come from previous error fixing. So Review the previous Problem Analysis and previous Proposed Solutions, and identify how they could have contributed to the errors." if task == GenerationTask.FIX_ERRORS_FROM_ERROR else ""
-
-            instruction += f"""- Identify the cause of the previous errors.{previous_instruction}
-- Review all the code for potential errors. Here, only make most confident guesses.
-- Propose solutions for the identified errors, ensuring that the proposed modifications align with the original algorithm's design and intent.
+            instruction += f"""1. Identify the cause of the provided errors.
+2. Review the code for potential errors related to the implementation. Here, only make most confident guesses.
+3. Propose solutions for the identified errors, ensuring that the proposed modifications align with the original algorithm's design and intention.
+4. Decide the errors which need to be fixed. justisfy your choice.
+5. Correct the errors. 
 {doc_string_instruction}
-- Correct the errors based on the identified causes and proposed solutions
 {lib_instruction}
 - Keep the algorithm class structure intact and only modify the necessary parts to fix the errors.
 - Do not change the name. 
@@ -539,38 +538,38 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
                 aggressiveness = random.uniform(0.3, 1.0)
             else:
                 aggressiveness = max(0.1, min(1.0, aggressiveness))
-            instruction += f"""1. Based on the problem analysis, take a brainstorming session to identify the potential techniques with their suitable hyperparameters in Bayesian Optimization that could address the challenges of the problem. Here, **state-of-the-art**, **diversity**, and **innovation** are the key factors to consider for each group. The groups should include but not limited to:
+            instruction += f"""1. Based on the problem analysis, take a brainstorming session to identify the potential techniques in Bayesian Optimization that could address the challenges of the problem. The techniques could be popularly used, state-of-the-art, or innovative but less promising. Make all techniques as diverse as possible. The techniques should include but not limited to:
 - Sampling Strategies
 - Surrogate Models and their corresponding metrics: the options beyond Gaussian Process are encouraged.
 - Acquisition Functions
-- Budget Strategies:The budget will be provided as a hyperparameter. Choose a strategy to balance n_initial_points and n_iterations. The total number of evaluations should not exceed the budget.
+- Budget Strategies: Choose a strategy to balance the number of initial points and the number of  optimization iterations based on the provided budget.
 - Other Possible Techniques: Embrace the creativity and imagination.
 2. Consider the options from step 1 and propose at least **three** algorithms. Here, you should just focus on the **diversity** and **performance** of the algorithms.
 3. Review your options from step 2 and design a specific Bayesian Optimization algorithm based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f}. Justify your choices in detail. 
 - You can combine from less complex and more widely applicable techniques(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. 
 - Be aware: AGGRESSIVENESS only affects the choice of techniques, not the implementation as a parameter.
+- Be careful: the total number of evaluating sample poinst should not to exceed the budget.
 4. Pseudocode: Write down the key steps of your chosen Bayesian Optimization algorithm in plain pseudocode, highlighting any novel components or adaptations.
 """
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
-            instruction += """- Identify the cause of the errors in the provided Bayesian Optimization solution.
-- If the errors are related to the algorithm design, propose alternative strategies that could address the identified issues. The proposed strategies should be conceptually similar to the original algorithm but with modifications to fix the errors.
-- If the errors are related to the implementation, leave it to the programmer to correct the code. 
+            instruction += """1. Identify the cause of the provided errors.
+2. Review the code for potential errors related to algorithm design. Here, only make most confident guesses.
+3. Propose solutions for the identified errors, ensuring that the proposed modifications align with the original algorithm's design and intention. 
+4. Decide the errors which need to be fixed. justisfy your choice.
 """
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
-            instruction += f"""1. Analyze the feedback.
+            instruction += """1. Analyze the feedback.
 - What does the feedback tell you about the algorithm's performance? Compare with other algorithms.
 - What are the key areas for improvement?
-2. Review the previous proposed techniques, take a brainstorming session about the correctness and comprehensiveness. 
-- Correct them or propose new ones if needed. 
-- Update the proposed strategies 
-- Here, **state-of-the-art**, **diversity**, and **innovation** are the key factors to consider for each group. 
-3. Based on problem analysis, feedback analysis, potential techniques and the provided solution, identify the potential improvements and propose at least **three** algorithms. 
-- you focus on the **diversity** and **performance** of the algorithms.
-- You could modify the existing techniques by adjusting hyperparameters
-- You could choose different techniques. 
-4. Consider the potential improvements and the corresponding workload required to implement them.Make a smart choice on the final algorithm design based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f}, and provide a detailed explanation 
-- You can combine from less complex and more widely applicable techniques(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. 
-- Be aware: AGGRESSIVENESS only affects the choice of techniques, not the implementation.
+2. Review the previous proposed techniques, take a brainstorming session about the correctness and comprehensiveness. Focus on **state-of-the-art**, **diversity**, and **innovation** for each group. 
+- Correct them if you find any errors,
+- Propose new ones if you find any missing. 
+- Update the proposed strategies and provide a detailed explanation.
+3. Based on problem analysis, feedback analysis, potential techniques and the provided solution, identify the potential improvements and propose at least **three** algorithms. Here, you focus on the **diversity** and **performance** of the algorithms.
+- You should first consider modifying the existing techniques by adjusting hyperparameters
+- You also could choose different techniques. 
+4. Consider the potential improvements and the corresponding workload required to implement them.Make a smart choice on the final algorithm design and provide a detailed explanation. 
+- Be careful: the total number of evaluating sample poinst should not to exceed the budget.
 6. Pseudocode: Write down the key changes of your chosen strategy in plain pseudocode. 
 """
         return instruction
@@ -711,15 +710,16 @@ class <AlgorithmName>:
 ### /Code
 """
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
-            previous_feedback = "\n### Previous Analysis Feedback\n- feedback analysis\n- contributions to errors\n### /Previous Analysis Feedback\n" if task == GenerationTask.FIX_ERRORS_FROM_ERROR else ""
+            # previous_feedback = "\n### Previous Analysis Feedback\n- feedback analysis\n- contributions to errors\n### /Previous Analysis Feedback\n" if task == GenerationTask.FIX_ERRORS_FROM_ERROR else ""
+            previous_feedback = ""
             return f"""
 ## Response Format('### <section_name>' and '### /<section_name>' are used to mark the start and end of each section. Do not remove them.){previous_feedback}
 ### Identified Errors
-- error and cause
+#### Algorithm design errors
+    - <error>: cause, impact, original intention, solution, confidence level of the correct identification(0-10), should be fixed or not, reason of the choice
+#### Implementation errors
+    - <error>: cause, impact, original intention, solution, confidence level of the correct identification(0-10), should be fixed or not, reason of the choice
 ### /Identified Errors
-
-### Proposed Solutions
-### /Proposed Solutions
 
 {extra}
 
@@ -960,7 +960,7 @@ class ZeroBOPromptGenerator(PromptGenerator):
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
             instruction += f"""- Identify the cause of the previous errors.
 - Review all the code for potential errors. Here, only make most confident guesses.
-- Propose solutions for the identified errors, ensuring that the proposed modifications align with the original algorithm's design and intent.
+- Propose solutions for the identified errors, ensuring that the proposed modifications align with the original algorithm's design and intention.
 {doc_string_instruction}
 - Correct the errors based on the identified causes and proposed solutions
 {lib_instruction}
