@@ -98,7 +98,7 @@ class LLaMBO:
         problem_description = evaluator.problem_prompt()
 
         current_task = None
-        evolved_sharedbrard = prompt_generator.get_prompt_sharedbrard()
+        evolved_sharedbroad = prompt_generator.get_prompt_sharedbroad()
 
         generation = 0
         n_retry = 0
@@ -118,7 +118,7 @@ class LLaMBO:
                 problem_desc=problem_description,
                 candidates=candidates,
                 other_results=other_results,
-                sharedborad=evolved_sharedbrard)
+                sharedborad=evolved_sharedbroad)
             session_messages = [
                 {"role": "system", "content": role_setting},
                 {"role": "user", "content": prompt},
@@ -145,7 +145,7 @@ class LLaMBO:
             # Extract individual from the response
             response_handler = prompt_generator.get_response_handler()
             individual = self.extract_individual(current_task, response, response_handler)
-            prompt_generator.update_sharedbrard(evolved_sharedbrard, response_handler)
+            prompt_generator.update_sharedbroad(evolved_sharedbroad, response_handler)
 
             individual.parent_id = candidate.id if candidate is not None else None
             individual.generation = generation
