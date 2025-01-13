@@ -467,7 +467,7 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
             desc += "You need to act as computer scientist and programmer independently.\n"
             desc += self.task_instruction_for_scientist(task)
-            desc += self.task_instruction_for_programmer(task)
+            desc += self.task_instruction_for_programmer(task, self.use_botorch)
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
             desc += "You need to act as a mathematician, computer scientist, and programmer independently.\n"
             desc += self.task_instruction_for_mathematician(task)
@@ -486,19 +486,17 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
             instruction += ""
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
-            instruction += """- Review the provided problem analysis.
-- Correct the wrong conclusions if exist.
-- Supplement the analysis with additional insights if necessary.
-- Output the final problem analysis.
+            instruction += """- Review the provided problem analysis on correctness and comprehensiveness.
+- Propose your problem analysis. Keep it consice, clear and to the point.
 """
         return instruction
 
     def task_instruction_for_programmer(self, task:GenerationTask, use_botorch:bool=False) -> str:
-        instruction = """\n**as a programmer specialized in python and libraries such as GPy, GPytorch etc..**\n"""
-        lib_instruction = "- You are allowed to use numpy, scipy, scikit-learn, GPy, torch, GPytorch."
+        instruction = """\n**as a programmer specialized in python.**\n"""
+        lib_instruction = "- as a expert of numpy, scipy, scikit-learn, GPy, torch, GPytorch, you are allowed to use these libraries."
         if use_botorch:
-            instruction = "\n**as a programmer specialized in python and libraries such as GPy, GPytorch, botorch etc.**\n"
-            lib_instruction = "- You are allowed to use numpy, scipy, scikit-learn, GPy, torch, GPytorch, botorch.\n"
+            instruction = "\n**as a programmer specialized in python.**\n"
+            lib_instruction = "- as a expert of numpy, scipy, scikit-learn, GPy, torch, GPytorch, Botorch, you are allowed to use these libraries."
         lib_instruction += "\n- Do not use any other libraries unless they are necessary and cannot be replaced by the above libraries."
         lib_instruction += "\n- Code Implementation only contain the algorithm class. No usage examples"
         doc_string_instruction = "- Add docstrings only to the class, not not the function. The docstring of the class should only include all the necessary techniques used in the algorithm and their corresponding parameters."
@@ -514,6 +512,7 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
 2. Review the code for potential errors related to the implementation. Here, only make most confident guesses.
 3. Propose solutions for the identified errors, ensuring that the proposed modifications align with the original algorithm's design and intention.
 4. Decide the errors which need to be fixed. justisfy your choice.
+- The provided errors should be on the top of the list.
 5. Correct the errors. 
 {doc_string_instruction}
 {lib_instruction}
@@ -548,7 +547,7 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
 3. Review your options from step 2 and design a specific Bayesian Optimization algorithm based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f}. Justify your choices in detail. 
 - You can combine from less complex and more widely applicable techniques(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. 
 - Be aware: AGGRESSIVENESS only affects the choice of techniques, not the implementation as a parameter.
-4. Pseudocode: Write down the key steps of your chosen algorithm in plain pseudocode, highlighting any novel components or adaptations.
+4. Pseudocode: Write down the key steps of your chosen algorithm in plain and consise pseudocode, highlighting any novel components or adaptations.
 """
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
             instruction += """1. Identify the cause of the provided errors.
@@ -558,17 +557,16 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
 """
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
             instruction += """1. Analyze the feedback.
-- What does the feedback tell you about the algorithm's performance? Compare with other algorithms.
+- What does the feedback tell you about the algorithm's performance? Compare with the baseline.
 - What are the key areas for improvement?
-2. Review the previous proposed techniques, take a brainstorming session about the correctness and comprehensiveness. Focus on **state-of-the-art**, **diversity**, and **innovation** for each group. 
+2. Review the previous proposed techniques, take a brainstorming session about the correctness and comprehensiveness. The techniques could be popularly used, state-of-the-art, or innovative but less promising. Make all techniques as diverse as possible. 
 - Correct them if you find any errors,
 - Propose new ones if you find any missing. 
-- Update the proposed strategies and provide a detailed explanation.
+- Update the proposed strategies. 
 3. Based on problem analysis, feedback analysis, potential techniques and the provided solution, identify the potential improvements and propose at least **three** algorithms. Here, you focus on the **diversity** and **performance** of the algorithms.
-- You should first consider modifying the existing techniques by adjusting hyperparameters
-- You also could choose different techniques. 
-4. Consider the potential improvements and the corresponding workload required to implement them.Make a smart choice on the final algorithm design and provide a detailed explanation. 
-6. Pseudocode: Write down the key changes of your chosen strategy in plain pseudocode. 
+- Instead of choosing different techniques, you could modify the existing techniques by adjusting hyperparameters
+4. Considering the potential improvements and the corresponding workload required to implement them, decide the final algorithm design and provide a explanation. 
+6. Pseudocode: Write down the key changes of your chosen strategy in plain and concise pseudocode. 
 """
         return instruction
 
@@ -657,21 +655,28 @@ class <AlgorithmName>:
         # Initialize optimizer settings
         # Configure acquisition function
         # Do not add any other arguments without a default value
-        pass
 
-    def _sample_points(self, n_points):
+    def _sample_points(self, n_points) -> np.ndarray:
         # sample points
-        pass
+        # return array of shape (n_points, n_dims)
     
     def _fit_model(self, X, y):
         # Fit and tune surrogate model 
-        pass
+        # return  the model
+
+    def _get_model_mean_loss(self, model, X, y) -> np.float64:
+        # Calculate the mean loss of the model
+        # return the mean loss of the model
     
-    def _acquisition_function(self, X):
+    def _acquisition_function(self, X) -> np.ndarray:
         # Implement acquisition function 
-        # Handle exploration-exploitation trade-off
-        pass
-    
+        # calculate the acquisition function value for each point in X
+        # return array of shape (n_points, 1)
+
+    def _select_next_points(self, batch_size) -> np.ndarray:
+        # Implement the strategy to select the next points to evaluate
+        # return array of shape (batch_size, n_dims)
+
     def optimize(self, objective_fn:Callable[[np.ndarray], np.ndarray], bounds:np.ndarray, budget:int) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, str], int]:
         # Main minimize optimization loop
         # objective_fn: Callable[[np.ndarray], np.ndarray], takes array of shape (n_points, n_dims) and returns array of shape (n_points, 1).
@@ -749,6 +754,7 @@ class <AlgorithmName>:
 ## Response Format('### <section_name>' and '### /<section_name>' are used to mark the start and end of each section. Do not remove them.)
 
 ### Problem Analysis
+- only new problem analysis. No comment about the previous one.
 ### /Problem Analysis
 
 ### Feedback Analysis
@@ -930,7 +936,7 @@ class ZeroBOPromptGenerator(PromptGenerator):
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
             # desc += "You need to act as computer scientist and programmer independently.\n"
             # desc += self.task_instruction_for_scientist(task)
-            desc += self.task_instruction_for_programmer(task)
+            desc += self.task_instruction_for_programmer(task, self.use_botorch)
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
             desc += "You need to act as a computer scientist, and programmer independently.\n"
             desc += self.task_instruction_for_scientist(task)
@@ -956,11 +962,11 @@ class ZeroBOPromptGenerator(PromptGenerator):
         return instruction
 
     def task_instruction_for_programmer(self, task:GenerationTask, use_botorch:bool=False) -> str:
-        instruction = """\n**as a programmer specialized in python and libraries such as GPy, GPytorch etc..**\n"""
-        lib_instruction = "- You are allowed to use numpy, scipy, scikit-learn, GPy, torch, GPytorch."
+        instruction = """\n**as a programmer specialized in python.**\n"""
+        lib_instruction = "- as an expert of numpy, scipy, scikit-learn, GPy, torch, GPytorch, you are allowed to use these libraries.\n"
         if use_botorch:
-            instruction = "\n**as a programmer specialized in python and libraries such as GPy, GPytorch, botorch etc.**\n"
-            lib_instruction = "- You are allowed to use numpy, scipy, scikit-learn, GPy, torch, GPytorch, botorch.\n"
+            instruction = "\n**as a programmer specialized in python.**\n"
+            lib_instruction = "- as an expert of numpy, scipy, scikit-learn, GPy, torch, GPytorch, Botorch, you are allowed to use these libraries.\n"
         lib_instruction += "\n- Do not use any other libraries unless they are necessary and cannot be replaced by the above libraries."
         lib_instruction += "\n- Code Implementation only contain the algorithm class. No usage examples"
         doc_string_instruction = "- Add docstrings only to the class, not not the function. The docstring of the class should only include all the necessary techniques used in the algorithm and their corresponding parameters."
@@ -1018,7 +1024,7 @@ class ZeroBOPromptGenerator(PromptGenerator):
         res_name = None
         last_res_name = None
         if last_feedback is not None:
-            res_name = f"{eval_res.result.name}(After Optimization)" if last_feedback is not None else None
+            res_name = f"{eval_res.name}(After Optimization)" if last_feedback is not None else None
             last_res_name = f"{last_feedback.name}(Before Optimization)" if last_feedback is not None else None
         final_feedback_prompt += self.__get_result_feedback(eval_res, res_name)
         final_feedback_prompt += self.__get_result_feedback(last_feedback, last_res_name)
@@ -1046,20 +1052,27 @@ class <AlgorithmName>:
         # Initialize optimizer settings
         # Configure acquisition function
         # Do not add any other arguments without a default value
-        pass
 
-    def _sample_points(self, n_points):
+    def _sample_points(self, n_points) -> np.ndarray:
         # sample points
-        pass
+        # return array of shape (n_points, n_dims)
     
     def _fit_model(self, X, y):
         # Fit and tune surrogate model 
-        pass
+        # return  the model
+
+    def _get_model_mean_loss(self, model, X, y) -> np.float64:
+        # Calculate the mean loss of the model
+        # return the mean loss of the model
     
-    def _acquisition_function(self, X):
+    def _acquisition_function(self, X) -> np.ndarray:
         # Implement acquisition function 
-        # Handle exploration-exploitation trade-off
-        pass
+        # calculate the acquisition function value for each point in X
+        # return array of shape (n_points, 1)
+
+    def _select_next_points(self, batch_size) -> np.ndarray:
+        # Implement the strategy to select the next points to evaluate
+        # return array of shape (batch_size, n_dims)
     
     def optimize(self, objective_fn:Callable[[np.ndarray], np.ndarray], bounds:np.ndarray, budget:int) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, str], int]:
         # Main minimize optimization loop
