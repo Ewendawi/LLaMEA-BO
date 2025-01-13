@@ -112,10 +112,17 @@ def get_code_snippet(code_str, error_line, context_lines):
     return formatted_code
 
 
-def default_exec(code, cls_name, objective_fn, bounds, budget) -> tuple[any, str, str]:
+def timeout_handler(signum, frame):
+    raise TimeoutError("The evaluation is timeout")
+
+def default_exec(code, cls_name, objective_fn, bounds, budget, time_out:int=None) -> tuple[any, str, str]:
     captured_output = io.StringIO()
     res = None
     err = None
+
+    if time_out is not None:
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(time_out)
 
     try:
         namespace: dict[str, Any] = {}
@@ -129,9 +136,15 @@ def default_exec(code, cls_name, objective_fn, bounds, budget) -> tuple[any, str
                 bo = bo_cls()
                 res = bo.optimize(objective_fn=objective_fn, bounds=bounds, budget=budget)
 
+                if time_out is not None:
+                    signal.alarm(0)
+
     except Exception as e:
-        formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
-        err = e.__class__(formatted_traceback)
+        if isinstance(e, TimeoutError):
+            err = TimeoutError(f"The algorithm is timeout:{time_out} seconds. Consider to optimize the algorithm.")
+        else:
+            formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
+            err = e.__class__(formatted_traceback)
 
     return res, captured_output.getvalue(), err
 
@@ -754,9 +767,6 @@ class IOHEvaluator(AbstractEvaluator):
 
     def evaluate(self, code, cls_name, cls=None) -> EvaluatorResult:
         """Evaluate an individual."""
-        def timeout_handler(signum, frame):
-            raise TimeoutError(f"The evaluation is timeout:{self.time_out} seconds")
-
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
         if code is None:
@@ -774,20 +784,16 @@ class IOHEvaluator(AbstractEvaluator):
             eval_basic_result.budget = self.budget
             eval_basic_result.name = obj_fn.name
             eval_basic_result.bounds = obj_fn.bounds
+
+            err = None
             if cls is not None:
                 cls_instance = cls()
                 captured_output_stream = io.StringIO()
                 with contextlib.redirect_stderr(captured_output_stream), contextlib.redirect_stdout(captured_output_stream):
-                    if self.time_out is not None:
-                        signal.signal(signal.SIGALRM, timeout_handler)
-                        signal.alarm(self.time_out)
                     res = cls_instance.optimize(objective_fn=obj_fn, bounds=obj_fn.bounds, budget=self.budget)
-                    if self.time_out is not None:
-                        signal.alarm(0)
                 captured_output = captured_output_stream.getvalue()
-                err = None
             else:
-                res, captured_output, err = default_exec(code, cls_name, obj_fn, obj_fn.bounds, self.budget)
+                res, captured_output, err = default_exec(code, cls_name, obj_fn, obj_fn.bounds, self.budget, time_out=self.time_out)
 
             # reset the obj_fn
             obj_fn.reset()
