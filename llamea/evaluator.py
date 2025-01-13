@@ -121,9 +121,9 @@ def default_exec(code, cls_name, objective_fn, bounds, budget) -> tuple[any, str
         if cls_name not in namespace:
             err = NameError(f"No '{cls_name}' found in the generated code")
         else:
-            bo_cls = namespace[cls_name]
-            bo = bo_cls()
             with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
+                bo_cls = namespace[cls_name]
+                bo = bo_cls()
                 res = bo.optimize(objective_fn=objective_fn, bounds=bounds, budget=budget)
     except Exception as e:
         formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
@@ -657,14 +657,15 @@ class IOHEvaluator(AbstractEvaluator):
 
         if self.problems is None:
             # https://numbbo.github.io/coco/testsuites/bbob
-            separable_problems = list(range(1, 6))
+            # separable_problems = list(range(1, 6))
             low_conditioning_problems = list(range(6, 10))
             high_conditioning_problems = list(range(10, 15))
             adequate_structure_problems = list(range(15, 20))
             weak_structure_problems = list(range(20, 25))
-            group_problems = [separable_problems, low_conditioning_problems, high_conditioning_problems, adequate_structure_problems, weak_structure_problems]
+            group_problems = [low_conditioning_problems, high_conditioning_problems, adequate_structure_problems, weak_structure_problems]
+
             selected_problems = [random.choice(group) for group in group_problems]
-            self.problems = selected_problems
+            self.problems = random.sample(selected_problems, 2)
         
         obj_fns = []
         # bounds = []
