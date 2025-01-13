@@ -11,7 +11,7 @@ from .individual import Individual, Population
 from .llm import LLMmanager
 from .promptGenerator import PromptGenerator, GenerationTask, ResponseHandler
 from .utils import IndividualLogger
-from .evaluator import EvaluatorResult, AbstractEvaluator, EvaluatorABBasicResult
+from .evaluator import EvaluatorResult, AbstractEvaluator 
 
 class LLaMBO:
     """
@@ -62,22 +62,17 @@ class LLaMBO:
     def merge_evaluator_results(self, individual:Individual,
                                 res:EvaluatorResult,
                                 prompt_generator:PromptGenerator,
-                                other_results:tuple[EvaluatorABBasicResult, EvaluatorABBasicResult]=None):
-        individual.fitness = res.result.best_y
+                                other_results:tuple[EvaluatorResult, list[EvaluatorResult]]=None):
         for key, value in res.metadata.items():
             individual.add_metadata(key, value)
-        individual.add_metadata("optimal_value", res.optimal_value)
         individual.add_metadata("error_type", res.error_type)
-        individual.add_metadata("budget", res.budget)
-        individual.add_metadata("captured_output", res.captured_output)
-        individual.add_metadata("eval_result", res.result)
+        individual.add_metadata("eval_result", res)
         individual.error = res.error
         sup_results = other_results[1] if other_results is not None and len(other_results) > 0 else None
         other_res = {}
         if sup_results is not None:
             for result in sup_results:
                 other_res[result.name] = result
-        individual.add_metadata("other_eval_results", other_res)
 
         if res.error is None or res.error == "":
             individual.feedback = prompt_generator.evaluation_feedback_prompt(res, other_results)
@@ -87,7 +82,7 @@ class LLaMBO:
                        prompt_generator: PromptGenerator,
                        population: Population,
                        ind_logger: IndividualLogger = None,
-                       sup_results: list[EvaluatorABBasicResult] = None,
+                       sup_results: list[EvaluatorResult] = None,
                        n_generation: int = 1,
                        retry: int = 3,
                        max_error_in_a_row: int = 3,
@@ -195,7 +190,6 @@ class LLaMBO:
                 progress_bar.update(1)
 
                 logging.info(individual.feedback)
-                logging.info(res.captured_output)
                 logging.info(individual.error)
 
         if ind_logger is not None and ind_logger.should_log_population:

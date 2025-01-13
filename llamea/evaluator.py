@@ -177,9 +177,17 @@ class ConvergenceCurveAnalyzer:
 # aoc = ConvergenceCurveAnalyzer(min_y=0).calculate_aoc(y)
 # print(aoc)
 
-class EvaluatorABBasicResult:
+class EvaluatorBasicResult:
     def __init__(self):
         self.name = None
+        self.optimal_value = None
+        self.bounds = None
+        self.budget = None
+        self.captured_output = None
+        self.error = None
+        self.error_type = None
+        self.metadata = {}
+        
         self.execution_time = 0
         self.y_hist:np.ndarray = None
         self.x_hist:np.ndarray = None
@@ -222,6 +230,14 @@ class EvaluatorABBasicResult:
     def __to_json__(self):
         d = {}
         d["name"] = self.name
+        d["optimal_value"] = self.optimal_value
+        d["bounds"] = self.bounds.tolist() if self.bounds is not None else None
+        d["budget"] = self.budget
+        d["captured_output"] = self.captured_output
+        d["error"] = self.error
+        d["error_type"] = self.error_type
+        d["metadata"] = self.metadata
+        
         d["execution_time"] = self.execution_time
         d["y_hist"] = self.y_hist.tolist() if self.y_hist is not None else None
         d["x_hist"] = self.x_hist.tolist() if self.x_hist is not None else None
@@ -289,22 +305,6 @@ class EvaluatorABBasicResult:
             aoc = ConvergenceCurveAnalyzer(min_y=optimal_value).calculate_aoc(y_hist)
             self.non_init_y_aoc = aoc
 
-    def __str__(self):
-        return f"{self.name}\nbest_y:{self.best_y:.2f}, aoc:{self.y_aoc:.2f}, time:{self.execution_time:.2f}"
-
-
-class EvaluatorResult:
-    """Result of evaluating an individual."""
-    def __init__(self):
-        self.optimal_value = None
-        self.bounds = None
-        self.budget = None
-        self.captured_output = None
-        self.error = None
-        self.error_type = None
-        self.result:EvaluatorABBasicResult = EvaluatorABBasicResult()
-        self.metadata = {}
-
     def set_capture_output(self, captured_output):
         if captured_output is None or captured_output.strip() == "":
             return
@@ -329,6 +329,29 @@ class EvaluatorResult:
         new_captured_output = "\n".join(new_captured_output_list)
         self.captured_output = new_captured_output
 
+    def __str__(self):
+        return f"{self.name}\nbest_y:{self.best_y:.2f}, aoc:{self.y_aoc:.2f}, time:{self.execution_time:.2f}"
+
+
+class EvaluatorResult:
+    """Result of evaluating an individual."""
+    def __init__(self):
+        self.name = None
+        self.error = None
+        self.error_type = None
+        
+        self.result:list[EvaluatorBasicResult] = []
+        self.metadata = {}
+
+    def __to_json__(self):
+        d = {}
+        d["name"] = self.name
+        d["error"] = self.error
+        d["error_type"] = self.error_type
+        d["metadata"] = self.metadata
+        d["result"] = [r.__to_json__() for r in self.result]
+        return d
+
 
 
 class AbstractEvaluator(ABC):
@@ -352,11 +375,12 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, code, cls_name) -> EvaluatorResult|dict[str, EvaluatorResult]:
+    def evaluate(self, code, cls_name) -> EvaluatorResult:
         pass
 
-    def evaluate_others(self) -> list[EvaluatorABBasicResult|dict[str, EvaluatorABBasicResult]]:
+    def evaluate_others(self) -> list[EvaluatorResult]:
         pass
+
 
 class BotorchObjectivexFn:
     def __init__(self, obj_fn, budget=None):
@@ -444,13 +468,15 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         thread = threading.Thread(target=self.__loading_indicator, args=(message,))
         thread.start()
 
-    def evaluate_others(self) -> list[EvaluatorABBasicResult|dict[str, EvaluatorABBasicResult]]:
+    def evaluate_others(self) -> dict[str, EvaluatorResult]:
         # Random search
         other_results = []
 
+        eval_result = EvaluatorResult()
+        eval_result.name = "Random Search"
+
         random_obj_fn = BotorchObjectivexFn(self.obj_fn)
-        random_search_result = EvaluatorABBasicResult()
-        random_search_result.name = "Random Search"
+        random_search_result = EvaluatorBasicResult()
         start_time = time.perf_counter()
         rs_Y, rs_X = random_search(random_obj_fn, self.bounds, self.budget)
         random_search_result.y_hist = rs_Y.reshape(-1) if len(rs_Y.shape) > 1 else rs_Y
@@ -458,7 +484,10 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         random_search_result.execution_time = time.perf_counter() - start_time
         random_search_result.update_stats()
         random_search_result.update_aoc(self.optimal_value)
-        other_results.append(random_search_result)
+
+        eval_result.result.append(random_search_result)
+        
+        other_results.append(eval_result)
 
         return other_results
 
@@ -466,12 +495,15 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         """Evaluate an individual."""
 
         eval_result = EvaluatorResult()
-        eval_result.budget = self.budget
+        eval_result.name = cls_name
 
         if code is None:
             eval_result.error = "No code generated"
             eval_result.error_type = "NoCodeGenerated"
             return eval_result
+
+        eval_basic_result = EvaluatorBasicResult()
+        eval_basic_result.budget = self.budget
 
         bo_obj_fn = BotorchObjectivexFn(self.obj_fn, budget=self.budget)
         # self.evaluating = True
@@ -488,35 +520,40 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         else:
             res, captured_output, err = default_exec(code, cls_name, bo_obj_fn, self.bounds, self.budget)
         # self.evaluating = False
-        eval_result.result.execution_time = time.perf_counter() - start_time
-        eval_result.set_capture_output(captured_output)
+        eval_basic_result.execution_time = time.perf_counter() - start_time
+        eval_basic_result.set_capture_output(captured_output)
 
         if err is not None:
-            eval_result.error = str(err)
-            eval_result.error_type = err.__class__.__name__
+            eval_basic_result.error = str(err)
+            eval_basic_result.error_type = err.__class__.__name__
+            
 
-        if eval_result.error is None and self.return_checker is not None:
+        if eval_basic_result.error is None and self.return_checker is not None:
             # check the return value
             return_check_str = self.return_checker(res)
             if len(return_check_str) > 0:
-                eval_result.error = return_check_str
-                eval_result.error_type = "ReturnCheckError"
+                eval_basic_result.error = return_check_str
+                eval_basic_result.error_type = "ReturnCheckError"
 
-        if eval_result.error is None:
+        if eval_basic_result.error is None:
             y_hist, x_hist, surrogate_model_losses, n_initial_points = res
 
-            eval_result.result.name = cls_name
-            eval_result.bounds = self.bounds
-            eval_result.optimal_value = self.optimal_value
-            eval_result.result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
-            eval_result.result.x_hist = x_hist
-            eval_result.result.surrogate_model_losses = surrogate_model_losses[0]
-            eval_result.result.model_loss_name = surrogate_model_losses[1]
-            eval_result.result.n_initial_points = n_initial_points
-            eval_result.result.update_stats()
-            eval_result.result.update_aoc(self.optimal_value)
+            eval_basic_result.bounds = self.bounds
+            eval_basic_result.optimal_value = self.optimal_value
+            eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
+            eval_basic_result.x_hist = x_hist
+            eval_basic_result.surrogate_model_losses = surrogate_model_losses[0]
+            eval_basic_result.model_loss_name = surrogate_model_losses[1]
+            eval_basic_result.n_initial_points = n_initial_points
+            eval_basic_result.update_stats()
+            eval_basic_result.update_aoc(self.optimal_value)
+        else:
+            eval_result.error = eval_basic_result.error
+            eval_result.error_type = eval_basic_result.error_type
 
-        return eval_result 
+        eval_result.result.append(eval_basic_result)
+
+        return eval_result
 
 
     @classmethod
@@ -656,7 +693,7 @@ class IOHEvaluator(AbstractEvaluator):
         
         self.obj_fns = obj_fns
 
-        problem_name = "The BBOB test suite:" + ",".join([obj_fn.name for obj_fn in self.obj_fns])
+        problem_name = "bbob_" + "_".join([f"f{problem}" for problem in self.problems])
         self._problem_name = problem_name
 
     def problem_dim(self) -> int:
@@ -674,16 +711,20 @@ class IOHEvaluator(AbstractEvaluator):
             prompt += f"- {obj_fn.name}\n"
         return prompt
 
-    def evaluate_others(self) -> list[EvaluatorABBasicResult|dict[str, EvaluatorABBasicResult]]:
+    def evaluate_others(self) -> list[EvaluatorResult]:
         # Random search
         other_results = []
 
-        random_search_result = {}
+        eval_result = EvaluatorResult()
+        eval_result.name = "Random Search"
         progress_bar = tqdm(total=len(self.obj_fns), desc="Evaluating Random Search")
         for obj_fn in self.obj_fns:
             random_obj_fn = obj_fn
             optimal_value = random_obj_fn.obj_fn.optimum.y
-            rs_result = EvaluatorABBasicResult()
+            rs_result = EvaluatorBasicResult()
+            rs_result.budget = self.budget
+            rs_result.optimal_value = optimal_value
+            rs_result.bounds = obj_fn.bounds
             rs_result.name = obj_fn.name
             start_time = time.perf_counter()
             rs_y, rs_x = random_search(random_obj_fn, obj_fn.bounds, self.budget)
@@ -693,30 +734,34 @@ class IOHEvaluator(AbstractEvaluator):
             rs_result.update_stats()
             rs_result.update_aoc(optimal_value)
 
-            random_search_result[obj_fn.problem_id] = rs_result
+            eval_result.result.append(rs_result)
             progress_bar.update(1)
             obj_fn.reset()
 
-        other_results.append(random_search_result)
+        other_results.append(eval_result)
 
         return other_results
 
-    def evaluate(self, code, cls_name, cls=None) -> dict[str, EvaluatorResult]:
+    def evaluate(self, code, cls_name, cls=None) -> EvaluatorResult:
         """Evaluate an individual."""
-        eval_result = EvaluatorResult()
-        eval_result.budget = self.budget
 
+        eval_result = EvaluatorResult()
+        eval_result.name = cls_name
         if code is None:
             eval_result.error = "No code generated"
             eval_result.error_type = "NoCodeGenerated"
             return eval_result
 
-        results = {}
         progress_bar = tqdm(total=len(self.obj_fns), desc=f"Evaluating {cls_name}")
         progress_bar.update(0)
         for obj_fn in self.obj_fns:
             obj_fn.show_progress_bar = True
             start_time = time.perf_counter()
+
+            eval_basic_result = EvaluatorBasicResult()
+            eval_basic_result.budget = self.budget
+            eval_basic_result.name = obj_fn.name
+            eval_basic_result.bounds = obj_fn.bounds
             if cls is not None:
                 cls_instance = cls()
                 captured_output_stream = io.StringIO()
@@ -730,38 +775,43 @@ class IOHEvaluator(AbstractEvaluator):
             # reset the obj_fn
             obj_fn.reset()
 
-            eval_result.result.execution_time = time.perf_counter() - start_time
-            eval_result.set_capture_output(captured_output)
+            eval_basic_result.execution_time = time.perf_counter() - start_time
+            eval_basic_result.set_capture_output(captured_output)
 
             if err is not None:
-                eval_result.error = str(err)
-                eval_result.error_type = err.__class__.__name__
+                eval_basic_result.error = str(err)
+                eval_basic_result.error_type = err.__class__.__name__
 
-            if eval_result.error is None and self.return_checker is not None:
+            if eval_basic_result.error is None and self.return_checker is not None:
                 # check the return value
                 return_check_str = self.return_checker(res)
                 if len(return_check_str) > 0:
-                    eval_result.error = return_check_str
-                    eval_result.error_type = "ReturnCheckError"
+                    eval_basic_result.error = return_check_str
+                    eval_basic_result.error_type = "ReturnCheckError"
 
-            if eval_result.error is None:
+            if eval_basic_result.error is None:
                 y_hist, x_hist, surrogate_model_losses, n_initial_points = res
 
-                eval_result.result.name = obj_fn.name
-                eval_result.bounds = obj_fn.bounds
-                eval_result.optimal_value = obj_fn.obj_fn.optimum.y
-                eval_result.result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
-                eval_result.result.x_hist = x_hist
-                eval_result.result.surrogate_model_losses = surrogate_model_losses[0]
-                eval_result.result.model_loss_name = surrogate_model_losses[1]
-                eval_result.result.n_initial_points = n_initial_points
-                eval_result.result.update_stats()
-                eval_result.result.update_aoc(obj_fn.obj_fn.optimum.y)
+                eval_basic_result.name = obj_fn.name
+                eval_basic_result.bounds = obj_fn.bounds
+                eval_basic_result.optimal_value = obj_fn.obj_fn.optimum.y
+                eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
+                eval_basic_result.x_hist = x_hist
+                eval_basic_result.surrogate_model_losses = surrogate_model_losses[0]
+                eval_basic_result.model_loss_name = surrogate_model_losses[1]
+                eval_basic_result.n_initial_points = n_initial_points
+                eval_basic_result.update_stats()
+                eval_basic_result.update_aoc(obj_fn.obj_fn.optimum.y)
 
-            results[obj_fn.problem_id] = eval_result
-            progress_bar.update(1)
+                progress_bar.update(1)
+            else:
+                eval_result.error = eval_basic_result.error
+                eval_result.error_type = eval_basic_result.error_type
+                progress_bar.close()
+                break
+            eval_result.result.append(eval_basic_result)
 
-        return results
+        return eval_result
 
         
     @classmethod

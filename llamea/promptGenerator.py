@@ -6,7 +6,7 @@ import random
 from typing import Any
 from collections.abc import Callable
 import numpy as np
-from .evaluator import EvaluatorResult, EvaluatorABBasicResult
+from .evaluator import EvaluatorResult
 
 class GenerationTask(Enum):
     """Enum class for generation tasks."""
@@ -19,7 +19,7 @@ class ResponseHandler(ABC):
     """Abstract base class for response handler."""
 
     def __init__(self):
-        self._eval_result:EvaluatorResult = None
+        self._eval_result:dict[str, EvaluatorResult]= None
 
     @property
     def eval_result(self) -> EvaluatorResult:
@@ -27,7 +27,7 @@ class ResponseHandler(ABC):
 
     @eval_result.setter
     def eval_result(self, value:EvaluatorResult):
-        self._eval_result = value 
+        self._eval_result = value
 
     @abstractmethod
     def extract_response(self, response:str, task:GenerationTask) -> None:
@@ -63,13 +63,13 @@ class PromptGenerator(ABC):
 
     @abstractmethod
     def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, 
-                                   other_results:tuple[EvaluatorABBasicResult,list[EvaluatorABBasicResult]]= None) -> str:
+                                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
         pass
 
     @abstractmethod
     def get_prompt(self, task:GenerationTask, problem_desc:str,
                    candidates:list[ResponseHandler]= None,
-                   other_results:tuple[EvaluatorABBasicResult,list[EvaluatorABBasicResult]]= None,
+                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
                    sharedborad=None) -> tuple[str, str]:
         pass
 
@@ -235,8 +235,8 @@ class ZeroPlusBOResponseHandler(ResponseHandler):
         res = ""
         if pattern is None:
             if section == "class_name":
-                # pattern = r"### Code[\s\S]*?class\s+(\w+BO):"
-                pattern = r"### Code[\s\S]*?class\s+(\w+):"
+                pattern = r"### Code[\s\S]*?class\s+(\w+BO):"
+                # pattern = r"### Code[\s\S]*?class\s+(\w+):"
             elif section == "Code":
                 pattern = r"### Code[\s\S]*?```\w*\s([\s\S]*?)```[\s\S]*?### /Code"
             else:
@@ -368,7 +368,7 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
 
     def get_prompt(self, task:GenerationTask, problem_desc:str, 
                    candidates:list[ZeroPlusBOResponseHandler]= None,
-                   other_results:tuple[EvaluatorABBasicResult,list[EvaluatorABBasicResult]]= None,
+                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
                    sharedborad:ZeroPlusBOPromptSharedboard=None) -> tuple[str, str]:
         if task == GenerationTask.INITIALIZE_SOLUTION:
             final_prompt = ""
@@ -542,14 +542,13 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
 - Sampling Strategies
 - Surrogate Models and their corresponding metrics: the options beyond Gaussian Process are encouraged.
 - Acquisition Functions
-- Budget Strategies: Choose a strategy to balance the number of initial points and the number of  optimization iterations based on the provided budget.
+- Initailization Strategies: Choose a strategy to balance the number of initial points and the number of optimization iterations based on the provided budget.
 - Other Possible Techniques: Embrace the creativity and imagination.
 2. Consider the options from step 1 and propose at least **three** algorithms. Here, you should just focus on the **diversity** and **performance** of the algorithms.
 3. Review your options from step 2 and design a specific Bayesian Optimization algorithm based on AGGRESSIVENESS (0.0-1.0):{aggressiveness:.2f}. Justify your choices in detail. 
 - You can combine from less complex and more widely applicable techniques(low aggressiveness), or more advanced and specialized techniques(high aggressiveness) tailored to the specific challenges of the problem. 
 - Be aware: AGGRESSIVENESS only affects the choice of techniques, not the implementation as a parameter.
-- Be careful: the total number of evaluating sample poinst should not to exceed the budget.
-4. Pseudocode: Write down the key steps of your chosen Bayesian Optimization algorithm in plain pseudocode, highlighting any novel components or adaptations.
+4. Pseudocode: Write down the key steps of your chosen algorithm in plain pseudocode, highlighting any novel components or adaptations.
 """
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:
             instruction += """1. Identify the cause of the provided errors.
@@ -569,65 +568,76 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
 - You should first consider modifying the existing techniques by adjusting hyperparameters
 - You also could choose different techniques. 
 4. Consider the potential improvements and the corresponding workload required to implement them.Make a smart choice on the final algorithm design and provide a detailed explanation. 
-- Be careful: the total number of evaluating sample poinst should not to exceed the budget.
 6. Pseudocode: Write down the key changes of your chosen strategy in plain pseudocode. 
 """
         return instruction
 
-    def __get_result_feedback(self, result:EvaluatorABBasicResult, name=None) -> str:
-        if result is None:
+    def __get_result_feedback(self, eval_result:EvaluatorResult, name=None) -> str:
+        if eval_result is None:
             return ""
-        
-        feedback_prompt = f"#### {result.name if name is None else name}\n"
-        feedback_prompt += f"- best y: {result.best_y:.2f}\n"
-        if result.n_initial_points > 0:
-            if result.y_best_tuple is not None:
-                feedback_prompt += f"- initial best y: {result.y_best_tuple[0]:.2f}\n"
-                feedback_prompt += f"- non-initial best y: {result.y_best_tuple[1]:.2f}\n"
-            feedback_prompt += f"- AOC for non-initial y: {result.non_init_y_aoc:.2f}\n"
-            if result.x_mean_tuple is not None and result.x_std_tuple is not None:
-                feedback_prompt += f"- mean and std of initial x: {np.array_str(result.x_mean_tuple[0], precision=2)} , {np.array_str(result.x_std_tuple[0], precision=2)}\n"
-                feedback_prompt += f"- mean and std of non-initial x: {np.array_str(result.x_mean_tuple[1], precision=2)} , {np.array_str(result.x_std_tuple[1], precision=2)}\n"
-            if result.y_mean_tuple is not None and result.y_std_tuple is not None:
-                feedback_prompt += f"- mean and std of non-initial y: {result.y_mean_tuple[1]:.2f} , {result.y_std_tuple[1]:.2f}\n"
-        else:
-            feedback_prompt += f"- AOC for all y: {result.y_aoc:.2f}\n"
-            if result.x_mean is not None and result.x_std is not None:
-                feedback_prompt += f"- mean and std of all x: {np.array_str(result.x_mean, precision=2)} , {np.array_str(result.x_std, precision=2)}\n"
-                feedback_prompt += f"- mean and std of all y: {result.y_mean:.2f} , {result.y_std:.2f}\n"
 
-        if result.surrogate_model_losses is not None:
-            feedback_prompt += f"- mean and std {result.model_loss_name} of surrogate model: {np.mean(result.surrogate_model_losses):.2f} , {np.std(result.surrogate_model_losses):.2f}\n"
+        feedback_prompt = f"#### {eval_result.name if name is None else name}\n"
+
+        for result in eval_result.result:
+            if result.name is not None:
+                feedback_prompt += f"##### {result.name}\n"
+
+            feedback_prompt += f"- best y: {result.best_y:.2f}\n"
+            if result.n_initial_points > 0:
+                if result.y_best_tuple is not None:
+                    feedback_prompt += f"- initial best y: {result.y_best_tuple[0]:.2f}\n"
+                    feedback_prompt += f"- non-initial best y: {result.y_best_tuple[1]:.2f}\n"
+                feedback_prompt += f"- AOC for non-initial y: {result.non_init_y_aoc:.2f}\n"
+                if result.x_mean_tuple is not None and result.x_std_tuple is not None:
+                    feedback_prompt += f"- mean and std of initial x: {np.array_str(result.x_mean_tuple[0], precision=2)} , {np.array_str(result.x_std_tuple[0], precision=2)}\n"
+                    feedback_prompt += f"- mean and std of non-initial x: {np.array_str(result.x_mean_tuple[1], precision=2)} , {np.array_str(result.x_std_tuple[1], precision=2)}\n"
+                if result.y_mean_tuple is not None and result.y_std_tuple is not None:
+                    feedback_prompt += f"- mean and std of non-initial y: {result.y_mean_tuple[1]:.2f} , {result.y_std_tuple[1]:.2f}\n"
+            else:
+                feedback_prompt += f"- AOC for all y: {result.y_aoc:.2f}\n"
+                if result.x_mean is not None and result.x_std is not None:
+                    feedback_prompt += f"- mean and std of all x: {np.array_str(result.x_mean, precision=2)} , {np.array_str(result.x_std, precision=2)}\n"
+                    feedback_prompt += f"- mean and std of all y: {result.y_mean:.2f} , {result.y_std:.2f}\n"
+
+            if result.surrogate_model_losses is not None:
+                feedback_prompt += f"- mean and std {result.model_loss_name} of surrogate model: {np.mean(result.surrogate_model_losses):.2f} , {np.std(result.surrogate_model_losses):.2f}\n"
         # feedback_prompt += f"Execution Time: {result.execution_time:.4f}\n"
 
         return feedback_prompt
 
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:list[EvaluatorABBasicResult]= None) -> str:
-        if eval_res is None:
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+        if eval_res is None or len(eval_res.result) == 0:
             return ""
-        res = eval_res
         final_feedback_prompt = "### Feedback\n"
-        if res.optimal_value is not None:
-            final_feedback_prompt += f"- Optimal Value: {res.optimal_value}\n"
-        final_feedback_prompt += f"- Budget: {res.budget}\n"
+        final_feedback_prompt += f"- Budget: {eval_res.result[0].budget}\n"
+        if len(eval_res.result) == 1:
+            if eval_res.result[0].optimal_value is not None:
+                final_feedback_prompt += f"- Optimal Value: {eval_res.result[0].optimal_value}\n"
+        else:
+            final_feedback_prompt += "- Optimal Value\n"
+            for result in eval_res.result: 
+                if result.optimal_value is not None:
+                    final_feedback_prompt += f"- {result.name}: {result.optimal_value}\n"
 
         last_feedback, other_res = other_results
         res_name = None
         last_res_name = None
         if last_feedback is not None:
-            res_name = f"{eval_res.result.name}(After Optimization)" if last_feedback is not None else None
+            res_name = f"{eval_res.name}(After Optimization)" if last_feedback is not None else None
             last_res_name = f"{last_feedback.name}(Before Optimization)" if last_feedback is not None else None
-        final_feedback_prompt += self.__get_result_feedback(eval_res.result, res_name)
+        final_feedback_prompt += self.__get_result_feedback(eval_res, res_name)
         final_feedback_prompt += self.__get_result_feedback(last_feedback, last_res_name)
-        for other in other_res:
-            final_feedback_prompt += self.__get_result_feedback(other, f"{other.name}(Baseline)")
 
-        bounds_prompt = f"bounded by {np.array_str(eval_res.bounds, precision=2)}" if eval_res.bounds is not None else ""
+        if other_res is not None:
+            for other in other_res:
+                final_feedback_prompt += self.__get_result_feedback(other, f"{other.name}(Baseline)")
+
+        bounds_prompt = f"bounded by {np.array_str(eval_res.result[0].bounds, precision=2)}" if eval_res.result[0].bounds is not None else ""
         # bounds_prompt = ""
         final_feedback_prompt += f"""#### Note:
 - AOC(Area Over the Convergence Curve): a measure of the convergence speed of the algorithm, ranged between 0.0 and 1.0. A higher value is better.
 - non-initial x: the x that are sampled during the optimization process, excluding the initial points.
-- Budget: Maximum number of function evaluations allowed for the algorithm.
+- Budget: The maximum number(during the whole process) of the sample points which evaluated by objective_fn.
 - mean and std of x: indicate exploration and exploitation in search space {bounds_prompt}.
 - mean and std of y: indicate the search efficiency. 
 """
@@ -669,9 +679,13 @@ class <AlgorithmName>:
         # Do not change the function signature
         # Evaluate the model using the metric you choose and record the value as model_loss after each training. the size of the model_loss should be equal to the number of iterations plus one for the fit on initial points.
         # Return a tuple (all_y, all_x, (model_losses, loss_name), n_initial_points)
-        self.n_initial_points = <your_strategy>
-        self.n_iterations = budget - self.n_initial_points
-        pass
+        
+        n_initial_points = <your_strategy>
+        rest_of_budget = budget - n_initial_points
+        while rest_of_budget > 0:
+           # Optimization
+           
+           rest_of_budget -= <the number of points evaluated by objective_fn in this iteration, e.g. x.shape[0] if x is an array>
 
     ## You are free to add additional methods as needed and modify the existing ones except for the optimize method and __init__ method.
     ## Rename the class based on the characteristics of the algorithm as '<anyName>BO'
@@ -837,8 +851,8 @@ class ZeroBOResponseHandler(ResponseHandler):
         res = ""
         if pattern is None:
             if section == "class_name":
-                # pattern = r"### Code[\s\S]*?class\s+(\w+BO):"
-                pattern = r"### Code[\s\S]*?class\s+(\w+):"
+                pattern = r"### Code[\s\S]*?class\s+(\w+BO):"
+                # pattern = r"### Code[\s\S]*?class\s+(\w+):"
             elif section == "Code":
                 pattern = r"### Code[\s\S]*?```\w*\s([\s\S]*?)```[\s\S]*?### /Code"
             else:
@@ -858,7 +872,7 @@ class ZeroBOPromptGenerator(PromptGenerator):
 # prompt generation
     def get_prompt(self, task:GenerationTask, problem_desc:str, 
                    candidates:list[ZeroBOResponseHandler]= None,
-                   other_results:tuple[EvaluatorABBasicResult,list[EvaluatorABBasicResult]]= None,
+                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
                    sharedborad:ZeroPlusBOPromptSharedboard=None) -> tuple[str, str]:
 
         if task != GenerationTask.INITIALIZE_SOLUTION:
@@ -974,23 +988,31 @@ class ZeroBOPromptGenerator(PromptGenerator):
 """
         return instruction
 
-    def __get_result_feedback(self, result:EvaluatorABBasicResult, name=None) -> str:
-        if result is None:
+    def __get_result_feedback(self, result:EvaluatorResult, name=None) -> str:
+        if result is None or len(result.result) == 0:
             return ""
         feedback_prompt = f"#### {result.name if name is None else name}\n"
-        feedback_prompt += f"- best y: {result.best_y:.2f}\n"
-        feedback_prompt += f"- AOC for all y: {result.y_aoc:.2f}\n"
+        for res in result.result:
+            if res.name is not None:
+                feedback_prompt += f"##### {res.name}\n"
+            feedback_prompt += f"- best y: {res.best_y:.2f}\n"
+            feedback_prompt += f"- AOC for all y: {res.y_aoc:.2f}\n"
 
         return feedback_prompt
 
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:list[EvaluatorABBasicResult]= None) -> str:
-        if eval_res is None:
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+        if eval_res is None or len(eval_res.result) == 0:
             return ""
-        res = eval_res
         final_feedback_prompt = "### Feedback\n"
-        if res.optimal_value is not None:
-            final_feedback_prompt += f"- Optimal Value: {res.optimal_value}\n"
-        final_feedback_prompt += f"- Budget: {res.budget}\n"
+        final_feedback_prompt += f"- Budget: {eval_res.result[0].budget}\n"
+        if len(eval_res.result) == 1:
+            if eval_res.result[0].optimal_value is not None:
+                final_feedback_prompt += f"- Optimal Value: {eval_res.result[0].optimal_value}\n"
+        else:
+            final_feedback_prompt += "- Optimal Value\n"
+            for result in eval_res.result:
+                if result.optimal_value is not None:
+                    final_feedback_prompt += f"- {result.name}: {result.optimal_value}\n"
 
         last_feedback, other_res = other_results
         res_name = None
@@ -998,10 +1020,11 @@ class ZeroBOPromptGenerator(PromptGenerator):
         if last_feedback is not None:
             res_name = f"{eval_res.result.name}(After Optimization)" if last_feedback is not None else None
             last_res_name = f"{last_feedback.name}(Before Optimization)" if last_feedback is not None else None
-        final_feedback_prompt += self.__get_result_feedback(eval_res.result, res_name)
+        final_feedback_prompt += self.__get_result_feedback(eval_res, res_name)
         final_feedback_prompt += self.__get_result_feedback(last_feedback, last_res_name)
-        for other in other_res:
-            final_feedback_prompt += self.__get_result_feedback(other, f"{other.name}(Baseline)")
+        if other_res is not None:
+            for other in other_res:
+                final_feedback_prompt += self.__get_result_feedback(other, f"{other.name}(Baseline)")
 
         final_feedback_prompt += """#### Note:
 - AOC(Area Over the Convergence Curve): a measure of the convergence speed of the algorithm, ranged between 0.0 and 1.0. A higher value is better.
@@ -1045,9 +1068,13 @@ class <AlgorithmName>:
         # Do not change the function signature
         # Evaluate the model using the metric you choose and record the value as model_loss after each training. the size of the model_loss should be equal to the number of iterations plus one for the fit on initial points.
         # Return a tuple (all_y, all_x, (model_losses, loss_name), n_initial_points)
-        self.n_initial_points = <your_strategy>
-        self.n_iterations = budget - self.n_initial_points
-        pass
+        
+        n_initial_points = <your_strategy>
+        rest_of_budget = budget - n_initial_points
+        while rest_of_budget > 0:
+           # Optimization
+           
+           rest_of_budget -= <the number of points evaluated by objective_fn in this iteration, e.g. x.shape[0] if x is an array>
 
     ## You are free to add additional methods as needed and modify the existing ones except for the optimize method and __init__ method.
     ## Rename the class based on the characteristics of the algorithm as '<anyName>BO'
