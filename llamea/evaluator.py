@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 import contextlib
 import threading
+import signal
 import itertools
 import time
 from abc import ABC, abstractmethod
@@ -110,10 +111,12 @@ def get_code_snippet(code_str, error_line, context_lines):
             formatted_code.append(f"{i:4} | {line}\n")
     return formatted_code
 
+
 def default_exec(code, cls_name, objective_fn, bounds, budget) -> tuple[any, str, str]:
     captured_output = io.StringIO()
     res = None
     err = None
+
     try:
         namespace: dict[str, Any] = {}
         track_exec(code, cls_name, namespace)
@@ -125,6 +128,7 @@ def default_exec(code, cls_name, objective_fn, bounds, budget) -> tuple[any, str
                 bo_cls = namespace[cls_name]
                 bo = bo_cls()
                 res = bo.optimize(objective_fn=objective_fn, bounds=bounds, budget=budget)
+
     except Exception as e:
         formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
         err = e.__class__(formatted_traceback)
@@ -636,10 +640,10 @@ class IOHObjectiveFn:
             if len(x.shape) > 1:
                 progress = x.shape[0]
             self.progress_bar.update(progress)
-        return np.array(y)
+        return np.array(y).reshape(-1,1)
 
 class IOHEvaluator(AbstractEvaluator):
-    def __init__(self, dim:int = 5, budget:int = 40, problems:list[int]= None):
+    def __init__(self, dim:int = 5, budget:int = 40, problems:list[int]= None, time_out:int=None):
         super().__init__()
         feasible_dim = [2, 3, 5, 10, 20, 40]
         if dim not in feasible_dim:
@@ -654,6 +658,11 @@ class IOHEvaluator(AbstractEvaluator):
         
         self.dim = dim
         self.budget = budget
+
+        if time_out is not None:
+            self.time_out = time_out
+        else:
+            self.time_out = budget * dim // 2
 
         if self.problems is None:
             # https://numbbo.github.io/coco/testsuites/bbob
@@ -745,6 +754,8 @@ class IOHEvaluator(AbstractEvaluator):
 
     def evaluate(self, code, cls_name, cls=None) -> EvaluatorResult:
         """Evaluate an individual."""
+        def timeout_handler(signum, frame):
+            raise TimeoutError(f"The evaluation is timeout:{self.time_out} seconds")
 
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
@@ -767,7 +778,12 @@ class IOHEvaluator(AbstractEvaluator):
                 cls_instance = cls()
                 captured_output_stream = io.StringIO()
                 with contextlib.redirect_stderr(captured_output_stream), contextlib.redirect_stdout(captured_output_stream):
+                    if self.time_out is not None:
+                        signal.signal(signal.SIGALRM, timeout_handler)
+                        signal.alarm(self.time_out)
                     res = cls_instance.optimize(objective_fn=obj_fn, bounds=obj_fn.bounds, budget=self.budget)
+                    if self.time_out is not None:
+                        signal.alarm(0)
                 captured_output = captured_output_stream.getvalue()
                 err = None
             else:

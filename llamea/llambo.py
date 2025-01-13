@@ -11,7 +11,7 @@ from .individual import Individual, Population
 from .llm import LLMmanager
 from .promptGenerator import PromptGenerator, GenerationTask, ResponseHandler
 from .utils import IndividualLogger
-from .evaluator import EvaluatorResult, AbstractEvaluator 
+from .evaluator import EvaluatorResult, AbstractEvaluator
 
 class LLaMBO:
     """
@@ -186,11 +186,11 @@ class LLaMBO:
                         break
                 else:
                     n_eroor_in_a_row = 0
-                generation += 1
-                progress_bar.update(1)
 
                 logging.info(individual.feedback)
                 logging.info(individual.error)
+                generation += 1
+                progress_bar.update(1)
 
         if ind_logger is not None and ind_logger.should_log_population:
             ind_ids = []
