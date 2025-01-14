@@ -191,18 +191,30 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
 
     p_logger = IndividualLogger()
+    aggressiveness = None
+    if isinstance(prompt_generator, ZeroPlusBOPromptGenerator):
+        aggressiveness = prompt_generator.aggressiveness
+        p_logger.file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
+    elif isinstance(prompt_generator, ZeroBOPromptGenerator):
+        p_logger.file_name = f"bbob_exp_{model[0]}"
+
     p_logger.should_log_experiment = True
     p_logger.should_log_population = True
     p_logger.auto_save = False
-    p_logger.file_name = f"bbob_exp_{model[0]}"
-    p_logger.dirname = "logs_temp"
+    p_logger.dirname = "logs_bbob"
+
+    budget = 100
+    dim = 5
+    time_out = 60 * budget * dim // 100
 
     progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations")
     for _ in range(n_iterations):
         population = SequencePopulation()
-        evaluator = IOHEvaluator()
+        evaluator = IOHEvaluator(budget=100, time_out=time_out, dim=dim)
 
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, ind_logger=p_logger, retry=3, verbose=2)
+        other_results = evaluator.evaluate_others()
+
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, ind_logger=p_logger, retry=3, verbose=2, sup_results=other_results)
         progress_bar.update(1)
 
     p_logger.save()
@@ -219,18 +231,18 @@ MODEL = LLMS["llama-3.1-70b-versatile"]
 # MODEL = LLMS["o_gemini-2.0-flash-exp"]
 # MODEL = LLMS['o_llama-3.1-405b-instruct']
 
-AGGRESSIVENESS = 0.2
+AGGRESSIVENESS = [0.3, 0.5, 0.7, 1.0]
 USE_BOTROCH = False
 
 # prompt_generator = ZeroPlusBOPromptGenerator()
-# prompt_generator.aggressiveness = AGGRESSIVENESS
+# prompt_generator.aggressiveness = AGGRESSIVENESS[3]
 # prompt_generator.use_botorch = USE_BOTROCH
 
 prompt_generator = ZeroBOPromptGenerator()
 prompt_generator.use_botorch = USE_BOTROCH
 
-n_interations = 1
-n_generations = 4
+N_INTERATIONS = 5
+N_GENERATIONS = 6
 
 
 # initial solution generation experiment
@@ -238,19 +250,19 @@ n_generations = 4
 
 
 # fix errors experiment
-log_path = """
-logs_temp/bo_exp_p1_o_gemini-2.0-flash-exp_1.0_False
-"""
+# log_path = """
+# logs_temp/bo_exp_p1_o_gemini-2.0-flash-exp_1.0_False
+# """
 # run_bo_exp_fix_errors(model=MODEL, log_path=log_path, prompt_generator=prompt_generator, n_iterations=n_interations, n_generations=n_generations)
 
 # optimize performance experiment
-log_path = """
-logs_temp/bo_exp_p2_o_gemini-2.0-flash-exp
-"""
+# log_path = """
+# logs_temp/bo_exp_p2_o_gemini-2.0-flash-exp
+# """
 # run_bo_exp_optimize_performance(model=MODEL, log_path=log_path, prompt_generator=prompt_generator, n_iterations=n_interations, n_generations=n_generations)
 
 
 # bbob experiment
-run_bbob_exp(MODEL, prompt_generator, n_interations, n_generations)
+run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS)
 
-# IndividualLogger.merge_logs("logs_new").save_reader_format()
+# IndividualLogger.merge_logs("logs_bbob").save_reader_format()
