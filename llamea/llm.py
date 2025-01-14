@@ -87,7 +87,7 @@ OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL")
 
 LLMS = {
     "mixtral-8x7b-32768": ('mixtral-8x7b-32768', GROQ_API_KEY, GROQ_BASE_URL, 2),
-    "llama-3.1-70b-versatile": ('llama-3.1-70b-versatile', GROQ_API_KEY, GROQ_BASE_URL, 10),
+    "llama-3.1-70b-versatile": ('llama-3.1-70b-versatile', GROQ_API_KEY, GROQ_BASE_URL, 6),
     "llama-3.3-70b-versatile": ('llama-3.3-70b-versatile', GROQ_API_KEY, GROQ_BASE_URL, 15),
 
     "gemini-1.5-flash-8b": ('gemini-1.5-flash-8b', GEMINI_API_KEY, GEMINI_BASE_URL, 5),

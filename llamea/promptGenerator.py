@@ -493,10 +493,10 @@ class ZeroPlusBOPromptGenerator(PromptGenerator):
 
     def task_instruction_for_programmer(self, task:GenerationTask, use_botorch:bool=False) -> str:
         instruction = """\n**as a programmer specialized in python.**\n"""
-        lib_instruction = "- as a expert of numpy, scipy, scikit-learn, GPy, torch, GPytorch, you are allowed to use these libraries."
+        lib_instruction = "- as a expert of numpy, scipy, scikit-learn, torch, GPytorch, you are allowed to use these libraries."
         if use_botorch:
             instruction = "\n**as a programmer specialized in python.**\n"
-            lib_instruction = "- as a expert of numpy, scipy, scikit-learn, GPy, torch, GPytorch, Botorch, you are allowed to use these libraries."
+            lib_instruction = "- as a expert of numpy, scipy, scikit-learn, torch, GPytorch, Botorch, you are allowed to use these libraries."
         lib_instruction += "\n- Do not use any other libraries unless they are necessary and cannot be replaced by the above libraries."
         lib_instruction += "\n- Code Implementation only contain the algorithm class. No usage examples"
         doc_string_instruction = "- Add docstrings only to the class, not not the function. The docstring of the class should only include all the necessary techniques used in the algorithm and their corresponding parameters."
@@ -664,9 +664,9 @@ class <AlgorithmName>:
         # Fit and tune surrogate model 
         # return  the model
 
-    def _get_model_mean_loss(self, model, X, y) -> np.float64:
-        # Calculate the mean loss of the model
-        # return the mean loss of the model
+    def _get_model_loss(self, model, X, y) -> np.float64:
+        # Calculate the loss of the model
+        # return the loss of the model
     
     def _acquisition_function(self, X) -> np.ndarray:
         # Implement acquisition function 
@@ -963,10 +963,10 @@ class ZeroBOPromptGenerator(PromptGenerator):
 
     def task_instruction_for_programmer(self, task:GenerationTask, use_botorch:bool=False) -> str:
         instruction = """\n**as a programmer specialized in python.**\n"""
-        lib_instruction = "- as an expert of numpy, scipy, scikit-learn, GPy, torch, GPytorch, you are allowed to use these libraries.\n"
+        lib_instruction = "- as an expert of numpy, scipy, scikit-learn, torch, GPytorch, you are allowed to use these libraries.\n"
         if use_botorch:
             instruction = "\n**as a programmer specialized in python.**\n"
-            lib_instruction = "- as an expert of numpy, scipy, scikit-learn, GPy, torch, GPytorch, Botorch, you are allowed to use these libraries.\n"
+            lib_instruction = "- as an expert of numpy, scipy, scikit-learn, torch, GPytorch, Botorch, you are allowed to use these libraries.\n"
         lib_instruction += "\n- Do not use any other libraries unless they are necessary and cannot be replaced by the above libraries."
         lib_instruction += "\n- Code Implementation only contain the algorithm class. No usage examples"
         doc_string_instruction = "- Add docstrings only to the class, not not the function. The docstring of the class should only include all the necessary techniques used in the algorithm and their corresponding parameters."
@@ -1061,9 +1061,9 @@ class <AlgorithmName>:
         # Fit and tune surrogate model 
         # return  the model
 
-    def _get_model_mean_loss(self, model, X, y) -> np.float64:
-        # Calculate the mean loss of the model
-        # return the mean loss of the model
+    def _get_model_loss(self, model, X, y) -> np.float64:
+        # Calculate the loss of the model
+        # return the loss of the model
     
     def _acquisition_function(self, X) -> np.ndarray:
         # Implement acquisition function 
