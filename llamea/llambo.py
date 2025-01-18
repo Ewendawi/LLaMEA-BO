@@ -4,31 +4,21 @@ algorithms to automatically evaluate (for example metaheuristics evaluated on BB
 """
 import logging
 import time
+import signal
+import concurrent.futures
 import numpy as np
 from tqdm import tqdm
 
 from .individual import Individual, Population
 from .llm import LLMmanager
 from .promptGenerator import PromptGenerator, GenerationTask, ResponseHandler
-from .utils import IndividualLogger
+from .utils import IndividualLogger, NoCodeException
 from .evaluator import EvaluatorResult, AbstractEvaluator
 
 class LLaMBO:
     """
     A class that represents the Language Model powered Bayesian Optimization(LLaMBO).
     """
-    def extract_individual(self, task:GenerationTask, response:str, handler:ResponseHandler,) -> Individual:
-        handler.extract_response(response, task=task)
-
-        individual = Individual(handler.code, handler.code_name, None, None, None, None)
-        individual.add_metadata("res_handler", handler)
-
-        if not handler.code or not handler.code_name:
-            individual.add_metadata("error_type", "ExtractionError")
-            individual.error = f"ExtractionError: {response}"
-
-        return individual
-
     def get_handler_from_individual(self, individual:Individual) -> ResponseHandler:
         if individual is None:
             return None
@@ -47,162 +37,181 @@ class LLaMBO:
             return self.get_eval_result_from_individual(last_successful_candidate)
         return None
 
-    def update_current_task(self, population:Population, previous_task:GenerationTask) -> GenerationTask:
-        if population.get_population_size() == 0:
+    def update_current_task(self, parent:list[Individual] = []) -> GenerationTask:
+        if len(parent) == 0:
             return GenerationTask.INITIALIZE_SOLUTION
-        else:
-            individual = population.select_next_candidate()
-            if individual.error:
-                if previous_task == GenerationTask.FIX_ERRORS or previous_task == GenerationTask.FIX_ERRORS_FROM_ERROR:
-                    return GenerationTask.FIX_ERRORS_FROM_ERROR
+        elif len(parent) == 1:
+            if parent[0].error:
                 return GenerationTask.FIX_ERRORS
             else:
                 return GenerationTask.OPTIMIZE_PERFORMANCE
+        else:
+            return GenerationTask.OPTIMIZE_PERFORMANCE
 
-    def merge_evaluator_results(self, individual:Individual,
-                                res:EvaluatorResult,
-                                prompt_generator:PromptGenerator,
-                                other_results:tuple[EvaluatorResult, list[EvaluatorResult]]=None):
-        for key, value in res.metadata.items():
-            individual.add_metadata(key, value)
-        individual.add_metadata("error_type", res.error_type)
-        individual.add_metadata("eval_result", res)
-        individual.error = res.error
-        sup_results = other_results[1] if other_results is not None and len(other_results) > 0 else None
-        other_res = {}
-        if sup_results is not None:
-            for result in sup_results:
-                other_res[result.name] = result
+    def evalution_func(self,
+                       session_messages:list[dict[str, str]],
+                       llm:LLMmanager,
+                       response_handler:ResponseHandler,
+                       task:GenerationTask,
+                       evaluator:AbstractEvaluator,
+                       n_eval_processes:int=0,
+                       timeout:int=1800,
+                       retry:int=3,
+                       ) -> ResponseHandler:
+        if session_messages is None:
+            return response_handler
+        
+        for i_try in range(retry):
+            response = llm.chat(session_messages)
+            # Retry if no response from the model
+            if response is None or response == "":
+                logging.error("No response from the model.") 
+                logging.error("Retrying: %s/%s", i_try + 1, retry)
+            else:
+                break
 
-        if res.error is None or res.error == "":
-            individual.feedback = prompt_generator.evaluation_feedback_prompt(res, other_results)
+        if response is None or response == "":
+            logging.error("No response from the model. Exiting")
+            err = NoCodeException("No response from the model.")
+            response_handler.error = str(err)
+            response_handler.error_type = err.__class__.__name__
+            return response_handler
+
+        response_handler.extract_response(response, task=task)
+        if not response_handler.code or not response_handler.code_name:
+            err = NoCodeException("ExtractionError: No code extracted from the model.")
+            response_handler.error = str(err)
+            response_handler.error_type = err.__class__.__name__
+            logging.error("No code extracted from the model.")
+            return response_handler
+
+        res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name, max_processes=n_eval_processes, timeout=timeout)
+
+        response_handler.eval_result = res
+
+        return response_handler
 
     def run_evolutions(self, llm: LLMmanager,
                        evaluator: AbstractEvaluator,
                        prompt_generator: PromptGenerator,
                        population: Population,
-                       ind_logger: IndividualLogger = None,
                        sup_results: list[EvaluatorResult] = None,
                        n_generation: int = 1,
-                       retry: int = 3,
-                       max_error_in_a_row: int = 3,
+                       n_retry: int = 3,
+                       n_query_threads: int = 0,
+                       n_eval_processes: int = 0,
+                       max_interval: int = 0,
+                       timeout_per_offspring: int = 1800,
                        verbose: int = 1):
+
         logging.info("Starting LLaMBO")
         logging.info("Model: %s", llm.model_name())
         logging.info(evaluator.problem_name())
 
-        progress_bar = tqdm(total=n_generation)
+        # progress_bar = tqdm(total=n_generation, desc="Generation", position=1, leave=True)
 
         evaluator.return_checker = prompt_generator.get_return_checker()
 
-        population.problem = evaluator.problem_name()
-        population.model = llm.model_name()
         problem_description = evaluator.problem_prompt()
 
-        current_task = None
         evolved_sharedbroad = prompt_generator.get_prompt_sharedbroad()
 
+        last_query_time = 0
         generation = 0
-        n_retry = 0
-        n_eroor_in_a_row = 0
         while generation < n_generation:
-            current_task = self.update_current_task(population, current_task)
+            logging.info("""=====================Generation: %s=====================""", generation)
+            
+            parents = population.get_parents()
+            current_query_time = time.time()
+            if current_query_time - last_query_time < max_interval:
+                logging.info("Sleeping for %s seconds", max_interval - (current_query_time - last_query_time))
+                time.sleep(max_interval - (current_query_time - last_query_time))
+            last_query_time = time.time()
 
-            # Select candidate and get prompt
-            candidate = population.select_next_candidate()
-            last_res = self.last_successful_eval_result(population, candidate)
-            other_results = (last_res, sup_results)
+            next_handlers:list[ResponseHandler] = []
+            params = []
+            for i, parent in enumerate(parents):
+                current_task = self.update_current_task(parent=parent)
 
-            candidate_handler = self.get_handler_from_individual(candidate) if candidate is not None else None
-            candidates = [candidate_handler] if candidate_handler is not None else None
-            role_setting, prompt = prompt_generator.get_prompt(
-                task=current_task,
-                problem_desc=problem_description,
-                candidates=candidates,
-                other_results=other_results,
-                sharedborad=evolved_sharedbroad)
-            session_messages = [
-                {"role": "system", "content": role_setting},
-                {"role": "user", "content": prompt},
-            ]
+                # Get prompt
+                other_results = (None, sup_results)
 
-            if verbose > 1:
-                logging.info(prompt)
-            response = llm.chat(session_messages)
-            if verbose > 1:
-                logging.info(response)
+                parent_handlers = [self.get_handler_from_individual(p) for p in parent if p is not None]
+                role_setting, prompt = prompt_generator.get_prompt(
+                    task=current_task,
+                    problem_desc=problem_description,
+                    candidates=parent_handlers,
+                    other_results=other_results,
+                    sharedborad=evolved_sharedbroad)
+                session_messages = [
+                    {"role": "system", "content": role_setting},
+                    {"role": "user", "content": prompt},
+                ]
+                
+                next_handler = prompt_generator.get_response_handler()
+                kwargs = {
+                    "session_messages": session_messages,
+                    "llm": llm,
+                    "response_handler": next_handler,
+                    "task": current_task,
+                    "evaluator": evaluator,
+                    "n_eval_processes": n_eval_processes,
+                    "timeout": timeout_per_offspring,
+                    "retry": n_retry,
+                }
+                params.append(kwargs)
 
-            # Retry if no response from the model
-            if response is None or response == "":
-                n_retry += 1
-                sleep_time = 5*n_retry
-                logging.error("No response from the model. Sleeping for %s seconds", sleep_time)
-                time.sleep(sleep_time)
-                if n_retry > retry:
-                    logging.error("Max retry limit reached. Exiting")
-                    break
-                logging.info("Retrying: %s", n_retry)
-                continue
+            logging.info("Querying and Evaluating %s individuals", len(params))
 
-            # Extract individual from the response
-            response_handler = prompt_generator.get_response_handler()
-            individual = self.extract_individual(current_task, response, response_handler)
-            prompt_generator.update_sharedbroad(evolved_sharedbroad, response_handler)
-
-            individual.parent_id = candidate.id if candidate is not None else None
-            individual.generation = generation
-            individual.add_metadata("problem", evaluator.problem_name())
-            individual.add_metadata('dimension', evaluator.problem_dim())
-            individual.add_metadata("role_setting", role_setting)
-            individual.add_metadata("prompt", prompt)
-            individual.add_metadata("model", llm.model_name())
-            individual.add_metadata("raw_response", response)
-            tags = individual.metadata["tags"] if "tags" in individual.metadata else []
-            tags.append(f"gen:{generation}")
-            tags.append(f"task:{current_task.name}")
-            tags.append(f"dim:{evaluator.problem_dim()}")
-            individual.add_metadata("tags", tags)
-
-            if individual.error:
-                # Retry if extraction error
-                n_retry += 1
-                logging.error("No sucessful extraction from the model. Retrying")
-                if ind_logger is not None and ind_logger.log_extract_error:
-                    ind_logger.add_individual(individual)
-                continue
+            if n_query_threads > 0:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=n_query_threads) as executor:
+                    futures = {executor.submit(self.evalution_func, **kwargs): kwargs for kwargs in params}
+                    for future in concurrent.futures.as_completed(futures):
+                        handler = future.result()
+                        next_handlers.append(future.result())
             else:
-                n_retry = 0
-                res = evaluator.evaluate(code=individual.solution, cls_name=individual.name)
-                response_handler.eval_result = res
-                next_other_results = (self.get_eval_result_from_individual(candidate), sup_results)
-                self.merge_evaluator_results(individual, res, prompt_generator, next_other_results)
+                for kwargs in params:
+                    next_handler = self.evalution_func(**kwargs)
+                    next_handlers.append(next_handler)
 
-                population.add_individual(individual)
+            for i, handler in enumerate(next_handlers):
+                # prompt_generator.update_sharedbroad(evolved_sharedbroad, handler)
 
-                if res.error is not None and res.error != "":
-                    n_eroor_in_a_row += 1
-                    if n_eroor_in_a_row >= max_error_in_a_row:
-                        logging.error("Max error in a row reached %d. Exiting", n_eroor_in_a_row)
-                        break
+                parent_ids = [p.id for p in parents[i] if p is not None]
+                ind = Individual(solution=handler.code, name=handler.code_name, parent_id=parent_ids, generation=generation)
+                ind.add_metadata("res_handler", handler)
+                if handler.error:
+                    ind.add_metadata("error_type", handler.error_type)
+                    ind.error = str(handler.error)
+                    ind.fitness = -np.Inf
                 else:
-                    n_eroor_in_a_row = 0
+                    next_other_results = (None, sup_results)
+                    ind.fitness = handler.eval_result.score
+                    ind.feedback = prompt_generator.evaluation_feedback_prompt(handler.eval_result, next_other_results)
 
-                logging.info(individual.feedback)
-                logging.info(individual.error)
-                generation += 1
-                progress_bar.update(1)
+                ind.add_metadata("problem", evaluator.problem_name())
+                ind.add_metadata('dimension', evaluator.problem_dim())
+                ind.add_metadata("role_setting", role_setting)
+                ind.add_metadata("prompt", prompt)
+                ind.add_metadata("model", llm.model_name())
+                ind.add_metadata("raw_response", handler.raw_response)
+                tags = ind.metadata["tags"] if "tags" in ind.metadata else []
+                tags.append(f"gen:{generation}")
+                tags.append(f"task:{current_task.name}")
+                tags.append(f"dim:{evaluator.problem_dim()}")
+                ind.add_metadata("tags", tags)
 
-        if ind_logger is not None and ind_logger.should_log_population:
-            ind_ids = []
-            for individual in population.all_individuals():
-                ind_logger.log_individual(individual)
-                ind_ids.append(individual.id)
-            if ind_logger.should_log_experiment:
-                exp_name = population.name
-                if exp_name is None:
-                    exp_name = f"{evaluator.problem_dim()}dim_{evaluator.problem_name()}_{evaluator.eval_bugdet()}_{llm.model_name()}"
-                ind_logger.log_experiment(name=exp_name, id_list=ind_ids)
-            if ind_logger.auto_save:
-                ind_logger.save()
+                if verbose > 1:
+                    logging.info(ind.feedback)
+                    logging.info(ind.error)
 
-        progress_bar.close()
+                population.add_individual(ind, generation)
+
+            population.select_next_generation()
+            if verbose > 0:
+                best_ind = population.get_best_individual(maximize=True)
+                logging.info("Best Individual: %s", best_ind.get_summary())
+            generation += 1
+            # progress_bar.update(1)
+
+        # progress_bar.close()

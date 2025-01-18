@@ -8,9 +8,10 @@ from collections.abc import Callable
 from typing import Any
 import contextlib
 import threading
-import signal
-import itertools
 import time
+import os
+import concurrent.futures
+import itertools
 from abc import ABC, abstractmethod
 import inspect
 from tqdm import tqdm
@@ -20,7 +21,7 @@ from botorch.test_functions import synthetic
 from botorch.test_functions.synthetic import SyntheticTestFunction, ConstrainedSyntheticTestFunction
 
 from .individual import Individual
-from .utils import BOOverBudgetException
+from .utils import BOOverBudgetException 
 
 #========================================
 #BoTorch test functions
@@ -112,42 +113,55 @@ def get_code_snippet(code_str, error_line, context_lines):
     return formatted_code
 
 
-def timeout_handler(signum, frame):
-    raise TimeoutError("The evaluation is timeout")
-
-def default_exec(code, cls_name, objective_fn, bounds, budget, time_out:int=None) -> tuple[any, str, str]:
+def __default_exec(code, cls_name, objective_fn, bounds, budget, cls=None) -> tuple[any, str, str]:
     captured_output = io.StringIO()
     res = None
     err = None
 
-    if time_out is not None:
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(time_out)
+    if cls is not None:
+        # helper for debugging
+        cls_instance = cls()
+        with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
+            res = cls_instance.optimize(objective_fn=objective_fn, bounds=bounds, budget=budget)
+    else:
+        try:
+            namespace: dict[str, Any] = {}
+            track_exec(code, cls_name, namespace)
 
-    try:
-        namespace: dict[str, Any] = {}
-        track_exec(code, cls_name, namespace)
-
-        if cls_name not in namespace:
-            err = NameError(f"No '{cls_name}' found in the generated code")
-        else:
-            with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
-                bo_cls = namespace[cls_name]
-                bo = bo_cls()
-                res = bo.optimize(objective_fn=objective_fn, bounds=bounds, budget=budget)
-
-                if time_out is not None:
-                    signal.alarm(0)
-
-    except Exception as e:
-        if isinstance(e, TimeoutError):
-            err = TimeoutError(f"The algorithm is timeout:{time_out} seconds. Consider to optimize the algorithm.")
-        else:
+            if cls_name not in namespace:
+                err = NameError(f"No '{cls_name}' found in the generated code")
+            else:
+                with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
+                    bo_cls = namespace[cls_name]
+                    bo = bo_cls()
+                    res = bo.optimize(objective_fn=objective_fn, bounds=bounds, budget=budget)
+        except Exception as e:
             formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
             err = e.__class__(formatted_traceback)
 
     return res, captured_output.getvalue(), err
 
+def default_exec(code, cls_name, objective_fn, bounds, budget, time_out:float=None, cls=None) -> tuple[any, str, str]:
+    if time_out is None:
+        return __default_exec(code, cls_name, objective_fn, bounds, budget, cls)
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            params = {
+                "code": code,
+                "cls_name": cls_name,
+                "objective_fn": objective_fn,
+                "bounds": bounds,
+                "budget": budget,
+                "cls": cls,
+            }
+            future = executor.submit(__default_exec, **params)
+            done, not_done = concurrent.futures.wait([future], timeout=time_out)
+            if done:
+                return future.result()
+            if not_done:
+                err = TimeoutError("Evaluation timed out")
+                future.cancel()
+                return None, None, err
 
 #========================================
 #Evaluator
@@ -157,9 +171,11 @@ def default_exec(code, cls_name, objective_fn, bounds, budget, time_out:int=None
 class ConvergenceCurveAnalyzer:
     """Analyzes optimization convergence curves and calculates AOC metric."""
 
-    def __init__(self, max_y=None, min_y=None):
+    def __init__(self, max_y=None, min_y=None, log_scale=False, shift_value=0):
         self.max_y = max_y
         self.min_y = min_y
+        self.log_scale = log_scale
+        self.shift_value = shift_value
 
     def get_convergence_curve(self, y_history):
         """Calculate minimum values seen so far at each step."""
@@ -172,30 +188,36 @@ class ConvergenceCurveAnalyzer:
         if len(y_history) == 0:
             return 0.0
 
-        # Get convergence curve
-        conv_curve = self.get_convergence_curve(y_history)
+        shift_y = y_history - self.shift_value
+        max_y = self.max_y if self.max_y is not None else np.max(y_history)
+        min_y = self.min_y if self.min_y is not None else np.min(y_history)
+        clip_y = np.clip(shift_y, min_y, max_y)
+        conv_curve = self.get_convergence_curve(clip_y)
 
-        local_max_y = np.max(y_history)
-        max_y = self.max_y if self.max_y is not None else local_max_y
-
-        local_min_y = np.min(y_history)
-        min_y = self.min_y if self.min_y is not None else local_min_y
-
-        # Normalize curve between 0 and 1
-        norm_curve = (conv_curve - min_y) / (max_y - min_y)
+        if self.log_scale:
+            log_conv_curve = np.log10(conv_curve)
+            log_max_y = np.log10(max_y)
+            log_min_y = np.log10(min_y)
+            norm_curve = (log_conv_curve - log_min_y) / (log_max_y - log_min_y)
+        else:
+            norm_curve = (conv_curve - min_y) / (max_y - min_y)
 
         # Calculate AOC using trapezoidal rule
         x_vals = np.linspace(0, 1, len(norm_curve))
-        aoc = np.trapz(1 - norm_curve, x_vals)
+        aoc = np.trapz(1-norm_curve, x_vals)
 
         return aoc
 
-# y = np.array([100, 9, 8, 7, 6, 5, 5, 5, 5, 5])
-# aoc = ConvergenceCurveAnalyzer(min_y=0).calculate_aoc(y)
+# y = np.array([100, 79, 81, 71, 65, 15, -5, 45, 5, 5])
+# aoc = ConvergenceCurveAnalyzer(max_y=200, min_y=0, log_scale=False, shift_value=-10).calculate_aoc(y)
 # print(aoc)
+
+# aoc1 = ConvergenceCurveAnalyzer(max_y=1e2, min_y=1e-8, log_scale=True, shift_value=shift_value).calculate_aoc(y)
+# print(aoc1)
 
 class EvaluatorBasicResult:
     def __init__(self):
+        self.id = None
         self.name = None
         self.optimal_value = None
         self.bounds = None
@@ -203,7 +225,6 @@ class EvaluatorBasicResult:
         self.captured_output = None
         self.error = None
         self.error_type = None
-        self.metadata = {}
         
         self.execution_time = 0
         self.y_hist:np.ndarray = None
@@ -235,11 +256,8 @@ class EvaluatorBasicResult:
 
     @property
     def surrogate_model_losses(self):
-        #WARNING: this is a temporary fix
-        if hasattr(self, "_surragate_model_losses"):
-            return self._surragate_model_losses
         return self._surrogate_model_losses
- 
+
     @surrogate_model_losses.setter
     def surrogate_model_losses(self, value):
         self._surrogate_model_losses = value
@@ -253,7 +271,6 @@ class EvaluatorBasicResult:
         d["captured_output"] = self.captured_output
         d["error"] = self.error
         d["error_type"] = self.error_type
-        d["metadata"] = self.metadata
         
         d["execution_time"] = self.execution_time
         d["y_hist"] = self.y_hist.tolist() if self.y_hist is not None else None
@@ -309,24 +326,22 @@ class EvaluatorBasicResult:
             self.x_mean_tuple = (np.mean(self.x_hist[:self.n_initial_points,:], axis=0), np.mean(x_hist, axis=0))
             self.x_std_tuple = (np.std(self.x_hist[:self.n_initial_points,:], axis=0), np.std(x_hist, axis=0))
 
-    def update_aoc(self, optimal_value = None):
+    def update_aoc(self, optimal_value = None, log_scale=False, min_y=None, max_y=None):
         if self.y_hist is None:
             return
 
         y_hist = self.y_hist
-        aoc = ConvergenceCurveAnalyzer(min_y=optimal_value).calculate_aoc(y_hist)
-        self.y_aoc = aoc
+        y_aoc = ConvergenceCurveAnalyzer(max_y=max_y, min_y=min_y, log_scale=log_scale, shift_value=optimal_value).calculate_aoc(y_hist)
+        self.y_aoc = y_aoc
 
         if self.n_initial_points > 0 and len(y_hist) > self.n_initial_points:
             y_hist = self.y_hist[self.n_initial_points:]
-            aoc = ConvergenceCurveAnalyzer(min_y=optimal_value).calculate_aoc(y_hist)
-            self.non_init_y_aoc = aoc
+            non_init_y_aoc = ConvergenceCurveAnalyzer(max_y=max_y, min_y=min_y, log_scale=log_scale, shift_value=optimal_value).calculate_aoc(y_hist)
+            self.non_init_y_aoc = non_init_y_aoc
 
     def set_capture_output(self, captured_output):
         if captured_output is None or captured_output.strip() == "":
             return
-
-        self.metadata["ori_captured_output"] = captured_output
 
         captured_output_list = captured_output.split("\n")
         captured_output_list = [line for line in captured_output_list if line.strip() != ""]
@@ -354,22 +369,21 @@ class EvaluatorResult:
     """Result of evaluating an individual."""
     def __init__(self):
         self.name = None
+        self.score = None
         self.error = None
         self.error_type = None
         
         self.result:list[EvaluatorBasicResult] = []
-        self.metadata = {}
 
     def __to_json__(self):
         d = {}
         d["name"] = self.name
         d["error"] = self.error
         d["error_type"] = self.error_type
-        d["metadata"] = self.metadata
+        if hasattr(self, "score"):
+            d["score"] = self.score
         d["result"] = [r.__to_json__() for r in self.result]
         return d
-
-
 
 class AbstractEvaluator(ABC):
     def __init__(self):
@@ -377,6 +391,10 @@ class AbstractEvaluator(ABC):
 
     @abstractmethod
     def problem_prompt(self) -> str:
+        pass
+
+    @abstractmethod
+    def is_maximization(self) -> bool:
         pass
 
     @abstractmethod
@@ -392,7 +410,7 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, code, cls_name) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_processes:int = 0, timeout:int=None) -> EvaluatorResult:
         pass
 
     def evaluate_others(self) -> list[EvaluatorResult]:
@@ -455,6 +473,9 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         except Exception:
             pass
 
+    def is_maximization(self) -> bool:
+        return False
+
     def problem_dim(self) -> int:
         return self.dim
 
@@ -500,7 +521,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         random_search_result.x_hist = rs_X
         random_search_result.execution_time = time.perf_counter() - start_time
         random_search_result.update_stats()
-        random_search_result.update_aoc(self.optimal_value)
+        random_search_result.update_aoc(optimal_value=self.optimal_value)
 
         eval_result.result.append(random_search_result)
         
@@ -508,7 +529,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
 
         return other_results
 
-    def evaluate(self, code, cls_name, cls=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_processes:int = -1, timeout:int=None) -> EvaluatorResult:
         """Evaluate an individual."""
 
         eval_result = EvaluatorResult()
@@ -535,7 +556,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             captured_output = captured_output_stream.getvalue()
             err = None
         else:
-            res, captured_output, err = default_exec(code, cls_name, bo_obj_fn, self.bounds, self.budget)
+            res, captured_output, err = default_exec(code, cls_name, bo_obj_fn, self.bounds, self.budget, time_out=timeout)
         # self.evaluating = False
         eval_basic_result.execution_time = time.perf_counter() - start_time
         eval_basic_result.set_capture_output(captured_output)
@@ -563,12 +584,13 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             eval_basic_result.model_loss_name = surrogate_model_losses[1]
             eval_basic_result.n_initial_points = n_initial_points
             eval_basic_result.update_stats()
-            eval_basic_result.update_aoc(self.optimal_value)
+            eval_basic_result.update_aoc(optimal_value=self.optimal_value)
         else:
             eval_result.error = eval_basic_result.error
             eval_result.error_type = eval_basic_result.error_type
 
         eval_result.result.append(eval_basic_result)
+        eval_result.score = eval_basic_result.best_y
 
         return eval_result
 
@@ -596,27 +618,33 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
 from ioh import get_problem, logger
 
 class IOHObjectiveFn:
-    def __init__(self, obj_fn, budget=None, name=None, bounds=None, problem_id=None, instance_id=None, dim=None, show_progress_bar=False):
-        self.obj_fn = obj_fn
-        self.budget = budget
-        self.name = name
-        self.bounds = bounds
+    def __init__(self, problem_id, instance_id, exec_id, dim, budget, show_progress_bar=False):
         self.problem_id = problem_id
         self.instance_id = instance_id
+        self.exec_id = exec_id
         self.dim = dim
+        self.budget = budget
 
+        self.obj_fn = get_problem(problem_id, instance_id, dim)
+        self.optimal_value = self.obj_fn.optimum.y
+        self.name = f"F{problem_id}-{self.obj_fn.problems[problem_id]}"
+
+        lb = self.obj_fn.bounds.lb
+        ub = self.obj_fn.bounds.ub
+        p_bounds = np.array([lb, ub])
+        self.bounds = p_bounds
+        
         self.x_hist = None
         self.y_hist = None
+
         self.progress_bar = None
         self.show_progress_bar = show_progress_bar
 
     def reset(self):
-        self.x_hist = None
-        self.y_hist = None
-        
-        self.show_progress_bar = False
-
-        self.obj_fn.reset()
+        self.obj_fn = None
+        if self.progress_bar is not None:
+            self.progress_bar.close()
+            self.progress_bar = None
 
     @property
     def show_progress_bar(self):
@@ -655,29 +683,39 @@ class IOHObjectiveFn:
             self.progress_bar.update(progress)
         return np.array(y).reshape(-1,1)
 
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None) -> EvaluatorBasicResult:
+
+    obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
+        
+    start_time = time.perf_counter()
+
+    res, captured_output, err = default_exec(code, cls_name, obj_fn, obj_fn.bounds, budget, time_out=time_out, cls=cls)
+    exec_time = time.perf_counter() - start_time
+
+    # unset the unpicklable object
+    obj_fn.reset()
+
+    return res, captured_output, err, exec_time, obj_fn
+    
+
 class IOHEvaluator(AbstractEvaluator):
-    def __init__(self, dim:int = 5, budget:int = 40, problems:list[int]= None, time_out:int=None):
+    def __init__(self, dim:int = 5, budget:int = 40, problems:list[int]= None, instances:list[list[int]]=None, repeat:int = 1):
         super().__init__()
+        if problems is not None and instances is not None and len(problems) != len(instances):
+            raise ValueError("The length of problems and instances should be the same")
+        
         feasible_dim = [2, 3, 5, 10, 20, 40]
         if dim not in feasible_dim:
             raise ValueError(f"dim should be in {feasible_dim}")
 
-        self.problems = None 
+        self.problems = None
+        feasible_problems = list(range(1, 25))
         if problems is not None:
             for problem in problems:
-                if problem not in range(1, 25):
-                    raise ValueError(f"problem should be in range(1, 25)")
+                if problem not in feasible_problems:
+                    raise ValueError("problem should be in range(1, 25)")
             self.problems = problems
-        
-        self.dim = dim
-        self.budget = budget
-
-        if time_out is not None:
-            self.time_out = time_out
         else:
-            self.time_out = budget * dim // 2
-
-        if self.problems is None:
             # https://numbbo.github.io/coco/testsuites/bbob
             # separable_problems = list(range(1, 6))
             low_conditioning_problems = list(range(6, 10))
@@ -688,36 +726,41 @@ class IOHEvaluator(AbstractEvaluator):
 
             selected_problems = [random.choice(group) for group in group_problems]
             self.problems = random.sample(selected_problems, 2)
+
+        feasible_instances = list(range(1, 15))
+        self.instances = None
+        if instances is not None:
+            for instance in instances:
+                if instance not in feasible_instances:
+                    raise ValueError(f"instance should be in {feasible_instances}")
+            self.instances = instances
+        else:
+            self.instances = [random.sample(feasible_instances, 1)] * len(self.problems)
         
-        obj_fns = []
-        # bounds = []
-        instances = list(range(1, 15))
-        for problem in self.problems:
-            for i in range(3):
-                try:
-                    instance_id = random.choice(instances)
-                    obj_fn = get_problem(problem, instance_id, self.dim)
+        self.reapeat = repeat
+        self.dim = dim
+        self.budget = budget
 
-                    lb = obj_fn.bounds.lb
-                    ub = obj_fn.bounds.ub
-                    p_bounds = np.array([lb, ub])
-
-                    name = f"F{problem}-{obj_fn.problems[problem]}"
-
-                    ioh_obj_fn = IOHObjectiveFn(obj_fn, budget=self.budget, name=name, bounds=p_bounds, problem_id=problem, instance_id=instance_id, dim=self.dim) 
-
-                    obj_fns.append(ioh_obj_fn)
-                    
-                    break
-                except Exception as e:
-                    if i == 2:
-                        raise e
-
+        obj_fn_params = []
+        for problem, instances in zip(self.problems, self.instances):
+            for instance in instances:
+                for i in range(self.reapeat):
+                    params = {
+                        "problem_id": problem,
+                        "instance_id": instance,
+                        "exec_id": i,
+                        "dim": self.dim,
+                        "budget": self.budget
+                    }
+                    obj_fn_params.append(params)
         
-        self.obj_fns = obj_fns
+        self.obj_fn_params = obj_fn_params
 
         problem_name = "bbob_" + "_".join([f"f{problem}" for problem in self.problems])
         self._problem_name = problem_name
+
+    def is_maximization(self) -> bool:
+        return True
 
     def problem_dim(self) -> int:
         return self.dim
@@ -729,9 +772,7 @@ class IOHEvaluator(AbstractEvaluator):
         return self._problem_name
 
     def problem_prompt(self) -> str:
-        prompt = f'Problems from the BBOB test suite with dimensions {self.dim} and bounds {self.obj_fns[0].bounds.tolist()}\n'
-        for obj_fn in self.obj_fns:
-            prompt += f"- {obj_fn.name}\n"
+        prompt = f'Problems from the BBOB test suite with dimensions {self.dim}\n'
         return prompt
 
     def evaluate_others(self) -> list[EvaluatorResult]:
@@ -740,32 +781,70 @@ class IOHEvaluator(AbstractEvaluator):
 
         eval_result = EvaluatorResult()
         eval_result.name = "Random Search"
-        progress_bar = tqdm(total=len(self.obj_fns), desc="Evaluating Random Search")
-        for obj_fn in self.obj_fns:
-            random_obj_fn = obj_fn
+        progress_bar = tqdm(total=len(self.obj_fn_params), desc="Evaluating Random Search")
+        for params in self.obj_fn_params:
+            random_obj_fn = IOHObjectiveFn(**params)
             optimal_value = random_obj_fn.obj_fn.optimum.y
             rs_result = EvaluatorBasicResult()
             rs_result.budget = self.budget
             rs_result.optimal_value = optimal_value
-            rs_result.bounds = obj_fn.bounds
-            rs_result.name = obj_fn.name
+            rs_result.bounds = random_obj_fn.bounds
+            rs_result.name = random_obj_fn.name
             start_time = time.perf_counter()
-            rs_y, rs_x = random_search(random_obj_fn, obj_fn.bounds, self.budget)
+            rs_y, rs_x = random_search(random_obj_fn, random_obj_fn.bounds, self.budget)
             rs_result.y_hist = rs_y.reshape(-1) if len(rs_y.shape) > 1 else rs_y
             rs_result.x_hist = rs_x
             rs_result.execution_time = time.perf_counter() - start_time
             rs_result.update_stats()
-            rs_result.update_aoc(optimal_value)
+            rs_result.update_aoc(optimal_value=optimal_value, log_scale=True, min_y=1e-8, max_y=1e2)
 
             eval_result.result.append(rs_result)
             progress_bar.update(1)
-            obj_fn.reset()
+
+        progress_bar.close()
+        eval_result.score = np.mean([r.y_aoc for r in eval_result.result])
 
         other_results.append(eval_result)
 
         return other_results
 
-    def evaluate(self, code, cls_name, cls=None) -> EvaluatorResult:
+    def __process_results(self, res, captured_output, err, exec_time, obj_fn):
+        eval_basic_result = EvaluatorBasicResult()
+        eval_basic_result.id = f"{obj_fn.problem_id}-{obj_fn.instance_id}-{obj_fn.exec_id}"
+        eval_basic_result.budget = obj_fn.budget
+        eval_basic_result.name = obj_fn.name
+        eval_basic_result.bounds = obj_fn.bounds
+        eval_basic_result.execution_time = exec_time
+        eval_basic_result.set_capture_output(captured_output)
+
+        if err is not None:
+            eval_basic_result.error = str(err)
+            eval_basic_result.error_type = err.__class__.__name__
+
+        if eval_basic_result.error is None and self.return_checker is not None:
+            # check the return value
+            return_check_str = self.return_checker(res)
+            if len(return_check_str) > 0:
+                eval_basic_result.error = return_check_str
+                eval_basic_result.error_type = "ReturnCheckError"
+
+        if eval_basic_result.error is None:
+            y_hist, x_hist, surrogate_model_losses, n_initial_points = res
+
+            eval_basic_result.name = obj_fn.name
+            eval_basic_result.bounds = obj_fn.bounds
+            eval_basic_result.optimal_value = obj_fn.optimal_value
+            eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
+            eval_basic_result.x_hist = x_hist
+            eval_basic_result.surrogate_model_losses = surrogate_model_losses[0]
+            eval_basic_result.model_loss_name = surrogate_model_losses[1]
+            eval_basic_result.n_initial_points = n_initial_points
+            eval_basic_result.update_stats()
+            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, log_scale=True, min_y=1e-8, max_y=1e2)
+
+        return eval_basic_result
+
+    def evaluate(self, code, cls_name, cls=None, max_processes:int = -1, timeout:int=None) -> EvaluatorResult:
         """Evaluate an individual."""
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
@@ -774,65 +853,59 @@ class IOHEvaluator(AbstractEvaluator):
             eval_result.error_type = "NoCodeGenerated"
             return eval_result
 
-        progress_bar = tqdm(total=len(self.obj_fns), desc=f"Evaluating {cls_name}")
-        progress_bar.update(0)
-        for obj_fn in self.obj_fns:
-            obj_fn.show_progress_bar = True
-            start_time = time.perf_counter()
+        params = []
+        for param in self.obj_fn_params:
+            new_param = {
+                "code": code,
+                "cls_name": cls_name,
+                "cls": cls,
+                "time_out": timeout
+            }
+            new_param.update(param)
+            params.append(new_param)
 
-            eval_basic_result = EvaluatorBasicResult()
-            eval_basic_result.budget = self.budget
-            eval_basic_result.name = obj_fn.name
-            eval_basic_result.bounds = obj_fn.bounds
+        total_tasks = len(params)
+        interval = max(1, total_tasks // 4)
 
-            err = None
-            if cls is not None:
-                cls_instance = cls()
-                captured_output_stream = io.StringIO()
-                with contextlib.redirect_stderr(captured_output_stream), contextlib.redirect_stdout(captured_output_stream):
-                    res = cls_instance.optimize(objective_fn=obj_fn, bounds=obj_fn.bounds, budget=self.budget)
-                captured_output = captured_output_stream.getvalue()
-            else:
-                res, captured_output, err = default_exec(code, cls_name, obj_fn, obj_fn.bounds, self.budget, time_out=self.time_out)
+        logging.info("Evaluating %s: %s tasks", cls_name, total_tasks)
 
-            # reset the obj_fn
-            obj_fn.reset()
+        if max_processes is None or max_processes > 0:
+            max_workers = min(os.cpu_count() - 1, max_processes)
 
-            eval_basic_result.execution_time = time.perf_counter() - start_time
-            eval_basic_result.set_capture_output(captured_output)
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
+                for future in concurrent.futures.as_completed(futures.keys()):
+                    res, captured_output, err, exec_time, obj_fn = future.result()
+                    eval_basic_result = self.__process_results(res, captured_output, err, exec_time, obj_fn)
+                    if eval_basic_result.error is not None:
+                        eval_result.error = eval_basic_result.error
+                        eval_result.error_type = eval_basic_result.error_type
+                        executor.shutdown(wait=False)
+                        break
+                    else:
+                        eval_result.result.append(eval_basic_result)
+                        done_tasks = len(eval_result.result)
+                        if done_tasks % interval == 0:
+                            logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
+        else:
+            for param in params:
+                res, captured_output, err, exec_time, obj_fn = ioh_evaluate_block(**param)
+                eval_basic_result = self.__process_results(res, captured_output, err, exec_time, obj_fn)
+                if eval_basic_result.error is not None:
+                    eval_result.error = eval_basic_result.error
+                    eval_result.error_type = eval_basic_result.error_type
+                    logging.info("Evaluating %s: Got Error - %s", cls_name, eval_basic_result.error_type)
+                    break
+                else:
+                    eval_result.result.append(eval_basic_result)
+                    done_tasks = len(eval_result.result)
+                    if done_tasks % interval == 0:
+                        logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
 
-            if err is not None:
-                eval_basic_result.error = str(err)
-                eval_basic_result.error_type = err.__class__.__name__
-
-            if eval_basic_result.error is None and self.return_checker is not None:
-                # check the return value
-                return_check_str = self.return_checker(res)
-                if len(return_check_str) > 0:
-                    eval_basic_result.error = return_check_str
-                    eval_basic_result.error_type = "ReturnCheckError"
-
-            if eval_basic_result.error is None:
-                y_hist, x_hist, surrogate_model_losses, n_initial_points = res
-
-                eval_basic_result.name = obj_fn.name
-                eval_basic_result.bounds = obj_fn.bounds
-                eval_basic_result.optimal_value = obj_fn.obj_fn.optimum.y
-                eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
-                eval_basic_result.x_hist = x_hist
-                eval_basic_result.surrogate_model_losses = surrogate_model_losses[0]
-                eval_basic_result.model_loss_name = surrogate_model_losses[1]
-                eval_basic_result.n_initial_points = n_initial_points
-                eval_basic_result.update_stats()
-                eval_basic_result.update_aoc(obj_fn.obj_fn.optimum.y)
-
-                progress_bar.update(1)
-            else:
-                eval_result.error = eval_basic_result.error
-                eval_result.error_type = eval_basic_result.error_type
-                progress_bar.close()
-                break
-            eval_result.result.append(eval_basic_result)
+        if eval_result.error is None:
+            eval_result.score = np.mean([r.y_aoc for r in eval_result.result])
+        else:                            
+            eval_result.score = -np.Inf
 
         return eval_result
 
