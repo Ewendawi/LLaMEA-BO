@@ -15,7 +15,7 @@ from Experiments.test_cands.GPBO import GPBO
 # r = RandomBoTorchTestEvaluator.evaluate_from_cls(RobustGPBO)
 
 from Experiments.test_cands.TuRBO import TuRBO
-r = IOHEvaluator.evaluate_from_cls(TuRBO, budget=100)
+r = IOHEvaluator.evaluate_from_cls(TuRBO, budget=100, eval_others=True)
 
 print(r[0])
 print(r[1])

@@ -176,10 +176,7 @@ class Population(ABC):
     """
     Represents a population of individuals in the evolutionary algorithm.
     """
-    def __init__(self, max_size: int = None):
-        self.max_size = max_size
-        self.problem = None
-        self.model = None
+    def __init__(self):
         self.name = None
 
     @abstractmethod
@@ -192,89 +189,157 @@ class Population(ABC):
 
     @abstractmethod
     def remove_individual(self, individual):
-        """
-        Removes an individual from the population.
+        pass
 
-        Args:
-            individual (Individual): The individual to remove from the population.
-        """
-
-    def select_next_candidate(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
+    def select_next_generation(self, update_strategy: Callable[[list[Individual], list[Individual], int], list[Individual]] = None):
+        pass
+        
+    @abstractmethod
+    def get_parents(self, selection_strategy: Callable[[list[Individual], int, int], list[Individual]] = None) -> list[list[Individual]]:
         return None
 
     def get_last_successful_parent(self, candidate: Individual) -> Individual:
         return None
 
     @abstractmethod
+    def get_best_individual(self, maximize: bool = False):
+        pass
+
+    @abstractmethod
     def all_individuals(self):
         pass
+
+class ESPopulation(Population):
+    def __init__(self,n_parent:int=2, n_parent_per_offspring: int = 1, n_offspring: int = 1, use_elitism: bool = True):
+        super().__init__()
+
+        self.n_parent = n_parent
+        self.n_parent_per_offspring = n_parent_per_offspring
+        self.n_offspring = n_offspring
+        self.use_elitism = use_elitism
+
+        self.individuals:dict[str, Individual] = {}
+        # all individuals per generation
+        self.generations:list[list[str]] = []
+        # selected individuals per generation
+        self.selected_generations:list[list[str]] = []
+
+    def all_individuals(self):
+        return self.individuals.values()
+
+    def get_population_size(self):
+        return len(self.individuals)
+    
+    def add_individual(self, individual: Individual, generation: int = 0):
+        if generation >= len(self.generations):
+            while len(self.generations) <= generation:
+                self.generations.append([])
+        self.individuals[individual.id] = individual
+        self.generations[generation].append(individual.id)
+
+    def remove_individual(self, individual):
+        if individual.id in self.individuals:
+            del self.individuals[individual.id]
+            if individual.generation in self.generations:
+                gen = self.generations[individual.generation]
+                if individual.id in gen:
+                    gen.remove(individual.id)
+            else:
+                for gen in self.generations:
+                    if individual.id in gen:
+                        gen.remove(individual.id)
+        
+    def select_next_generation(self, update_strategy: Callable[[list[Individual], list[Individual], int], list[Individual]] = None):
+        if len(self.generations) == 0 or len(self.generations[-1]) == 0:
+            return
+        
+        last_gen = self.generations[-1]
+        last_pop = []
+        if len(self.selected_generations) > 0:
+            last_pop = self.selected_generations[-1]
+
+        if update_strategy is None:
+            candidates = None
+            if self.use_elitism:
+                candidates = last_gen + last_pop
+            else:
+                candidates = last_gen
+
+            next_candidates = sorted(candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
+            next_pop = next_candidates[:self.n_parent]
+            self.selected_generations.append(next_pop)
+        else:
+            ind_last_gen = [self.individuals[id] for id in last_gen]
+            ind_last_pop = [self.individuals[id] for id in last_pop]
+            ind_next_pop = update_strategy(ind_last_gen, ind_last_pop, self.n_parent)
+            next_pop = [ind.id for ind in ind_next_pop]
+            self.selected_generations.append(next_pop)
+        
+    
+    def get_parents(self, selection_strategy: Callable[[list[Individual], int, int], list[Individual]] = None) -> list[list[Individual|None]]:
+        if len(self.selected_generations) == 0:
+            return [[]] * self.n_parent
+
+        last_pop = self.selected_generations[-1]
+        last_pop = [self.individuals[id] for id in last_pop if id in self.individuals]
+
+        if selection_strategy is not None:
+            return selection_strategy(last_pop, self.n_parent, self.n_parent_per_offspring)
+            
+        n_last_pop_needed = self.n_parent_per_offspring * self.n_offspring
+        if len(last_pop) < n_last_pop_needed:
+            last_pop = last_pop * (n_last_pop_needed // len(last_pop) + 1)
+
+        parents = []
+        idx_last_pop = 0
+        for _ in range(self.n_offspring):
+            parent = last_pop[idx_last_pop: idx_last_pop+self.n_parent_per_offspring]
+            parents.append(parent)
+            idx_last_pop += self.n_parent_per_offspring
+            
+        return parents
+
+    def get_best_individual(self, maximize: bool = False):
+        best = None
+        if len(self.selected_generations) == 0:
+            return best
+
+        inds = [self.individuals[id] for id in self.selected_generations[-1]]
+        best = inds[0]
+        for ind in inds:
+            if maximize:
+                if ind.fitness > best.fitness:
+                    best = ind
+            else:
+                if ind.fitness < best.fitness:
+                    best = ind
+        return best
 
 class SequencePopulation(Population):
     """
     Represents a population of individuals in the evolutionary algorithm.
     """
 
-    def __init__(self, max_size: int = None):
-        super().__init__(max_size)
+    def __init__(self):
+        super().__init__()
         self.individuals: list[Individual] = []
 
     def get_population_size(self):
-        """
-        Returns the number of individuals in the population.
-
-        Returns:
-            int: The number of individuals in the population.
-        """
         return len(self.individuals)
 
     def add_individual(self, individual):
-        """
-        Adds an individual to the population.
-
-        Args:
-            individual (Individual): The individual to add to the population.
-        """
-        super().add_individual(individual)
-        if self.max_size and len(self.individuals) >= self.max_size:
-            raise ValueError("Population size exceeds the maximum size.")
         self.individuals.append(individual)
 
     def remove_individual(self, individual):
-        """
-        Removes an individual from the population.
-
-        Args:
-            individual (Individual): The individual to remove from the population.
-        """
         self.individuals = [ind for ind in self.individuals if ind.id != individual.id]
 
-    def select_next_candidate(self, selection_strategy: Callable[[Individual,Individual], int] = None, num_individuals: int = 1) -> Individual:
+    def get_parents(self) -> list[list[Individual]]:
         if not self.individuals:
-            return None
-        sorted_individuals = []
-        if selection_strategy is None:
-            sorted_individuals = self.individuals
-        else:
-            sorted_individuals = sorted(self.individuals, cmp = selection_strategy, reverse=False)
+            return [[]]
 
-        next_generation = []
-        if num_individuals > len(sorted_individuals):
-            next_generation = sorted_individuals
-        else:
-            # select last num_individuals from the sorted list
-            next_generation = sorted_individuals[-num_individuals:]
-        return next_generation[0]
+        return [self.individuals[-1:]]
 
     def get_last_successful_parent(self, candidate: Individual) -> Individual:
-        """
-        Returns the last successful parent of the given candidate individual.
-
-        Args:
-            candidate (Individual): The candidate individual to find the last successful parent for.
-
-        Returns:
-            Individual: The last successful parent of the candidate individual.
-        """
         if candidate is None:
             return None
 
@@ -290,10 +355,18 @@ class SequencePopulation(Population):
         return None
 
     def all_individuals(self):
-        """
-        Returns all individuals in the population.
-
-        Returns:
-            List[Individual]: A list of all individuals in the population.
-        """
         return self.individuals
+
+    def get_best_individual(self, maximize=False):
+        if not self.individuals:
+            return None
+
+        best = self.individuals[0]
+        for ind in self.individuals:
+            if maximize:
+                if ind.fitness > best.fitness:
+                    best = ind
+            else:
+                if ind.fitness < best.fitness:
+                    best = ind
+        return best

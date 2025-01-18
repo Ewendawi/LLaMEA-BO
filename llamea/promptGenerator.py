@@ -19,23 +19,38 @@ class ResponseHandler(ABC):
     """Abstract base class for response handler."""
 
     def __init__(self):
-        self._eval_result:dict[str, EvaluatorResult]= None
+        self.code = ""
+        self.code_name = ""
+        self.raw_response = ""
+        self.error = None
+        self.error_type = None
+        self._eval_result:EvaluatorResult = None
 
     @property
     def eval_result(self) -> EvaluatorResult:
         return self._eval_result
-
+    
     @eval_result.setter
     def eval_result(self, value:EvaluatorResult):
+        if value is not None and value.error is not None:
+            self.error = value.error
+            self.error_type = value.error_type
         self._eval_result = value
 
     @abstractmethod
     def extract_response(self, response:str, task:GenerationTask) -> None:
         pass
 
-    @abstractmethod
     def __to_json__(self) -> dict:
-        pass
+        d = {
+            "code": self.code,
+            "code_name": self.code_name,
+            "raw_response": self.raw_response,
+            "error": self.error,
+            "error_type": self.error_type,
+            "eval_result": self.eval_result.__to_json__()
+        }
+        return d
 
 class ResponseImpReturnChecker(ABC):
     """Abstract base class for response return checkers."""
@@ -135,32 +150,27 @@ class ZeroPlusBOResponseHandler(ResponseHandler):
         # Feedback for error_analysis and proposed_solutions
         self.error_feedback = ""
 
-        self.code = ""
-        self.code_name = ""
-        self.raw_response = ""
 
     def __to_json__(self):
-        return {
-            "problem_analysis": self.problem_analysis,
-            "feedback_analysis": self.feedback_analysis,
-            "potential_techniques": self.potential_techniques,
-            "improvement": self.improvement,
-            "proposed_strategies": self.proposed_strategies,
-            "algorithm_design": self.algorithm_design,
-            "pseudocode": self.pseudocode,
-
-            "error_analysis": self.error_analysis,
-            "proposed_solutions": self.proposed_solutions,
-            "error_feedback": self.error_feedback,
-
-            "code": self.code,
-            "code_name": self.code_name,
-            "raw_response": self.raw_response
-        }
+        d = super().__to_json__()
+        d["problem_analysis"] = self.problem_analysis
+        d["feedback_analysis"] = self.feedback_analysis
+        d["potential_techniques"] = self.potential_techniques
+        d["improvement"] = self.improvement
+        d["proposed_strategies"] = self.proposed_strategies
+        d["algorithm_design"] = self.algorithm_design
+        d["pseudocode"] = self.pseudocode
+        d["error_analysis"] = self.error_analysis
+        d["proposed_solutions"] = self.proposed_solutions
+        d["error_feedback"] = self.error_feedback
+        return d
 
     def extract_response(self, response:str, task:GenerationTask):
         if not response:
             return
+
+        self.raw_response = response
+        
         if task == GenerationTask.INITIALIZE_SOLUTION:
             self.__extract_for_initial_solution(response)
         elif task == GenerationTask.FIX_ERRORS or task == GenerationTask.FIX_ERRORS_FROM_ERROR:

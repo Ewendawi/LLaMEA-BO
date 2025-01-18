@@ -3,11 +3,10 @@
 import time
 import os
 import sys
-import threading
 from abc import ABC, abstractmethod
 import logging
-import itertools
-from typing import List, Dict, Optional, Any
+from typing import Optional, Any
+from collections.abc import Callable
 import requests
 import openai
 
@@ -125,49 +124,27 @@ class LLMmanager:
             self.client = OpenAIClient(api_key, model, base_url)
 
         self.max_interval = max_interval
-        self.dynamic_interval = self.max_interval
-        self.last_request = 0
-        self.querying = False
+
+        self.mock_res_provider:Callable[..., str] = None
 
     def model_name(self) -> str:
         return self.client.name
 
-    def __loading_indicator(self):
-        symbols = itertools.cycle(['|', '/', '-', '\\'])
-        while self.querying:
-            sys.stdout.write("\rLoading... " + next(symbols))
-            sys.stdout.flush()
-            time.sleep(0.1)
-
-    def loading_indicator(self):
-        thread = threading.Thread(target=self.__loading_indicator)
-        thread.start()
-
     def chat(self, session_messages, temperature=0.7, **kwargs):
-        if self.dynamic_interval > 0:
-            current_time = time.time()
-            if current_time - self.last_request < self.dynamic_interval:
-                logging.info("Sleeping for %.2f seconds", self.dynamic_interval - (current_time - self.last_request))
-                time.sleep(self.dynamic_interval - (current_time - self.last_request))
-                logging.info("Resuming")
-        self.querying = True
-        self.loading_indicator()
+        if self.mock_res_provider is not None:
+            return self.mock_res_provider(session_messages, temperature, **kwargs)
+        
         response = self.client.raw_completion(
             session_messages,
             temperature=temperature,
             **kwargs
         )
-        self.querying = False
-        self.last_request = time.time()
         try:
             content = response.choices[0].message.content
-            self.dynamic_interval = self.max_interval
             return content
         except Exception:
             if hasattr(response, "error"):
                 logging.error("LLM: %s, %s", self.model_name(), response.error)
             else:
                 logging.error("LLM: %s, %s", self.model_name(), response)
-            self.dynamic_interval *= 2
-            logging.error("Dynamic interval increased to %s", self.dynamic_interval)
             return ""

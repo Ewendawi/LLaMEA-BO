@@ -442,6 +442,7 @@ With code:
                     self.worst_value, f"An exception occurred: {error}.", error
                 )
 
+            #FIXME:race condition
             self.run_history.append(evolved_individual)
             self.progress_bar.update(1)
             return evolved_individual

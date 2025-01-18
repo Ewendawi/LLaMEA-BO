@@ -69,10 +69,6 @@ class IndividualLogger:
     def __init__(self):
         self.individual_map:dict[str, Individual] = {}
         self.experiment_map:dict[str, dict] = {}
-        self.log_extract_error = False
-        self.should_log_population = True
-        self.should_log_experiment = True
-        self.auto_save = False
         self._file_name = "individual_set"
         self.dirname = "logs"
 
