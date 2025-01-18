@@ -11,8 +11,11 @@ from Experiments.test_cands.GPBO import GPBO
 # r = IOHEvaluator.evaluate_from_cls(GPBO, eval_others=True)
 
 
-from Experiments.test_cands.RobustGPBO import RobustGPBO
-r = RandomBoTorchTestEvaluator.evaluate_from_cls(RobustGPBO)
+# from Experiments.test_cands.RobustGPBO import RobustGPBO
+# r = RandomBoTorchTestEvaluator.evaluate_from_cls(RobustGPBO)
+
+from Experiments.test_cands.TuRBO import TuRBO
+r = IOHEvaluator.evaluate_from_cls(TuRBO, budget=100)
 
 print(r[0])
 print(r[1])
