@@ -198,19 +198,25 @@ def test_multiple_processes():
 
     budget = 100
     dim = 5
+    problems = list(range(1, 25))
+    instances = [[1, 2, 3]] * len(problems)
+    repeat = 3
     time_out = 60 * budget * dim // 100
-    problems = list(range(1, 3))
-    evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=[[1]] * len(problems), repeat=1)
+    evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
 
     n_generations = 1
-    n_parent = 2
+    n_parent = 1
     n_parent_per_offspring = 1
     n_offspring = 1
     n_query_threads = n_parent
+
+    # Note max_threads of OpenBLAS is 64. 
+    # More evaluations, less n_processes.
+    # recommended n_processes in mithril: < 32 with only 1 evaluation. 
     
-    n_eval_processes = 2
+    n_eval_processes = 32
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-    logging.info("Starting with multiple processes")
+    logging.info("Starting with %s processes", n_eval_processes)
     start = time.perf_counter()
     llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
                           n_query_threads=n_query_threads, 
@@ -219,16 +225,16 @@ def test_multiple_processes():
     end = time.perf_counter()
     logging.info("Time taken: %s with %s processes", end - start, n_eval_processes)
 
-    n_eval_processes = 0
+    n_eval_processes = 64
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-    logging.info("Starting without multiple processes")
+    logging.info("Starting with %s processes", n_eval_processes)
     start = time.perf_counter()
     llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
                           n_query_threads=n_query_threads,
                           n_eval_processes=n_eval_processes
                           )
     end = time.perf_counter()
-    logging.info("Time taken: %s without multiple processes", end - start)
+    logging.info("Time taken: %s with %s processes", end - start, n_eval_processes)
 
 
 def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
@@ -286,7 +292,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 if __name__ == "__main__":
-    setup_logger(level=logging.DEBUG)
+    setup_logger(level=logging.INFO)
 
     MODEL = LLMS["deepseek/deepseek-chat"]
     # MODEL = LLMS["gemini-2.0-flash-exp"]

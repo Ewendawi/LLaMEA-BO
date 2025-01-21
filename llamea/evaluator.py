@@ -911,10 +911,11 @@ class IOHEvaluator(AbstractEvaluator):
         total_tasks = len(params)
         interval = max(1, total_tasks // 4)
 
-        logging.info("Evaluating %s: %s tasks", cls_name, total_tasks)
 
         if max_processes is None or max_processes > 0:
             max_workers = min(os.cpu_count() - 1, max_processes)
+
+            logging.info("Evaluating %s: %s tasks, using %s max_workers", cls_name, total_tasks, max_workers)
 
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                 futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
@@ -932,6 +933,8 @@ class IOHEvaluator(AbstractEvaluator):
                         if done_tasks % interval == 0:
                             logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
         else:
+            logging.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
+
             for param in params:
                 res, captured_output, err, exec_time, obj_fn = ioh_evaluate_block(**param)
                 eval_basic_result = self.__process_results(res, captured_output, err, exec_time, obj_fn)
