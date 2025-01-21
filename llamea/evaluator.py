@@ -113,16 +113,21 @@ def get_code_snippet(code_str, error_line, context_lines):
     return formatted_code
 
 
-def __default_exec(code, cls_name, objective_fn, bounds, budget, cls=None) -> tuple[any, str, str]:
+def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None) -> tuple[any, str, str]:
     captured_output = io.StringIO()
     res = None
     err = None
 
+    if init_kwargs is None:
+        init_kwargs = {}
+    if call_kwargs is None:
+        call_kwargs = {}
+
     if cls is not None:
         # helper for debugging
-        cls_instance = cls()
+        cls_instance = cls(**init_kwargs)
         with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
-            res = cls_instance.optimize(objective_fn=objective_fn, bounds=bounds, budget=budget)
+            res = cls_instance(**call_kwargs)
     else:
         try:
             namespace: dict[str, Any] = {}
@@ -133,26 +138,25 @@ def __default_exec(code, cls_name, objective_fn, bounds, budget, cls=None) -> tu
             else:
                 with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
                     bo_cls = namespace[cls_name]
-                    bo = bo_cls()
-                    res = bo.optimize(objective_fn=objective_fn, bounds=bounds, budget=budget)
+                    bo = bo_cls(**init_kwargs)
+                    res = bo(**call_kwargs)
         except Exception as e:
             formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
             err = e.__class__(formatted_traceback)
 
     return res, captured_output.getvalue(), err
 
-def default_exec(code, cls_name, objective_fn, bounds, budget, time_out:float=None, cls=None) -> tuple[any, str, str]:
+def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:float=None, cls=None) -> tuple[any, str, str]:
     if time_out is None:
-        return __default_exec(code, cls_name, objective_fn, bounds, budget, cls)
+        return __default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             params = {
                 "code": code,
                 "cls_name": cls_name,
-                "objective_fn": objective_fn,
-                "bounds": bounds,
-                "budget": budget,
                 "cls": cls,
+                "init_kwargs": init_kwargs,
+                "call_kwargs": call_kwargs
             }
             future = executor.submit(__default_exec, **params)
             done, not_done = concurrent.futures.wait([future], timeout=time_out)
@@ -385,6 +389,12 @@ class EvaluatorResult:
         d["result"] = [r.__to_json__() for r in self.result]
         return d
 
+    def __str__(self):
+        if self.error is not None:
+            return f"{self.name}\n{self.error}\n"
+        else:
+            return f"{self.name}, score:{self.score:.4f}"
+
 class AbstractEvaluator(ABC):
     def __init__(self):
         self.return_checker:Callable[[tuple], str] = lambda x: ""
@@ -547,16 +557,22 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         # self.evaluating = True
         # self.loading_indicator(f"{cls_name}")
         start_time = time.perf_counter()
+        init_kwargs = {}
+        call_kwargs = {
+            "objective_fn": bo_obj_fn,
+            "bounds": self.bounds,
+            "budget": self.budget
+        }
         if cls is not None:
             # helper for debugging
-            cls_instance = cls()
+            cls_instance = cls(**init_kwargs)
             captured_output_stream = io.StringIO()
             with contextlib.redirect_stderr(captured_output_stream), contextlib.redirect_stdout(captured_output_stream):
-                res = cls_instance.optimize(objective_fn=bo_obj_fn, bounds=self.bounds, budget=self.budget)
+                res = cls_instance.optimize(**call_kwargs)
             captured_output = captured_output_stream.getvalue()
             err = None
         else:
-            res, captured_output, err = default_exec(code, cls_name, bo_obj_fn, self.bounds, self.budget, time_out=timeout)
+            res, captured_output, err = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, time_out=timeout)
         # self.evaluating = False
         eval_basic_result.execution_time = time.perf_counter() - start_time
         eval_basic_result.set_capture_output(captured_output)
@@ -662,26 +678,42 @@ class IOHObjectiveFn:
 
     def __call__(self, x):
         if self.obj_fn is not None and self.budget is not None and self.obj_fn.state.evaluations >= self.budget:
-            raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by objective_fn should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the objective_fn to evaluate the points is a alternative option.")
+            raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by func should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the func to evaluate the points is a alternative option.")
 
-        # if self.x_hist is None:
-        #     self.x_hist = x
-        # else:
-        #     self.x_hist = np.vstack((self.x_hist, x))
+        if self.x_hist is None:
+            self.x_hist = x
+        else:
+            self.x_hist = np.vstack((self.x_hist, x))
 
         y = self.obj_fn(x)
 
-        # if self.y_hist is None:
-        #     self.y_hist = y
-        # else:
-        #     self.y_hist = np.append(self.y_hist, y)
+        if self.y_hist is None:
+            if isinstance(y, list):
+                self.y_hist = np.array(y).reshape(-1,1)
+            else:
+                self.y_hist = np.array([y]).reshape(-1,1)
+        else:
+            if isinstance(y, list):
+                self.y_hist = np.append(self.y_hist, np.array(y).reshape(-1,1))
+            else:
+                self.y_hist = np.append(self.y_hist, np.array([y]).reshape(-1,1))
 
         if self.show_progress_bar:
             progress = 1
             if len(x.shape) > 1:
                 progress = x.shape[0]
             self.progress_bar.update(progress)
-        return np.array(y).reshape(-1,1)
+        else:
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                progress = len(self.x_hist)
+                interval = self.budget // 4
+                if progress % interval == 0:
+                    msg = f"{self.name}-{self.instance_id}-{self.exec_id}:{progress}/{self.budget} evaluations completed"
+                    logging.debug(msg)
+
+        if isinstance(y, list):
+            return np.array(y).reshape(-1,1)
+        return y
 
 def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None) -> EvaluatorBasicResult:
 
@@ -689,7 +721,15 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
         
     start_time = time.perf_counter()
 
-    res, captured_output, err = default_exec(code, cls_name, obj_fn, obj_fn.bounds, budget, time_out=time_out, cls=cls)
+    init_kwargs = {
+        "dim": dim,
+        "budget": budget
+    }
+    call_kwargs = {
+        "func": obj_fn
+    }
+
+    res, captured_output, err = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, time_out=time_out)
     exec_time = time.perf_counter() - start_time
 
     # unset the unpicklable object
@@ -725,14 +765,15 @@ class IOHEvaluator(AbstractEvaluator):
             group_problems = [low_conditioning_problems, high_conditioning_problems, adequate_structure_problems, weak_structure_problems]
 
             selected_problems = [random.choice(group) for group in group_problems]
-            self.problems = random.sample(selected_problems, 2)
+            self.problems = random.sample(selected_problems, 1)
 
         feasible_instances = list(range(1, 15))
         self.instances = None
         if instances is not None:
-            for instance in instances:
-                if instance not in feasible_instances:
-                    raise ValueError(f"instance should be in {feasible_instances}")
+            for p_instances in instances:
+                for instance in p_instances:
+                    if instance not in feasible_instances:
+                        raise ValueError(f"instance should be in {feasible_instances}")
             self.instances = instances
         else:
             self.instances = [random.sample(feasible_instances, 1)] * len(self.problems)
@@ -829,16 +870,19 @@ class IOHEvaluator(AbstractEvaluator):
                 eval_basic_result.error_type = "ReturnCheckError"
 
         if eval_basic_result.error is None:
-            y_hist, x_hist, surrogate_model_losses, n_initial_points = res
+            best_y, best_x = res
+            y_hist = obj_fn.y_hist
+            x_hist = obj_fn.x_hist
+            # y_hist, x_hist, surrogate_model_losses, n_initial_points = res
 
             eval_basic_result.name = obj_fn.name
             eval_basic_result.bounds = obj_fn.bounds
             eval_basic_result.optimal_value = obj_fn.optimal_value
             eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
             eval_basic_result.x_hist = x_hist
-            eval_basic_result.surrogate_model_losses = surrogate_model_losses[0]
-            eval_basic_result.model_loss_name = surrogate_model_losses[1]
-            eval_basic_result.n_initial_points = n_initial_points
+            # eval_basic_result.surrogate_model_losses = surrogate_model_losses[0]
+            # eval_basic_result.model_loss_name = surrogate_model_losses[1]
+            # eval_basic_result.n_initial_points = n_initial_points
             eval_basic_result.update_stats()
             eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, log_scale=True, min_y=1e-8, max_y=1e2)
 

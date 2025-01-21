@@ -209,6 +209,17 @@ class Population(ABC):
     def all_individuals(self):
         pass
 
+    @classmethod
+    def set_handler_to_individual(cls, individual: Individual, handler):
+        if individual is not None:
+            individual.metadata["res_handler"] = handler
+
+    @classmethod
+    def get_handler_from_individual(cls, individual: Individual):
+        if individual is not None:
+            return individual.metadata["res_handler"] if "res_handler" in individual.metadata else None
+        return None
+
 class ESPopulation(Population):
     def __init__(self,n_parent:int=2, n_parent_per_offspring: int = 1, n_offspring: int = 1, use_elitism: bool = True):
         super().__init__()

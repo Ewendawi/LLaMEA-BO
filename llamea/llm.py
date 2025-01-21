@@ -89,7 +89,7 @@ LLMS = {
     "llama-3.1-70b-versatile": ('llama-3.1-70b-versatile', GROQ_API_KEY, GROQ_BASE_URL, 6),
     "llama-3.3-70b-versatile": ('llama-3.3-70b-versatile', GROQ_API_KEY, GROQ_BASE_URL, 15),
 
-    "gemini-1.5-flash-8b": ('gemini-1.5-flash-8b', GEMINI_API_KEY, GEMINI_BASE_URL, 5),
+    "gemini-1.5-flash": ('gemini-1.5-flash', GEMINI_API_KEY, GEMINI_BASE_URL, 5),
     "gemini-2.0-flash-exp": ('gemini-2.0-flash-exp', GEMINI_API_KEY, GEMINI_BASE_URL, 10),
     'gemini-exp-1206': ('gemini-exp-1206', GEMINI_API_KEY, GEMINI_BASE_URL, 5),
 

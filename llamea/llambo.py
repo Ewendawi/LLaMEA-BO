@@ -4,39 +4,20 @@ algorithms to automatically evaluate (for example metaheuristics evaluated on BB
 """
 import logging
 import time
-import signal
 import concurrent.futures
 import numpy as np
 from tqdm import tqdm
 
 from .individual import Individual, Population
 from .llm import LLMmanager
-from .promptGenerator import PromptGenerator, GenerationTask, ResponseHandler
-from .utils import IndividualLogger, NoCodeException
+from .prompt_generators import PromptGenerator, GenerationTask, ResponseHandler
+from .utils import IndividualLogger, NoCodeException 
 from .evaluator import EvaluatorResult, AbstractEvaluator
 
 class LLaMBO:
     """
     A class that represents the Language Model powered Bayesian Optimization(LLaMBO).
     """
-    def get_handler_from_individual(self, individual:Individual) -> ResponseHandler:
-        if individual is None:
-            return None
-        return individual.metadata["res_handler"] if "res_handler" in individual.metadata else None
-
-    def get_eval_result_from_individual(self, individual:Individual) -> EvaluatorResult:
-        if individual is None:
-            return None
-        if individual.error is not None and individual.error != "":
-            return None
-        return individual.metadata["eval_result"] if "eval_result" in individual.metadata else None
-
-    def last_successful_eval_result(self, population:Population, individual:Individual) -> EvaluatorResult:
-        last_successful_candidate = population.get_last_successful_parent(individual)
-        if last_successful_candidate is not None:
-            return self.get_eval_result_from_individual(last_successful_candidate)
-        return None
-
     def update_current_task(self, parent:list[Individual] = []) -> GenerationTask:
         if len(parent) == 0:
             return GenerationTask.INITIALIZE_SOLUTION
@@ -60,6 +41,9 @@ class LLaMBO:
                        ) -> ResponseHandler:
         if session_messages is None:
             return response_handler
+
+        logging.debug("Session Messages:")
+        logging.debug("\n%s\n%s", session_messages[0]["content"], session_messages[1]["content"])
         
         for i_try in range(retry):
             response = llm.chat(session_messages)
@@ -69,6 +53,7 @@ class LLaMBO:
                 logging.error("Retrying: %s/%s", i_try + 1, retry)
             else:
                 break
+        logging.debug("Response:\n%s\n", response)
 
         if response is None or response == "":
             logging.error("No response from the model. Exiting")
@@ -87,6 +72,8 @@ class LLaMBO:
 
         res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name, max_processes=n_eval_processes, timeout=timeout)
 
+        logging.debug("Evaluation Result: %s", res)
+
         response_handler.eval_result = res
 
         return response_handler
@@ -101,8 +88,7 @@ class LLaMBO:
                        n_query_threads: int = 0,
                        n_eval_processes: int = 0,
                        max_interval: int = 0,
-                       timeout_per_offspring: int = 1800,
-                       verbose: int = 1):
+                       time_out_per_eval: int = 1800):
 
         logging.info("Starting LLaMBO")
         logging.info("Model: %s", llm.model_name())
@@ -136,11 +122,12 @@ class LLaMBO:
                 # Get prompt
                 other_results = (None, sup_results)
 
-                parent_handlers = [self.get_handler_from_individual(p) for p in parent if p is not None]
+                parent_handlers = [Population.get_handler_from_individual(p) for p in parent if p is not None]
                 role_setting, prompt = prompt_generator.get_prompt(
                     task=current_task,
                     problem_desc=problem_description,
                     candidates=parent_handlers,
+                    population=population,
                     other_results=other_results,
                     sharedborad=evolved_sharedbroad)
                 session_messages = [
@@ -156,7 +143,7 @@ class LLaMBO:
                     "task": current_task,
                     "evaluator": evaluator,
                     "n_eval_processes": n_eval_processes,
-                    "timeout": timeout_per_offspring,
+                    "timeout": time_out_per_eval,
                     "retry": n_retry,
                 }
                 params.append(kwargs)
@@ -175,7 +162,6 @@ class LLaMBO:
                     next_handlers.append(next_handler)
 
             for i, handler in enumerate(next_handlers):
-                # prompt_generator.update_sharedbroad(evolved_sharedbroad, handler)
 
                 parent_ids = [p.id for p in parents[i] if p is not None]
                 ind = Individual(solution=handler.code, name=handler.code_name, parent_id=parent_ids, generation=generation)
@@ -201,16 +187,16 @@ class LLaMBO:
                 tags.append(f"dim:{evaluator.problem_dim()}")
                 ind.add_metadata("tags", tags)
 
-                if verbose > 1:
-                    logging.info(ind.feedback)
-                    logging.info(ind.error)
+                logging.debug(ind.feedback)
+                logging.debug(ind.error)
 
                 population.add_individual(ind, generation)
 
             population.select_next_generation()
-            if verbose > 0:
-                best_ind = population.get_best_individual(maximize=True)
-                logging.info("Best Individual: %s", best_ind.get_summary())
+            prompt_generator.update_sharedbroad(evolved_sharedbroad, next_handlers, population)
+
+            best_ind = population.get_best_individual(maximize=True)
+            logging.info("Best Individual: %s", best_ind.get_summary())
             generation += 1
             # progress_bar.update(1)
 
