@@ -64,10 +64,14 @@ def update_state(state, Y_next):
     return state
 
 class TuRBO:
-    def __init__(self):
+    def __init__(self, budget:int, dim:int, bounds:np.ndarray):
         # Initialize optimizer settings
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = torch.double
+
+        self.bounds = torch.tensor(bounds, dtype=self.dtype, device=self.device)
+        self.budget = budget
+        self.dim = dim
     
     def get_initial_points(self, dim, n_pts, seed=0):
         sobol = SobolEngine(dimension=dim, scramble=True, seed=seed)
@@ -132,14 +136,14 @@ class TuRBO:
 
         return X_next
     
-    def optimize(self, objective_fn:Callable[[np.ndarray], np.ndarray], bounds:np.ndarray, budget:int) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, str], int]:
+    def __call__(self, func:Callable[[np.ndarray], np.ndarray]) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, str], int]:
 
-        dim = bounds.shape[1]
+        dim = self.dim
         n_initial_points = 2 * (dim + 1)
         batch_size = 4
         
         X_turbo = self.get_initial_points(dim, n_initial_points)
-        y = objective_fn(unnormalize(X_turbo, bounds).numpy())
+        y = func(unnormalize(X_turbo, self.bounds).numpy())
         Y_turbo = torch.tensor(y, dtype=self.dtype, device=self.device)
 
         state = TurboState(dim, batch_size=batch_size, best_value=max(Y_turbo).item())
@@ -151,7 +155,7 @@ class TuRBO:
 
         torch.manual_seed(0)
 
-        rest_of_budget = budget - n_initial_points
+        rest_of_budget = self.budget - n_initial_points
 
         while not state.restart_triggered and rest_of_budget > 0:  # Run until TuRBO converges
             # Fit a GP model
@@ -185,7 +189,7 @@ class TuRBO:
                     acqf="ts",
                 )
 
-            y = objective_fn(unnormalize(X_next, bounds).numpy())
+            y = func(unnormalize(X_next, self.bounds).numpy())
             Y_next = torch.tensor(y, dtype=self.dtype, device=self.device)
 
             # Update state
@@ -197,4 +201,5 @@ class TuRBO:
 
             rest_of_budget -= batch_size
 
-        return Y_turbo.numpy(), X_turbo.numpy(), (np.array([]), ""), n_initial_points
+        return None, None
+        # return Y_turbo.numpy(), X_turbo.numpy(), (np.array([]), ""), n_initial_points

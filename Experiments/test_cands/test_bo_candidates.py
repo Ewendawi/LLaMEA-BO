@@ -15,7 +15,13 @@ from Experiments.test_cands.GPBO import GPBO
 # r = RandomBoTorchTestEvaluator.evaluate_from_cls(RobustGPBO)
 
 from Experiments.test_cands.TuRBO import TuRBO
-r = IOHEvaluator.evaluate_from_cls(TuRBO, budget=100, eval_others=True)
+# r = IOHEvaluator.evaluate_from_cls(TuRBO, budget=100, eval_others=True)
+
+from Experiments.test_cands.AdaptiveBatchBOv1 import AdaptiveBatchBOv1
+r = IOHEvaluator.evaluate_from_cls(AdaptiveBatchBOv1, budget=100, eval_others=False)
 
 print(r[0])
-print(r[1])
+for _r in r[1]:
+    print(_r)
+
+pass

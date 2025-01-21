@@ -20,57 +20,6 @@ The algorithm will use a Bayesian Optimization (BO) framework with the following
 
 ### /Description
 
-### Pseudocode
-```
-Algorithm: BatchExpectedImprovementBO
-
-Input:
-    objective_fn: Objective function to minimize
-    bounds: Search space bounds
-    budget: Total number of function evaluations allowed
-
-Output:
-    all_y: List of objective function values evaluated
-    all_x: List of input points evaluated
-    model_losses: List of GP model losses
-    n_initial_points: Number of initial points
-
-1.  Initialization:
-    n_initial_points = 10
-    batch_size = 5
-    noise_level = 1e-6
-    length_scale = 1.0
-    nu = 2.5
-    n_restarts_optimizer = 5
-    Generate initial points X_init using Latin Hypercube Sampling within bounds.
-    Evaluate objective function at X_init to get y_init.
-    all_x = X_init
-    all_y = y_init
-    model_losses = []
-
-2.  Fit initial GP model using X_init and y_init.
-    model_loss = Calculate the loss of the model
-    model_losses.append(model_loss)
-
-3.  Optimization loop:
-    while the number of evaluations is less than budget:
-        Select next batch_size points X_next using Expected Improvement:
-        Evaluate objective function at X_next to get y_next.
-        Append X_next to all_x and y_next to all_y
-        Update GP model with all_x and all_y.
-        model_loss = Calculate the loss of the model
-        model_losses.append(model_loss)
-4.  Return all_y, all_x, model_losses, n_initial_points
-
-Function Select Next Batch Points:
-    Input: batch_size
-    Initialize candidates with large number of random points within bounds
-    Calculate acquisition function values for each candidate
-    Select batch_size points with the highest acquisition values
-    Return the selected points
-```
-### /Pseudocode
-
 ### Code
 ```python
 from typing import Callable
@@ -81,22 +30,7 @@ import gpytorch
 from scipy.optimize import minimize
 
 class BatchExpectedImprovementBO:
-    """
-    Batch Bayesian Optimization using a Gaussian Process surrogate model with a Matérn kernel and the Expected Improvement acquisition function.
-    - Surrogate Model: Gaussian Process with Matérn kernel.
-    - Acquisition Function: Expected Improvement.
-    - Initial Sampling: Latin Hypercube Sampling.
-    - Batch Optimization: Simple batch selection strategy.
-    - Model Tuning: GP hyperparameters are tuned by maximizing the log marginal likelihood using L-BFGS-B optimizer.
-    Parameters:
-        n_initial_points (int): Number of initial points sampled using LHS (default: 10).
-        batch_size (int): Number of points selected in each iteration (default: 5).
-        n_restarts_optimizer (int): Number of restarts for the L-BFGS-B optimizer (default: 5).
-        noise_level (float): Noise level of the GP (default: 1e-6).
-        length_scale (float): Initial length scale for the Matérn kernel (default: 1.0).
-        nu (float): Smoothness parameter of the Matérn kernel (default: 2.5).
-    """
-    def __init__(self, n_initial_points:int=10, batch_size:int=5, n_restarts_optimizer:int=5, noise_level:float=1e-6, length_scale:float=1.0, nu:float=2.5):
+    def __init__(self, budget:int, dim:int, n_initial_points:int=10, batch_size:int=5, n_restarts_optimizer:int=5, noise_level:float=1e-6, length_scale:float=1.0, nu:float=2.5):
         # Initialize optimizer settings
         self.n_initial_points = n_initial_points
         self.batch_size = batch_size
@@ -107,6 +41,11 @@ class BatchExpectedImprovementBO:
         self.model = None
         self.train_x = None
         self.train_y = None
+
+        self.budget = budget
+        self.dim = dim
+        self.bounds = np.array([[-5.0] * self.dim, [5.0] * self.dim])
+
 
     def _sample_points(self, n_points, bounds) -> np.ndarray:
         sampler = qmc.LatinHypercube(d=bounds.shape[1])
@@ -150,17 +89,6 @@ class BatchExpectedImprovementBO:
         likelihood.eval()
         return model
 
-    def _get_model_loss(self, model, X, y) -> np.float64:
-        X_tensor = torch.tensor(X, dtype=torch.float32)
-        y_tensor = torch.tensor(y, dtype=torch.float32).reshape(-1)
-        
-        likelihood = model.likelihood
-        mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-        with torch.no_grad():
-            output = model(X_tensor)
-            loss = -mll(output, y_tensor)
-        return loss.item()
-    
     def _acquisition_function(self, X) -> np.ndarray:
         if self.model is None:
             return np.zeros((X.shape[0], 1))
@@ -189,28 +117,25 @@ class BatchExpectedImprovementBO:
         indices = np.argsort(acquisition_values.flatten())[-batch_size:]
         return candidates[indices]
     
-    def optimize(self, objective_fn:Callable[[np.ndarray], np.ndarray], bounds:np.ndarray, budget:int) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, str], int]:
+    def __call__(self, func:Callable[[np.ndarray], np.ndarray]) -> tuple[np.float64, np.ndarray]:
         
         n_initial_points = self.n_initial_points
         batch_size = self.batch_size
         
-        X_init = self._sample_points(n_initial_points, bounds)
-        y_init = objective_fn(X_init)
+        X_init = self._sample_points(n_initial_points, self.bounds)
+        y_init = func(X_init)
         
         self.train_x = X_init
         self.train_y = y_init
         all_x = X_init
         all_y = y_init
-        model_losses = []
 
         self.model = self._fit_model(self.train_x, self.train_y)
-        model_loss = self._get_model_loss(self.model, self.train_x, self.train_y)
-        model_losses.append(model_loss)
        
-        rest_of_budget = budget - n_initial_points
+        rest_of_budget = self.budget - n_initial_points
         while rest_of_budget > 0:
-            X_next = self._select_next_points(bounds, batch_size)
-            y_next = objective_fn(X_next)
+            X_next = self._select_next_points(self.bounds, batch_size)
+            y_next = func(X_next)
             
             self.train_x = np.vstack((self.train_x, X_next))
             self.train_y = np.vstack((self.train_y, y_next))
@@ -218,11 +143,10 @@ class BatchExpectedImprovementBO:
             all_y = np.vstack((all_y, y_next))
             
             self.model = self._fit_model(self.train_x, self.train_y)
-            model_loss = self._get_model_loss(self.model, self.train_x, self.train_y)
-            model_losses.append(model_loss)
 
             rest_of_budget -= X_next.shape[0]
 
-        return all_y, all_x, (np.array(model_losses), "neg_log_lik"), n_initial_points
+        best_idx = np.argmin(self.train_y)
+        return self.train_y[best_idx][0], self.train_x[best_idx]
 ```
 ### /Code

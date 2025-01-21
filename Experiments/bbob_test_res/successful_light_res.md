@@ -6,19 +6,6 @@ We will also use a QMC sampling method to initialize the GP model.
 
 ### /Description
 
-### Pseudocode
-1. Initialize the GP model using QMC sampling and the objective function evaluations.
-2. Fit the GP model to the initial data.
-3. Calculate the acquisition function values for a set of candidate points.
-4. Select the next point to evaluate based on the acquisition function values.
-5. Evaluate the objective function at the selected point.
-6. Update the GP model with the new data.
-7. Repeat steps 3-6 until the budget is exhausted.
-8. Return the best point found and its corresponding objective function value.
-
-### /Pseudocode
-
-
 ### Code
 ```python
 from typing import Callable
@@ -28,26 +15,10 @@ import gpytorch
 from scipy.stats import qmc, norm
 
 class AdaptiveAcquisitionBO:
-    """
-    Bayesian Optimization algorithm using Gaussian Process with Matérn 5/2 kernel,
-    Expected Improvement acquisition function, and Latin Hypercube Sampling for initial points.
-    
-    Techniques:
-    - Surrogate Model: Gaussian Process (GPyTorch)
-    - Acquisition Function: Expected Improvement (EI)
-    - Initial Sampling: Latin Hypercube Sampling (LHS)
-    - Model Loss: Mean Squared Error (MSE)
-    - Kernel: Matérn 5/2
-    
-    Parameters:
-    - bounds: np.ndarray, shape (2, n_dims), bounds[0]: lower bound, bounds[1]: upper bound
-    - budget: int, total number of function evaluations
-    """
-    
-    def __init__(self):
-        self.bounds = None
-        self.budget = None
-        self.n_dims = None
+    def __init__(self, budget: int, dim: int):
+        self.budget = budget
+        self.n_dims = dim
+        self.bounds = np.array([[-5.0] * self.n_dims, [5.0] * self.n_dims])
         self.model = None
         self.likelihood = None
         self.acquisition_fn = self._expected_improvement
@@ -118,23 +89,20 @@ class AdaptiveAcquisitionBO:
         top_indices = np.argsort(ei_values)[-batch_size:]
         return candidate_points[top_indices]
     
-    def optimize(self, objective_fn: Callable[[np.ndarray], np.ndarray], bounds: np.ndarray, budget: int) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, str], int]:
-        self.bounds = bounds
-        self.budget = budget
-        self.n_dims = bounds.shape[1]
+    def __call__(self, func: Callable[[np.ndarray], np.ndarray]) -> tuple[np.float64, np.ndarray]:
         
-        n_initial_points = min(10 * self.n_dims, budget // 2)
+        n_initial_points = min(10 * self.n_dims, self.budget // 2)
         X = self._sample_points(n_initial_points)
-        y = objective_fn(X)
+        y = func(X)
         
         self.model = self._fit_model(X, y)
         self.model_losses.append(self._get_model_loss(self.model, X, y))
         
-        rest_of_budget = budget - n_initial_points
+        rest_of_budget = self.budget - n_initial_points
         while rest_of_budget > 0:
             batch_size = min(5, rest_of_budget)
             next_X = self._select_next_points(batch_size)
-            next_y = objective_fn(next_X)
+            next_y = func(next_X)
             
             X = np.vstack([X, next_X])
             y = np.vstack([y, next_y])
@@ -144,9 +112,7 @@ class AdaptiveAcquisitionBO:
             
             rest_of_budget -= batch_size
         
-        return y, X, (np.array(self.model_losses), "MSE"), n_initial_points
-
-
+        return np.min(y), X[np.argmin(y)]
 ```
 
 ### /Code

@@ -43,13 +43,16 @@ class AdaptiveLengthScale_EI_UCB_BO:
         n_restarts (int): Number of restarts for the GP optimizer.
         exploration_iterations (int): Number of iterations to use UCB as the acquisition function.
     """
-    def __init__(self, n_restarts=10, exploration_iterations=10):
+    def __init__(self, budget:int, bounds:np.ndarray, dim:int, n_restarts=10, exploration_iterations=10):
         # Initialize optimizer settings
         self.kernel = ConstantKernel(1.0, constant_value_bounds="fixed") * RBF(length_scale=1.0, length_scale_bounds="fixed")
         self.n_restarts = n_restarts
         self.scaler_X = StandardScaler()
         self.scaler_y = StandardScaler()
         self.exploration_iterations = exploration_iterations
+        self.bounds = bounds
+        self.dim = dim
+        self.budget = budget
         
     def _sample_points(self, n_points, bounds) -> np.ndarray:
         # sample points using LHS
@@ -113,7 +116,7 @@ class AdaptiveLengthScale_EI_UCB_BO:
             best_x.append(res.x)
         return np.array(best_x)
 
-    def optimize(self, objective_fn:Callable[[np.ndarray], np.ndarray], bounds:np.ndarray, budget:int) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, str], int]:
+    def __call__(self, func:Callable[[np.ndarray], np.ndarray]) -> tuple[np.float64, np.ndarray]:
         # Main minimize optimization loop
         # objective_fn: Callable[[np.ndarray], np.ndarray], takes array of shape (n_points, n_dims) and returns array of shape (n_points, 1).
         # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
@@ -121,11 +124,11 @@ class AdaptiveLengthScale_EI_UCB_BO:
         # Evaluate the model using the metric you choose and record the value as model_loss after each training. the size of the model_loss should be equal to the number of iterations plus one for the fit on initial points.
         # Return a tuple (all_y, all_x, (model_losses, loss_name), n_initial_points)
         
-        n_dims = bounds.shape[1]
+        n_dims = self.dim
         n_initial_points = 2 * n_dims
         
         X_init = self._sample_points(n_initial_points, bounds)
-        y_init = objective_fn(X_init)
+        y_init = func(X_init)
 
         all_x = X_init
         all_y = y_init
@@ -137,12 +140,12 @@ class AdaptiveLengthScale_EI_UCB_BO:
         model_loss = self._get_model_loss(model, all_x, all_y)
         model_losses.append(model_loss)
 
-        rest_of_budget = budget - n_initial_points
+        rest_of_budget = self.budget - n_initial_points
         batch_size = 1
         while rest_of_budget > 0:
             self._adaptive_length_scale(all_x)
             X_next = self._select_next_points(model, batch_size, bounds, all_y, iteration)
-            y_next = objective_fn(X_next)
+            y_next = func(X_next)
 
             all_x = np.concatenate((all_x, X_next), axis=0)
             all_y = np.concatenate((all_y, y_next), axis=0)
@@ -154,7 +157,8 @@ class AdaptiveLengthScale_EI_UCB_BO:
             rest_of_budget -= X_next.shape[0]
             iteration += 1
 
-        return all_y, all_x, (np.array(model_losses), loss_name), n_initial_points
+        return None, None
+        # return all_y, all_x, (np.array(model_losses), loss_name), n_initial_points
 
 ```
 
