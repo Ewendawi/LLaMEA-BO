@@ -53,7 +53,7 @@ class LLaMBO:
                 logging.error("Retrying: %s/%s", i_try + 1, retry)
             else:
                 break
-        logging.debug("Response:\n%s\n", response)
+        logging.info("Response:\n%s\n", response)
 
         if response is None or response == "":
             logging.error("No response from the model. Exiting")
@@ -187,8 +187,11 @@ class LLaMBO:
                 tags.append(f"dim:{evaluator.problem_dim()}")
                 ind.add_metadata("tags", tags)
 
-                logging.debug(ind.feedback)
-                logging.debug(ind.error)
+                logging.info(ind.get_summary())
+                if ind.error:
+                    logging.info(ind.error)
+                else:
+                    logging.info(ind.feedback)
 
                 population.add_individual(ind, generation)
 

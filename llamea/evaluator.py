@@ -870,7 +870,7 @@ class IOHEvaluator(AbstractEvaluator):
                 eval_basic_result.error_type = "ReturnCheckError"
 
         if eval_basic_result.error is None:
-            best_y, best_x = res
+            # best_y, best_x = res
             y_hist = obj_fn.y_hist
             x_hist = obj_fn.x_hist
             # y_hist, x_hist, surrogate_model_losses, n_initial_points = res
@@ -909,8 +909,7 @@ class IOHEvaluator(AbstractEvaluator):
             params.append(new_param)
 
         total_tasks = len(params)
-        interval = max(1, total_tasks // 4)
-
+        interval = min(max(1, total_tasks // 4), 20)
 
         if max_processes is None or max_processes > 0:
             max_workers = min(os.cpu_count() - 1, max_processes)

@@ -1,6 +1,7 @@
 import random
 import logging
 import time
+import os
 import tqdm
 import numpy as np
 from llamea import LLaMBO, LLMmanager
@@ -186,7 +187,7 @@ def test_multiple_processes():
 
     def mock_res_provider(*args, **kwargs):
         response = None
-        with open("Experiments/bbob_test_res/successful_heavy_res.md", "r") as f:
+        with open("Experiments/bbob_test_res/successful_light_res2.md", "r") as f:
             response = f.read()
         return response
     
@@ -210,11 +211,7 @@ def test_multiple_processes():
     n_offspring = 1
     n_query_threads = n_parent
 
-    # Note max_threads of OpenBLAS is 64. 
-    # More evaluations, less n_processes.
-    # recommended n_processes in mithril: < 32 with only 1 evaluation. 
-    
-    n_eval_processes = 32
+    n_eval_processes = 4
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
     logging.info("Starting with %s processes", n_eval_processes)
     start = time.perf_counter()
@@ -225,7 +222,7 @@ def test_multiple_processes():
     end = time.perf_counter()
     logging.info("Time taken: %s with %s processes", end - start, n_eval_processes)
 
-    n_eval_processes = 64
+    n_eval_processes = 8
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
     logging.info("Starting with %s processes", n_eval_processes)
     start = time.perf_counter()
@@ -260,8 +257,8 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
 
     budget = 100
     dim = 5
-    time_out_per_eval = 60 * 20
-    # time_out = None
+    # time_out_per_eval = 60 * 20
+    time_out_per_eval = None
 
     progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations", position=0)
     for _ in range(n_iterations):
@@ -269,19 +266,23 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         n_parent_per_offspring = 1
         n_offspring = 1
         population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-        problems = list(range(1, 4))
-        # instances = [[1, 2, 3]] * len(problems)
-        instances = [[1]] * len(problems)
-        repeat = 1
+        problems = list(range(1, 25))
+        instances = [[1, 2, 3]] * len(problems)
+        # instances = [[1]] * len(problems)
+        repeat = 3
         evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
 
         # other_results = evaluator.evaluate_others()
         other_results = None
 
-        n_query_threads = 0
-        n_eval_processes = 0
+        n_query_threads = n_parent
+        n_eval_processes = 8
         
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results, time_out_per_eval=time_out_per_eval,n_query_threads=n_query_threads, n_eval_processes=n_eval_processes)
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results, 
+                              time_out_per_eval=time_out_per_eval,
+                              n_query_threads=n_query_threads, 
+                              n_eval_processes=n_eval_processes
+                              )
         progress_bar.update(1)
 
     log_file_name = f"bbob_exp_{model[0]}"
@@ -292,12 +293,15 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 if __name__ == "__main__":
-    setup_logger(level=logging.INFO)
+    setup_logger(level=logging.DEBUG)
 
-    MODEL = LLMS["deepseek/deepseek-chat"]
-    # MODEL = LLMS["gemini-2.0-flash-exp"]
+    # logging.info(os.environ)
+    # logging.info("CPU count: %s", os.cpu_count())
+
+    # MODEL = LLMS["deepseek/deepseek-chat"]
+    MODEL = LLMS["gemini-2.0-flash-exp"]
     # MODEL = LLMS["gemini-1.5-flash"]
-    MODEL = LLMS["gemini-exp-1206"]
+    # MODEL = LLMS["gemini-exp-1206"]
     # MODEL = LLMS["llama-3.1-70b-versatile"]
     # MODEL = LLMS["llama-3.3-70b-versatile"]
     # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
@@ -316,7 +320,7 @@ if __name__ == "__main__":
     prompt_generator = BoBaselinePromptGenerator()
 
     N_INTERATIONS = 1
-    N_GENERATIONS = 3
+    N_GENERATIONS = 20
 
     # initial solution generation experiment
     # run_bo_exp_code_generation(MODEL, AGGRESSIVENESS, USE_BOTROCH, prompt_generator, n_interations, n_generations)
