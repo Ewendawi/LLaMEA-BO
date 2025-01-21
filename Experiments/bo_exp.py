@@ -1,8 +1,11 @@
 import random
 import logging
+import time
 import tqdm
-from llamea import LLaMBO, LLMmanager, SequencePopulation, Individual
-from llamea.promptGenerator import ZeroPlusBOPromptGenerator, ZeroBOPromptGenerator, PromptGenerator
+import numpy as np
+from llamea import LLaMBO, LLMmanager
+from llamea.individual import Individual, Population, SequencePopulation, ESPopulation
+from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BoBaselinePromptGenerator
 from llamea.utils import setup_logger, IndividualLogger
 from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator
 from llamea.llm import LLMS
@@ -16,24 +19,32 @@ def log_aggressiveness_and_botorch(population:SequencePopulation, aggressiveness
         tags.append(f"aggr:{aggressiveness}")
         individual.add_metadata("tags", tags)
 
+def log_population(population:SequencePopulation, save:bool=True, dirname:str="logs_temp", filename:str="bo_exp"):
+    ind_logger = IndividualLogger()
+    ind_logger.file_name = filename
+    ind_logger.dirname = dirname
+    ind_ids = []
+    for individual in population.all_individuals():
+        ind_logger.log_individual(individual)
+        ind_ids.append(individual.id)
+    exp_name = population.name
+    ind_logger.log_experiment(name=exp_name, id_list=ind_ids)
+
+    if save:
+        ind_logger.save()
+        ind_logger.save_reader_format()
+
+
 def run_bo_exp_code_generation(model:tuple, aggressiveness:float, use_botorch:bool, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
     llambo = LLaMBO()
 
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
 
-    if isinstance(prompt_generator, ZeroPlusBOPromptGenerator):
+    if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
         prompt_generator.use_botorch = use_botorch
         prompt_generator.aggressiveness = aggressiveness
-    elif isinstance(prompt_generator, ZeroBOPromptGenerator):
+    elif isinstance(prompt_generator, BoZeroPromptGenerator):
         prompt_generator.use_botorch = use_botorch
-
-    p1_logger = IndividualLogger()
-    p1_logger.should_log_experiment = True
-    p1_logger.should_log_population = True
-    p1_logger.auto_save = False
-    p1_logger.file_name = f"bo_exp_p1_{model[0]}_{aggressiveness}_{use_botorch}"
-    # p1_logger.dirname = "logs/p1_new_prompt"
-    p1_logger.dirname = "logs_temp"
 
     progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations")
     for _ in range(n_iterations):
@@ -42,12 +53,13 @@ def run_bo_exp_code_generation(model:tuple, aggressiveness:float, use_botorch:bo
 
         other_results = evaluator.evaluate_others()
 
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, ind_logger=p1_logger, retry=3, verbose=2, sup_results=other_results)
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results)
         log_aggressiveness_and_botorch(population, aggressiveness, use_botorch)
         progress_bar.update(1)
 
-    p1_logger.save()
-    p1_logger.save_reader_format()
+    log_file_name = f"bo_exp_p1_{model[0]}_{aggressiveness}_{use_botorch}"
+    log_dir_name = "logs_temp"
+    log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 def run_bo_exp_fix_errors(model:tuple, log_path:str, prompt_generator:PromptGenerator,n_iterations:int=1, n_generations:int=1):
     llambo = LLaMBO()
@@ -75,14 +87,6 @@ def run_bo_exp_fix_errors(model:tuple, log_path:str, prompt_generator:PromptGene
     if len(selected_failed_individuals) < n_samples:
         selected_failed_individuals.extend(random.sample(failed_individuals, n_samples - len(selected_failed_individuals)))
 
-    p2_logger = IndividualLogger()
-    p2_logger.should_log_experiment = True
-    p2_logger.should_log_population = True
-    p2_logger.auto_save = False
-    p2_logger.file_name = f"bo_exp_p2_{model[0]}"
-    # p2_logger.dirname = "logs/p2"
-    p2_logger.dirname = "logs_temp"
-
     progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations")
     for _ in range(n_iterations):
         candidate = selected_failed_individuals.pop()
@@ -91,10 +95,10 @@ def run_bo_exp_fix_errors(model:tuple, log_path:str, prompt_generator:PromptGene
         problem_str = candidate.metadata["problem"]
         problem_dim = candidate.metadata["dimension"]
 
-        if isinstance(prompt_generator, ZeroPlusBOPromptGenerator):
+        if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
             prompt_generator.use_botorch = use_botorch
             prompt_generator.aggressiveness = aggressiveness
-        elif isinstance(prompt_generator, ZeroBOPromptGenerator):
+        elif isinstance(prompt_generator, BoZeroPromptGenerator):
             prompt_generator.use_botorch = use_botorch
 
         evaluator = RandomBoTorchTestEvaluator(dim=problem_dim, obj_fn_name=problem_str)
@@ -104,15 +108,15 @@ def run_bo_exp_fix_errors(model:tuple, log_path:str, prompt_generator:PromptGene
 
         population = SequencePopulation()
         population.add_individual(candidate)
-        p2_logger.log_individual(candidate)
         population.name = f"bo_exp_p2_{candidate.metadata['error_type']}_{model[0]}_{problem_str}"
 
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, ind_logger=p2_logger, retry=3, verbose=2)
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3)
         log_aggressiveness_and_botorch(population, aggressiveness, use_botorch)
         progress_bar.update(1)
 
-    p2_logger.save()
-    p2_logger.save_reader_format()
+    log_file_name = f"bo_exp_p2_{model[0]}"
+    log_dir_name = "logs_temp"
+    log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 def run_bo_exp_optimize_performance(model:tuple, log_path:str, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
     llambo = LLaMBO()
@@ -138,13 +142,6 @@ def run_bo_exp_optimize_performance(model:tuple, log_path:str, prompt_generator:
     if len(selected_successful_individuals) < n_iterations:
         selected_successful_individuals.extend(random.sample(successful_individuals, n_iterations - len(selected_successful_individuals)))
 
-    p3_logger = IndividualLogger()
-    p3_logger.should_log_experiment = True
-    p3_logger.should_log_population = True
-    p3_logger.auto_save = False
-    p3_logger.file_name = f"bo_exp_p3_{model[0]}"
-    p3_logger.dirname = "logs_temp"
-
     selected_successful_individuals = random.sample(successful_individuals, n_iterations)
     progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations")
     for _ in range(n_iterations):
@@ -162,10 +159,10 @@ def run_bo_exp_optimize_performance(model:tuple, log_path:str, prompt_generator:
             elif tag.startswith("dim:"):
                 problem_dim = int(tag.split(":")[1])
 
-        if isinstance(prompt_generator, ZeroPlusBOPromptGenerator):
+        if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
             prompt_generator.aggressiveness = aggressiveness
             prompt_generator.use_botorch = use_botorch
-        elif isinstance(prompt_generator, ZeroBOPromptGenerator):
+        elif isinstance(prompt_generator, BoZeroPromptGenerator):
             prompt_generator.use_botorch = use_botorch
 
         evaluator = RandomBoTorchTestEvaluator(dim=problem_dim, obj_fn_name=problem_str)
@@ -175,94 +172,166 @@ def run_bo_exp_optimize_performance(model:tuple, log_path:str, prompt_generator:
 
         population = SequencePopulation()
         population.add_individual(candidate)
-        p3_logger.log_individual(candidate)
         population.name = f"bo_exp_p3_{problem_str}_{model[0]}_dim{problem_dim}"
 
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, ind_logger=p3_logger, retry=3, verbose=2)
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3)
         log_aggressiveness_and_botorch(population, aggressiveness, use_botorch)
         progress_bar.update(1)
 
-    p3_logger.save()
-    p3_logger.save_reader_format()
+    log_file_name = f"bo_exp_p3_{model[0]}"
+    log_dir_name = "logs_temp"
+    log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
-def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
+def test_multiple_processes():
+
+    def mock_res_provider(*args, **kwargs):
+        response = None
+        with open("Experiments/bbob_test_res/successful_heavy_res.md", "r") as f:
+            response = f.read()
+        return response
+    
     llambo = LLaMBO()
-
+    model = LLMS["deepseek/deepseek-chat"]
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
-
-    p_logger = IndividualLogger()
-    aggressiveness = None
-    if isinstance(prompt_generator, ZeroPlusBOPromptGenerator):
-        aggressiveness = prompt_generator.aggressiveness
-        p_logger.file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
-    elif isinstance(prompt_generator, ZeroBOPromptGenerator):
-        p_logger.file_name = f"bbob_exp_{model[0]}"
-
-    p_logger.should_log_experiment = True
-    p_logger.should_log_population = True
-    p_logger.auto_save = False
-    p_logger.dirname = "logs_bbob"
+    llm.mock_res_provider = mock_res_provider
+    prompt_generator = BoBaselinePromptGenerator()
 
     budget = 100
     dim = 5
     time_out = 60 * budget * dim // 100
+    problems = list(range(1, 3))
+    evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=[[1]] * len(problems), repeat=1)
 
-    progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations")
+    n_generations = 1
+    n_parent = 2
+    n_parent_per_offspring = 1
+    n_offspring = 1
+    n_query_threads = n_parent
+    
+    n_eval_processes = 2
+    population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
+    logging.info("Starting with multiple processes")
+    start = time.perf_counter()
+    llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
+                          n_query_threads=n_query_threads, 
+                          n_eval_processes=n_eval_processes
+                          )
+    end = time.perf_counter()
+    logging.info("Time taken: %s with %s processes", end - start, n_eval_processes)
+
+    n_eval_processes = 0
+    population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
+    logging.info("Starting without multiple processes")
+    start = time.perf_counter()
+    llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
+                          n_query_threads=n_query_threads,
+                          n_eval_processes=n_eval_processes
+                          )
+    end = time.perf_counter()
+    logging.info("Time taken: %s without multiple processes", end - start)
+
+
+def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
+
+    def mock_res_provider(*args, **kwargs):
+        file_list = [
+            "Experiments/bbob_test_res/successful_heavy_res.md",
+            "Experiments/bbob_test_res/successful_light_res.md",
+            "Experiments/bbob_test_res/successful_light_res1.md",
+            "Experiments/bbob_test_res/fail_excute_res.md",
+            "Experiments/bbob_test_res/fail_overbudget_res.md",
+        ]
+        file_path = np.random.choice(file_list, size=1, p=[0.0, 0.0, 1.0, 0.0, 0.0])[0]
+        response = None
+        with open(file_path, "r") as f:
+            response = f.read()
+        return response
+    
+    llambo = LLaMBO()
+
+    llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
+    # llm.mock_res_provider = mock_res_provider
+
+    budget = 100
+    dim = 5
+    time_out_per_eval = 60 * 20
+    # time_out = None
+
+    progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations", position=0)
     for _ in range(n_iterations):
-        population = SequencePopulation()
-        evaluator = IOHEvaluator(budget=100, time_out=time_out, dim=dim)
+        n_parent = 1
+        n_parent_per_offspring = 1
+        n_offspring = 1
+        population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
+        problems = list(range(1, 4))
+        # instances = [[1, 2, 3]] * len(problems)
+        instances = [[1]] * len(problems)
+        repeat = 1
+        evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
 
-        other_results = evaluator.evaluate_others()
+        # other_results = evaluator.evaluate_others()
+        other_results = None
 
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, ind_logger=p_logger, retry=3, verbose=2, sup_results=other_results)
+        n_query_threads = 0
+        n_eval_processes = 0
+        
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results, time_out_per_eval=time_out_per_eval,n_query_threads=n_query_threads, n_eval_processes=n_eval_processes)
         progress_bar.update(1)
 
-    p_logger.save()
-    p_logger.save_reader_format()
+    log_file_name = f"bbob_exp_{model[0]}"
+    if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
+        aggressiveness = prompt_generator.aggressiveness
+        log_file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
+    log_dir_name = "logs_bbob"
+    log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
-setup_logger(level=logging.INFO)
+if __name__ == "__main__":
+    setup_logger(level=logging.DEBUG)
 
-# MODEL = LLMS["deepseek/deepseek-chat"]
-# MODEL = LLMS["gemini-2.0-flash-exp"]
-# MODEL = LLMS["gemini-exp-1206"]
-MODEL = LLMS["llama-3.1-70b-versatile"]
-# MODEL = LLMS["llama-3.3-70b-versatile"]
-# MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
-# MODEL = LLMS["o_gemini-2.0-flash-exp"]
-# MODEL = LLMS['o_llama-3.1-405b-instruct']
+    MODEL = LLMS["deepseek/deepseek-chat"]
+    # MODEL = LLMS["gemini-2.0-flash-exp"]
+    # MODEL = LLMS["gemini-1.5-flash"]
+    MODEL = LLMS["gemini-exp-1206"]
+    # MODEL = LLMS["llama-3.1-70b-versatile"]
+    # MODEL = LLMS["llama-3.3-70b-versatile"]
+    # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
+    # MODEL = LLMS["o_gemini-2.0-flash-exp"]
 
-AGGRESSIVENESS = [0.3, 0.5, 0.7, 1.0]
-USE_BOTROCH = False
+    AGGRESSIVENESS = [0.3, 0.5, 0.7, 1.0]
+    USE_BOTROCH = False
 
-# prompt_generator = ZeroPlusBOPromptGenerator()
-# prompt_generator.aggressiveness = AGGRESSIVENESS[3]
-# prompt_generator.use_botorch = USE_BOTROCH
+    # prompt_generator = BoZeroPlusPromptGenerator()
+    # prompt_generator.aggressiveness = AGGRESSIVENESS[3]
+    # prompt_generator.use_botorch = USE_BOTROCH
 
-prompt_generator = ZeroBOPromptGenerator()
-prompt_generator.use_botorch = USE_BOTROCH
+    # prompt_generator = BoZeroPromptGenerator()
+    # prompt_generator.use_botorch = USE_BOTROCH
 
-N_INTERATIONS = 5
-N_GENERATIONS = 6
+    prompt_generator = BoBaselinePromptGenerator()
 
+    N_INTERATIONS = 1
+    N_GENERATIONS = 3
 
-# initial solution generation experiment
-# run_bo_exp_code_generation(MODEL, AGGRESSIVENESS, USE_BOTROCH, prompt_generator, n_interations, n_generations)
-
-
-# fix errors experiment
-# log_path = """
-# logs_temp/bo_exp_p1_o_gemini-2.0-flash-exp_1.0_False
-# """
-# run_bo_exp_fix_errors(model=MODEL, log_path=log_path, prompt_generator=prompt_generator, n_iterations=n_interations, n_generations=n_generations)
-
-# optimize performance experiment
-# log_path = """
-# logs_temp/bo_exp_p2_o_gemini-2.0-flash-exp
-# """
-# run_bo_exp_optimize_performance(model=MODEL, log_path=log_path, prompt_generator=prompt_generator, n_iterations=n_interations, n_generations=n_generations)
+    # initial solution generation experiment
+    # run_bo_exp_code_generation(MODEL, AGGRESSIVENESS, USE_BOTROCH, prompt_generator, n_interations, n_generations)
 
 
-# bbob experiment
-run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS)
+    # fix errors experiment
+    # log_path = """
+    # logs_temp/bo_exp_p1_o_gemini-2.0-flash-exp_1.0_False
+    # """
+    # run_bo_exp_fix_errors(model=MODEL, log_path=log_path, prompt_generator=prompt_generator, n_iterations=n_interations, n_generations=n_generations)
 
-# IndividualLogger.merge_logs("logs_bbob").save_reader_format()
+    # optimize performance experiment
+    # log_path = """
+    # logs_temp/bo_exp_p2_o_gemini-2.0-flash-exp
+    # """
+    # run_bo_exp_optimize_performance(model=MODEL, log_path=log_path, prompt_generator=prompt_generator, n_iterations=n_interations, n_generations=n_generations)
+
+    
+    # bbob experiment
+    # run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS)
+
+    # IndividualLogger.merge_logs("logs_bbob").save_reader_format()
+
+    test_multiple_processes()
