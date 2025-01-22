@@ -6,6 +6,7 @@ import logging
 import time
 import concurrent.futures
 import numpy as np
+import torch
 from tqdm import tqdm
 
 from .individual import Individual, Population
@@ -70,6 +71,10 @@ class LLaMBO:
             response_handler.error_type = err.__class__.__name__
             logging.error("No code extracted from the model.")
             return response_handler
+
+        # search whether the code include "cuda"
+        if torch.cuda.is_available() and "cuda" not in response_handler.code:
+            raise Exception("CUDA is available but the code does not use 'cuda'.")
 
         res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name, max_eval_workers=n_eval_workers, timeout=timeout)
 

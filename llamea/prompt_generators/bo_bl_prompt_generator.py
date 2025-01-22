@@ -1,6 +1,7 @@
 import re
 from typing import Any
 import numpy as np
+import torch
 from .abstract_prompt_generator import PromptGenerator, ResponseHandler, GenerationTask, EvaluatorResult
 from .bo_zeroplus_prompt_generator import BOPromptGeneratorReturnChecker
 from ..individual import Individual, ESPopulation
@@ -114,10 +115,13 @@ With code:
         return role_prompt, final_prompt
 
     def task_description(self, task, extra = ""):
-        task_prompt = """
+        lib_prompt = "As an expert of numpy, scipy, scikit-learn, you are allowed to use these libraries."
+        if torch.cuda.is_available():
+            lib_prompt += "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries, and using GPU for acceleration is encouraged."
+        task_prompt = f"""
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
-As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries with GPU if possible. Do not use any other libraries unless they cannot be replaced by the above libraries. Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
+{lib_prompt} Do not use any other libraries unless they cannot be replaced by the above libraries. Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
 Give an excellent and novel heuristic algorithm to solve this task and also give it a one-line description with the main idea. 
 """
         return task_prompt
