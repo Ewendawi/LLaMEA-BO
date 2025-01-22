@@ -420,7 +420,7 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, code, cls_name, cls=None, max_processes:int = 0, timeout:int=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = 0, timeout:int=None) -> EvaluatorResult:
         pass
 
     def evaluate_others(self) -> list[EvaluatorResult]:
@@ -539,7 +539,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
 
         return other_results
 
-    def evaluate(self, code, cls_name, cls=None, max_processes:int = -1, timeout:int=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, timeout:int=None) -> EvaluatorResult:
         """Evaluate an individual."""
 
         eval_result = EvaluatorResult()
@@ -888,7 +888,7 @@ class IOHEvaluator(AbstractEvaluator):
 
         return eval_basic_result
 
-    def evaluate(self, code, cls_name, cls=None, max_processes:int = -1, timeout:int=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, timeout:int=None) -> EvaluatorResult:
         """Evaluate an individual."""
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
@@ -911,12 +911,18 @@ class IOHEvaluator(AbstractEvaluator):
         total_tasks = len(params)
         interval = min(max(1, total_tasks // 4), 20)
 
-        if max_processes is None or max_processes > 0:
-            max_workers = min(os.cpu_count() - 1, max_processes)
+        if max_eval_workers is None or max_eval_workers > 0:
+            max_workers = min(os.cpu_count() - 1, max_eval_workers)
 
-            logging.info("Evaluating %s: %s tasks, using %s max_workers", cls_name, total_tasks, max_workers)
-
-            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # if cuda is available, use thread pool executor
+            if torch.cuda.is_available():
+                logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+                executor_cls = concurrent.futures.ThreadPoolExecutor
+            else:
+                logging.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+                executor_cls = concurrent.futures.ProcessPoolExecutor
+                
+            with executor_cls(max_workers=max_workers) as executor:
                 futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
                 for future in concurrent.futures.as_completed(futures.keys()):
                     res, captured_output, err, exec_time, obj_fn = future.result()

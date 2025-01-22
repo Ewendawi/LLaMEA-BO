@@ -201,7 +201,7 @@ def test_multiple_processes():
     dim = 5
     problems = list(range(1, 25))
     instances = [[1, 2, 3]] * len(problems)
-    repeat = 3
+    repeat = 1
     time_out = 60 * budget * dim // 100
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
 
@@ -211,27 +211,27 @@ def test_multiple_processes():
     n_offspring = 1
     n_query_threads = n_parent
 
-    n_eval_processes = 4
+    n_eval_workers = 16
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-    logging.info("Starting with %s processes", n_eval_processes)
+    logging.info("Starting with %s processes", n_eval_workers)
     start = time.perf_counter()
     llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
                           n_query_threads=n_query_threads, 
-                          n_eval_processes=n_eval_processes
+                          n_eval_workers=n_eval_workers
                           )
     end = time.perf_counter()
-    logging.info("Time taken: %s with %s processes", end - start, n_eval_processes)
+    logging.info("Time taken: %s with %s processes", end - start, n_eval_workers)
 
-    n_eval_processes = 8
+    n_eval_workers = 32
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-    logging.info("Starting with %s processes", n_eval_processes)
+    logging.info("Starting with %s processes", n_eval_workers)
     start = time.perf_counter()
     llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
                           n_query_threads=n_query_threads,
-                          n_eval_processes=n_eval_processes
+                          n_eval_workers=n_eval_workers
                           )
     end = time.perf_counter()
-    logging.info("Time taken: %s with %s processes", end - start, n_eval_processes)
+    logging.info("Time taken: %s with %s processes", end - start, n_eval_workers)
 
 
 def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
@@ -255,7 +255,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
     # llm.mock_res_provider = mock_res_provider
 
-    budget = 100
+    budget = 200
     dim = 5
     # time_out_per_eval = 60 * 20
     time_out_per_eval = None
@@ -268,7 +268,6 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
         problems = list(range(1, 25))
         instances = [[1, 2, 3]] * len(problems)
-        # instances = [[1]] * len(problems)
         repeat = 3
         evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
 
@@ -276,12 +275,12 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         other_results = None
 
         n_query_threads = n_parent
-        n_eval_processes = 8
+        n_eval_workers = 8
         
         llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results, 
                               time_out_per_eval=time_out_per_eval,
                               n_query_threads=n_query_threads, 
-                              n_eval_processes=n_eval_processes
+                              n_eval_workers=n_eval_workers
                               )
         progress_bar.update(1)
 
@@ -293,7 +292,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 if __name__ == "__main__":
-    setup_logger(level=logging.DEBUG)
+    setup_logger(level=logging.INFO)
 
     # logging.info(os.environ)
     # logging.info("CPU count: %s", os.cpu_count())
@@ -340,8 +339,8 @@ if __name__ == "__main__":
 
     
     # bbob experiment
-    # run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS)
+    run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS)
 
     # IndividualLogger.merge_logs("logs_bbob").save_reader_format()
 
-    test_multiple_processes()
+    # test_multiple_processes()
