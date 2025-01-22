@@ -243,6 +243,7 @@ class EvaluatorBasicResult:
         self.best_x = None
 
         self.y_aoc = 0.0
+        self.y_aoc_from_ioh = 0.0
         self.x_mean = None
         self.x_std = None
         self.y_mean = None
@@ -632,6 +633,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
 
     
 from ioh import get_problem, logger
+from misc import aoc_logger, correct_aoc, OverBudgetException
 
 class IOHObjectiveFn:
     def __init__(self, problem_id, instance_id, exec_id, dim, budget, show_progress_bar=False):
@@ -649,9 +651,10 @@ class IOHObjectiveFn:
         ub = self.obj_fn.bounds.ub
         p_bounds = np.array([lb, ub])
         self.bounds = p_bounds
-        
+
         self.x_hist = None
         self.y_hist = None
+        self.aoc = 0.0
 
         self.progress_bar = None
         self.show_progress_bar = show_progress_bar
@@ -718,6 +721,9 @@ class IOHObjectiveFn:
 def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None) -> EvaluatorBasicResult:
 
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
+
+    l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
+    obj_fn.obj_fn.attach_logger(l2)
         
     start_time = time.perf_counter()
 
@@ -733,6 +739,8 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     exec_time = time.perf_counter() - start_time
 
     # unset the unpicklable object
+    aoc = correct_aoc(obj_fn.obj_fn, l2, budget)
+    obj_fn.aoc = aoc
     obj_fn.reset()
 
     return res, captured_output, err, exec_time, obj_fn
@@ -873,7 +881,9 @@ class IOHEvaluator(AbstractEvaluator):
             # best_y, best_x = res
             y_hist = obj_fn.y_hist
             x_hist = obj_fn.x_hist
+
             # y_hist, x_hist, surrogate_model_losses, n_initial_points = res
+            eval_basic_result.y_aoc_from_ioh = obj_fn.aoc
 
             eval_basic_result.name = obj_fn.name
             eval_basic_result.bounds = obj_fn.bounds
@@ -955,7 +965,9 @@ class IOHEvaluator(AbstractEvaluator):
                         logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
 
         if eval_result.error is None:
-            eval_result.score = np.mean([r.y_aoc for r in eval_result.result])
+            # eval_result.score = np.mean([r.y_aoc for r in eval_result.result])
+            eval_result.score = np.mean([r.y_aoc_from_ioh for r in eval_result.result])
+            # logging.info("Evaluating %s: Score - %s - %s", cls_name, score, eval_result.score)
         else:                            
             eval_result.score = -np.Inf
 

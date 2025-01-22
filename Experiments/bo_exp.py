@@ -6,7 +6,7 @@ import tqdm
 import numpy as np
 from llamea import LLaMBO, LLMmanager
 from llamea.individual import Individual, Population, SequencePopulation, ESPopulation
-from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BoBaselinePromptGenerator
+from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BoBaselinePromptGenerator, BaselinePromptGenerator
 from llamea.utils import setup_logger, IndividualLogger
 from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator
 from llamea.llm import LLMS

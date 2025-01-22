@@ -64,12 +64,12 @@ def update_state(state, Y_next):
     return state
 
 class TuRBO:
-    def __init__(self, budget:int, dim:int, bounds:np.ndarray):
+    def __init__(self, budget:int, dim:int):
         # Initialize optimizer settings
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = torch.double
 
-        self.bounds = torch.tensor(bounds, dtype=self.dtype, device=self.device)
+        self.bounds = torch.tensor([[-5.0] * dim, [5.0] * dim], dtype=self.dtype, device=self.device)
         self.budget = budget
         self.dim = dim
     

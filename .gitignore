@@ -181,3 +181,4 @@ ast/img*
 ast/graphstats*
 
 logs_*/
+exp-*

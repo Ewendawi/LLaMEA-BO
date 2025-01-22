@@ -15,7 +15,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from .ast import analyze_run
 from .individual import Individual
-from .llm import LLMmanager
+from .llm import LLMmanager, LLMS
 from .loggers import ExperimentLogger
 from .utils import NoCodeException, handle_timeout
 
@@ -72,7 +72,8 @@ class LLaMEA:
             minimization (bool): Whether we minimize or maximize the objective function. Defaults to False.
             _random (bool): Flag to switch to random search (purely for debugging).
         """
-        self.client = LLMmanager(api_key, model)
+        MODEL = LLMS["gemini-2.0-flash-exp"]
+        self.client = LLMmanager(api_key=MODEL[1], model=MODEL[0], base_url=MODEL[2], max_interval=model[3])
         self.api_key = api_key
         self.model = model
         self.eval_timeout = eval_timeout
