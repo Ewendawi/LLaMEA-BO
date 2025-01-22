@@ -118,8 +118,10 @@ With code:
         lib_prompt = "As an expert of numpy, scipy, scikit-learn, you are allowed to use these libraries."
         if torch.cuda.is_available():
             lib_prompt += "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries, and using GPU for acceleration is encouraged."
+        problem_desc = "one noiseless functions:f6-Attractive Sector Function"
+        # problem_desc = "24 noiseless functions"
         task_prompt = f"""
-The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
+The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of {problem_desc}. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
 {lib_prompt} Do not use any other libraries unless they cannot be replaced by the above libraries. Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
 Give an excellent and novel heuristic algorithm to solve this task and also give it a one-line description with the main idea. 
@@ -198,7 +200,9 @@ class <AlgorithmName>:
         for i in range(5):
             grouped_aucs.append([])
         for res in eval_res.result:
-            aucs.append(res.y_aoc)
+            aoc = res.y_aoc_from_ioh
+            aoc = res.y_aoc
+            aucs.append(aoc)
 
             res_id = res.id
             res_split = res_id.split("-")
@@ -219,7 +223,7 @@ class <AlgorithmName>:
                 "problem_id": problem_id,
                 "instance_id": instance_id,
                 "repeat_id": repeat_id,
-                "y_aoc": res.y_aoc
+                "y_aoc": aoc
             }
             grouped_aucs[group_idx].append(content)
 
@@ -242,6 +246,8 @@ class <AlgorithmName>:
         multi_weak_auc = np.mean(multi_weak_aucs) if len(multi_weak_aucs) > 0 else 0
             
         final_feedback_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.2f} with standard deviation {auc_std:0.2f}.
+"""
+        detailed_feedback = f"""
 The mean AOCC score of the algorithm {algorithm_name} on Separable functions was {separated_auc:.02f}, on functions with low or moderate conditioning {low_mod_auc:.02f}, on functions with high conditioning and unimodal {high_uni_auc:.02f}, on Multi-modal functions with adequate global structure {multi_adequate_auc:.02f}, and on Multi-modal functions with weak global structure {multi_weak_auc:.02f}
 """
         return final_feedback_prompt

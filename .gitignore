@@ -182,3 +182,4 @@ ast/graphstats*
 
 logs_*/
 exp-*
+currentexp

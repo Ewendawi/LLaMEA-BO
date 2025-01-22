@@ -894,7 +894,7 @@ class IOHEvaluator(AbstractEvaluator):
             # eval_basic_result.model_loss_name = surrogate_model_losses[1]
             # eval_basic_result.n_initial_points = n_initial_points
             eval_basic_result.update_stats()
-            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, log_scale=True, min_y=1e-8, max_y=1e2)
+            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, log_scale=False, min_y=1e-8, max_y=1e2)
 
         return eval_basic_result
 
@@ -925,7 +925,7 @@ class IOHEvaluator(AbstractEvaluator):
             max_workers = min(os.cpu_count() - 1, max_eval_workers)
 
             # if cuda is available, use thread pool executor
-            if torch.cuda.is_available():
+            if torch.cuda.is_available() and "cuda" in code:
                 logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
                 executor_cls = concurrent.futures.ThreadPoolExecutor
             else:

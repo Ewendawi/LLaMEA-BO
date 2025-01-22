@@ -255,7 +255,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
     # llm.mock_res_provider = mock_res_provider
 
-    budget = 200
+    budget = 150
     dim = 5
     # time_out_per_eval = 60 * 20
     time_out_per_eval = None
@@ -266,7 +266,8 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         n_parent_per_offspring = 1
         n_offspring = 1
         population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-        problems = list(range(1, 25))
+        # problems = list(range(1, 25))
+        problems = [6]
         instances = [[1, 2, 3]] * len(problems)
         repeat = 3
         evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
@@ -275,7 +276,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         other_results = None
 
         n_query_threads = n_parent
-        n_eval_workers = 8
+        n_eval_workers = 2
         
         llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results, 
                               time_out_per_eval=time_out_per_eval,

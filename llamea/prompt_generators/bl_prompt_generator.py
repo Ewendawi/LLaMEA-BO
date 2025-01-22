@@ -207,7 +207,9 @@ class RandomSearch:
         multi_weak_aucs = [content["y_aoc"] for content in grouped_aucs[4]]
         multi_weak_auc = np.mean(multi_weak_aucs) if len(multi_weak_aucs) > 0 else 0
             
-        final_feedback_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.2f} with standard deviation {auc_std:0.2f}.
+        final_feedback_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.2f} with standard deviation {auc_std:0.2f}."""
+
+        detailed_feedback_prompt = f"""
 The mean AOCC score of the algorithm {algorithm_name} on Separable functions was {separated_auc:.02f}, on functions with low or moderate conditioning {low_mod_auc:.02f}, on functions with high conditioning and unimodal {high_uni_auc:.02f}, on Multi-modal functions with adequate global structure {multi_adequate_auc:.02f}, and on Multi-modal functions with weak global structure {multi_weak_auc:.02f}
 """
         return final_feedback_prompt
