@@ -8,7 +8,7 @@ from llamea import LLaMBO, LLMmanager
 from llamea.individual import Individual, Population, SequencePopulation, ESPopulation
 from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BoBaselinePromptGenerator, BaselinePromptGenerator
 from llamea.utils import setup_logger, IndividualLogger
-from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator
+from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator, AbstractEvaluator
 from llamea.llm import LLMS
 
 def log_aggressiveness_and_botorch(population:SequencePopulation, aggressiveness:float, use_botorch:bool):
@@ -234,6 +234,22 @@ def test_multiple_processes():
     logging.info("Time taken: %s with %s processes", end - start, n_eval_workers)
 
 
+def plot():
+    file_paths = [
+        ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0121222958.pkl", "bo"),
+        ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0122054457.pkl", "es-1+1"),
+    ]
+    strategy_list = []
+    for file_path, name in file_paths:
+        ind_logger = IndividualLogger.load(file_path)
+        ind_ids = list(ind_logger.experiment_map.values())[0]["id_list"]
+        inds = [ind_logger.get_individual(ind_id) for ind_id in ind_ids]
+        res_list = [ind.metadata["res_handler"].eval_result for ind in inds]
+        strategy_list.append((name, res_list))
+
+    IOHEvaluator.plot_results(results=strategy_list, other_results=None)
+        
+
 def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
 
     def mock_res_provider(*args, **kwargs):
@@ -255,7 +271,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
     # llm.mock_res_provider = mock_res_provider
 
-    budget = 150
+    budget = 100
     dim = 5
     # time_out_per_eval = 60 * 20
     time_out_per_eval = None
@@ -275,8 +291,8 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         # other_results = evaluator.evaluate_others()
         other_results = None
 
-        n_query_threads = n_parent
-        n_eval_workers = 2
+        n_query_threads = 0
+        n_eval_workers = 0
         
         llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results, 
                               time_out_per_eval=time_out_per_eval,
@@ -293,7 +309,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 if __name__ == "__main__":
-    setup_logger(level=logging.INFO)
+    setup_logger(level=logging.DEBUG)
 
     # logging.info(os.environ)
     # logging.info("CPU count: %s", os.cpu_count())
@@ -340,8 +356,9 @@ if __name__ == "__main__":
 
     
     # bbob experiment
-    run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS)
+    # run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS)
 
     # IndividualLogger.merge_logs("logs_bbob").save_reader_format()
 
     # test_multiple_processes()
+    plot()

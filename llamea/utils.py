@@ -4,6 +4,8 @@ from datetime import datetime
 import logging
 import pickle
 import os
+from matplotlib import pyplot as plt
+import numpy as np
 from .individual import Individual
 
 class NoCodeException(Exception):
@@ -14,6 +16,98 @@ class BOOverBudgetException(Exception):
 
 def handle_timeout(signum, frame):
     raise TimeoutError
+
+def plot_result(y:np.ndarray, x:np.ndarray,
+
+                labels:list[list[str]],
+                label_fontsize:int = 8,
+
+                x_labels:list[str]=None, y_labels:list[str]=None, 
+
+                sub_titles:list[str]=None,
+                sub_title_fontsize:int = 10,
+
+                baselines:np.ndarray=None, baseline_labels:list[list[str]]=None, 
+
+                title:str = None,
+                title_fontsize:int = 12, 
+
+                filename:str = None, 
+                n_cols:int = 1, figsize:tuple[int,int] = (10, 6), 
+                show:bool = True):
+    
+    # y.shape = (n_plots, n_lines, n_points)
+    if len(labels) != y.shape[0]:
+        logging.warning("PLOT:Number of labels does not match the number of plots.")
+    
+    if x_labels is not None and len(x_labels) != y.shape[0]:
+        logging.warning("PLOT:Number of x_labels does not match the number of plots.")
+    
+    if y_labels is not None and len(y_labels) != y.shape[0]:
+        logging.warning("PLOT:Number of y_labels does not match the number of plots.")
+
+    if sub_titles is not None and len(sub_titles) != y.shape[0]:
+        logging.warning("PLOT:Number of sub_titles does not match the number of plots.")
+
+    # baselines.shape = (n_plots, n_lines, 1)
+    if baselines is not None:
+        if len(baselines.shape) < 3:
+            d_2 = baselines.shape[0] if len(baselines.shape) == 2 else np.newaxis
+            baselines = baselines[np.newaxis, d_2, :]
+        
+        if len(baselines) != y.shape[2]:
+            logging.warning("PLOT:Number of baselines does not match the number of plots.")
+        if baseline_labels is not None and len(baseline_labels) != y.shape[2]:
+            logging.warning("PLOT:Number of baseline_labels does not match the number of plots.")
+
+    
+    n_plots = y.shape[0]
+    n_rows = n_plots // n_cols
+
+    axs_ids = []
+    for row in range(n_rows):
+        row_ids = []
+        for col in range(n_cols):
+            row_ids.append(row * n_cols + col)
+        axs_ids.append(row_ids)
+    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize)
+    for i in range(n_plots):
+        row = i // n_cols
+        col = i % n_cols
+        ax = axs[i]
+        ax.ticklabel_format(axis='y', style='sci', scilimits=(-3,3))
+        _labels = labels[i] if len(labels) > i else []
+        for j in range(y.shape[1]):
+            label = _labels[j] if len(_labels) > j else f"{j}"
+            ax.plot(x[i, j,:], y[i, j,:], label=label)
+        if baselines is not None:
+            for j in range(baselines.shape[1]):
+                bl_label = baseline_labels[j] if len(baseline_labels) > j else f"{j}"
+                ax[row, col].plot(x[i, j], baselines[i, j], label=f"{bl_label}", linestyle='--')
+
+        ax.legend(fontsize=label_fontsize)
+        ax.grid(True)
+
+        if x_labels is not None:
+            x_label = x_labels[i] if len(x_labels) > i else ""
+            ax.set_xlabel(x_label)
+        if y_labels is not None:
+            y_label = y_labels[i] if len(y_labels) > i else ""
+            ax.set_ylabel(y_label)
+        if sub_titles is not None:
+            sub_title = sub_titles[i] if len(sub_titles) > i else ""
+            ax.set_title(sub_title, fontsize=sub_title_fontsize)
+
+    if title:
+        fig.suptitle(title, fontsize=title_fontsize)
+    if filename:
+        plt.savefig(filename, dpi=300)
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+        
 
 #========================================
 #Logger

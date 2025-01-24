@@ -27,7 +27,7 @@ def evaluateBBOB(solution, explogger = None, details=False):
     algorithm = None
     for dim in [5]:
         budget = 2000 * dim
-        budget = 200
+        budget = 100
         l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
         for fid in np.arange(1,25):
             for iid in [1,2,3]: #, 4, 5]
@@ -91,7 +91,7 @@ def evaluateBBOB(solution, explogger = None, details=False):
 task_prompt = """
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
-As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries, and using GPU for acceleration is encouraged. Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
+As an expert of numpy, scipy, scikit-learn, you are allowed to use these libraries. Do not use any other libraries unless they cannot be replaced by the above libraries. Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
 Give an excellent and novel heuristic algorithm to solve this task and also give it a one-line description with the main idea. 
 
 A code structure guide is as follows:

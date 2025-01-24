@@ -16,12 +16,13 @@ from abc import ABC, abstractmethod
 import inspect
 from tqdm import tqdm
 import numpy as np
+import pandas as pd
 import torch
 from botorch.test_functions import synthetic
 from botorch.test_functions.synthetic import SyntheticTestFunction, ConstrainedSyntheticTestFunction
 
 from .individual import Individual
-from .utils import BOOverBudgetException 
+from .utils import BOOverBudgetException, plot_result
 
 #========================================
 #BoTorch test functions
@@ -427,6 +428,10 @@ class AbstractEvaluator(ABC):
     def evaluate_others(self) -> list[EvaluatorResult]:
         pass
 
+    @classmethod
+    def plot_results(cls, results:list[tuple[str,list[EvaluatorResult]]], 
+                     other_results:list[EvaluatorResult] = None, **kwargs):
+        pass
 
 class BotorchObjectivexFn:
     def __init__(self, obj_fn, budget=None):
@@ -972,6 +977,154 @@ class IOHEvaluator(AbstractEvaluator):
             eval_result.score = -np.Inf
 
         return eval_result
+
+    @classmethod
+    def plot_results(cls, results:list[tuple[str,list[EvaluatorResult]]], 
+                     other_results:list[EvaluatorResult] = None, **kwargs):
+        #results: (n_strategies, n_generations, n_evaluations)
+        column_names = [
+            'strategy',
+            'problem_id',
+            'instance_id',
+            'exec_id',
+            'n_gen',
+            "log_y_aoc",
+            "y_aoc",
+            "best_y",
+            'loss'
+            ]
+
+        def res_to_row(res, gen:int):
+            res_id = res.id
+            res_split = res_id.split("-")
+            problem_id = int(res_split[0])
+            instance_id = int(res_split[1])
+            repeat_id = int(res_split[2])
+            row = {
+                'strategy': strategy_name,
+                'problem_id': problem_id,
+                'instance_id': instance_id,
+                'exec_id': repeat_id,
+                'n_gen': gen+1,
+                "log_y_aoc": res.y_aoc,
+                "y_aoc": res.y_aoc,
+                "best_y": res.best_y,
+                'loss': abs(res.optimal_value - res.best_y)
+            }
+            return row
+        
+        res_df = pd.DataFrame(columns=column_names)
+        for res_tuple in results:
+            strategy_name, gen_list = res_tuple 
+            for i, gen_res in enumerate(gen_list):
+                if gen_res.error is not None:
+                    continue
+                for res in gen_res.result:
+                    row = res_to_row(res, i) 
+                    res_df.loc[len(res_df)] = row
+        
+        if other_results is not None:
+            for other_res in other_results:
+                for res in other_res.result:
+                    row = res_to_row(res, -1)
+                    res_df.loc[len(res_df)] = row
+
+        # strategy-wise
+        log_y_aocs, log_y_aoc_labels = [], []
+        baseline_y_aoc, baseline_y_aoc_labels = [], []
+        y_aocs, y_aoc_labels = [], []
+        baseline_y_aoc, baseline_y_aoc_labels = [], []
+        g_log_y_aoc = res_df.groupby(['strategy', 'n_gen'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
+        max_gen = g_log_y_aoc['n_gen'].max()
+        for name, group in g_log_y_aoc.groupby('strategy'):
+            gens = group['n_gen'].values
+            if len(gens) == 1 and gens[0] == -1:
+                baseline_y_aoc.append(group['y_aoc'].values[0])
+                baseline_y_aoc_labels.append(name)
+                continue
+            
+            # fill the missing generations with 0
+            aoc = np.zeros(max_gen)
+            log_aoc = np.zeros(max_gen)
+            for gen in gens:
+                log_aoc[gen-1] = group[group['n_gen'] == gen]['log_y_aoc'].values[0]
+                aoc[gen-1] = group[group['n_gen'] == gen]['y_aoc'].values[0]
+
+            log_y_aocs.append(log_aoc)
+            y_aocs.append(aoc)
+            log_y_aoc_labels.append(name)
+            y_aoc_labels.append(name)
+            
+        # problem-wise
+        loss_list = [[] for _ in range(1, 25)]
+        loss_labels = [[] for _ in range(1, 25)]
+        aoc_list = [[] for _ in range(1, 25)]
+        aoc_labels = [[] for _ in range(1, 25)]
+        g_best_y = res_df.groupby(['strategy', 'n_gen', 'problem_id'])[['y_aoc', 'loss']].agg(np.mean).reset_index()
+        max_gen = g_best_y['n_gen'].max()
+        for (name, p_id), group in g_best_y.groupby(['strategy', 'problem_id']):
+            gens = group['n_gen'].values
+            if len(gens) == 1 and gens[0] == -1:
+                continue
+
+            aoc = np.zeros(max_gen)
+            loss = np.zeros(max_gen)
+            max_loss = group['loss'].max()
+            missing_gens = set(range(1, max_gen+1)) - set(gens)
+            for missing_gen in missing_gens:
+                loss[missing_gen-1] = max_loss
+            for gen in gens:
+                loss[gen-1] = group[group['n_gen'] == gen]['loss'].values[0]
+                aoc[gen-1] = group[group['n_gen'] == gen]['y_aoc'].values[0]
+
+            aoc_list[p_id-1].append(aoc)
+            aoc_labels[p_id-1].append(name)
+            loss_list[p_id-1].append(loss)
+            loss_labels[p_id-1].append(name)
+            
+        # # plot aoc
+        # y = np.maximum.accumulate(np.array([log_y_aocs, y_aocs]), axis=2)
+        # base_x = np.arange(1, max_gen+1, dtype=int)
+        # x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
+        # sub_titles = ["Log AOC", "AOC"]
+        # plot_result(y=y, x=x, labels=log_y_aoc_labels, 
+        #             title=None, x_labels=["Generations"], y_labels=["Log AOC"],
+        #             sub_titles=sub_titles, n_cols=2,
+        #             **kwargs)
+
+        # plot loss
+        # y = np.minimum.accumulate(np.array(loss_list), axis=2)
+        # base_x = np.arange(1, max_gen+1, dtype=int)
+        # x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
+        # sub_titles = [f"F{p_id}" for p_id in range(1, 25)]
+        # labels = loss_labels * len(loss_list)
+        # x_labels = ["Generations"] * len(loss_list)
+        # n_cols = 6
+        # for i, _ in enumerate(x_labels):
+        #     if i < len(x_labels) - n_cols:
+        #         x_labels[i] = ""
+        # y_labels = ["Loss"] * len(loss_list)
+        # for i, _ in enumerate(y_labels):
+        #     if i % n_cols != 0:
+        #         y_labels[i] = ""
+        # plot_result(y=y, x=x, labels=labels, 
+        #             title=None, figsize=(14, 8),
+        #             x_labels=x_labels, y_labels=y_labels,
+        #             sub_titles=sub_titles, n_cols=n_cols,
+        #             **kwargs)
+            
+        # plot aoc
+        y = np.maximum.accumulate(np.array(aoc_list), axis=2)
+        base_x = np.arange(1, max_gen+1, dtype=int)
+        x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
+        sub_titles = [f"F{p_id}" for p_id in range(1, 25)]
+        labels = aoc_labels * len(aoc_list)
+        plot_result(y=y, x=x, labels=labels, 
+                    title=None, figsize=(14, 8),
+                    sub_titles=sub_titles, n_cols=6,
+                    **kwargs)
+
+
 
         
     @classmethod
