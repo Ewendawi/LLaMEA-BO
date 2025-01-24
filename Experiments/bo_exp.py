@@ -314,6 +314,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 if __name__ == "__main__":
+    # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
     # logging.info(os.environ)
@@ -338,13 +339,13 @@ if __name__ == "__main__":
     # prompt_generator = BoZeroPromptGenerator()
     # prompt_generator.use_botorch = USE_BOTROCH
 
-    # prompt_generator = BoBaselinePromptGenerator()
-    prompt_generator = BaselinePromptGenerator()
+    prompt_generator = BoBaselinePromptGenerator()
+    # prompt_generator = BaselinePromptGenerator()
 
-    N_INTERATIONS = 2
+    N_INTERATIONS = 1
     N_GENERATIONS = 30
-    # BUDGET = 100
-    BUDGET = 2000 * 5
+    BUDGET = 100
+    # BUDGET = 2000 * 5
 
     # initial solution generation experiment
     # run_bo_exp_code_generation(MODEL, AGGRESSIVENESS, USE_BOTROCH, prompt_generator, n_interations, n_generations)

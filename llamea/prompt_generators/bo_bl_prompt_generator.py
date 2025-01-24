@@ -117,9 +117,9 @@ With code:
     def task_description(self, task, extra = ""):
         lib_prompt = "As an expert of numpy, scipy, scikit-learn, you are allowed to use these libraries."
         if torch.cuda.is_available():
-            lib_prompt += "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries, and using GPU for acceleration is encouraged."
-        problem_desc = "one noiseless functions:f6-Attractive Sector Function"
-        # problem_desc = "24 noiseless functions"
+            lib_prompt = "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries, and using GPU for acceleration is mandatory."
+        # problem_desc = "one noiseless functions:f6-Attractive Sector Function"
+        problem_desc = "24 noiseless functions"
         task_prompt = f"""
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of {problem_desc}. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.

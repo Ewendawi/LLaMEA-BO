@@ -45,7 +45,7 @@ class LLaMBO:
 
         logging.debug("Session Messages:")
         logging.debug("\n%s\n%s", session_messages[0]["content"], session_messages[1]["content"])
-        
+
         for i_try in range(retry):
             response = llm.chat(session_messages)
             # Retry if no response from the model
