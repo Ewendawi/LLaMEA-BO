@@ -175,7 +175,7 @@ class LLaMBO:
                 if handler.error:
                     ind.add_metadata("error_type", handler.error_type)
                     ind.error = str(handler.error)
-                    ind.fitness = -np.Inf
+                    ind.fitness = handler.eval_result.score if handler.eval_result else -np.inf
                 else:
                     next_other_results = (None, sup_results)
                     ind.fitness = handler.eval_result.score

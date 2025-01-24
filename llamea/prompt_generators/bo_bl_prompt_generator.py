@@ -195,14 +195,13 @@ class <AlgorithmName>:
             return ""
 
         algorithm_name = eval_res.name
-        aucs = []
-        grouped_aucs = []
+        aocs = []
+        grouped_aocs = []
         for i in range(5):
-            grouped_aucs.append([])
+            grouped_aocs.append([])
         for res in eval_res.result:
             aoc = res.y_aoc_from_ioh
-            aoc = res.y_aoc
-            aucs.append(aoc)
+            aocs.append(aoc)
 
             res_id = res.id
             res_split = res_id.split("-")
@@ -225,25 +224,25 @@ class <AlgorithmName>:
                 "repeat_id": repeat_id,
                 "y_aoc": aoc
             }
-            grouped_aucs[group_idx].append(content)
+            grouped_aocs[group_idx].append(content)
 
-        auc_mean = np.mean(aucs)
-        auc_std = np.std(aucs)
+        auc_mean = np.mean(aocs)
+        auc_std = np.std(aocs)
 
-        separated_aucs = [content["y_aoc"] for content in grouped_aucs[0]]
-        separated_auc = np.mean(separated_aucs) if len(separated_aucs) > 0 else 0
+        separated_aocs = [content["y_aoc"] for content in grouped_aocs[0]]
+        separated_auc = np.mean(separated_aocs) if len(separated_aocs) > 0 else 0
         
-        low_mod_aucs = [content["y_aoc"] for content in grouped_aucs[1]]
-        low_mod_auc = np.mean(low_mod_aucs) if len(low_mod_aucs) > 0 else 0
+        low_mod_aocs = [content["y_aoc"] for content in grouped_aocs[1]]
+        low_mod_auc = np.mean(low_mod_aocs) if len(low_mod_aocs) > 0 else 0
 
-        high_uni_aucs = [content["y_aoc"] for content in grouped_aucs[2]]
-        high_uni_auc = np.mean(high_uni_aucs) if len(high_uni_aucs) > 0 else 0
+        high_uni_aocs = [content["y_aoc"] for content in grouped_aocs[2]]
+        high_uni_auc = np.mean(high_uni_aocs) if len(high_uni_aocs) > 0 else 0
 
-        multi_adequate_aucs = [content["y_aoc"] for content in grouped_aucs[3]]
-        multi_adequate_auc = np.mean(multi_adequate_aucs) if len(multi_adequate_aucs) > 0 else 0
+        multi_adequate_aocs = [content["y_aoc"] for content in grouped_aocs[3]]
+        multi_adequate_auc = np.mean(multi_adequate_aocs) if len(multi_adequate_aocs) > 0 else 0
 
-        multi_weak_aucs = [content["y_aoc"] for content in grouped_aucs[4]]
-        multi_weak_auc = np.mean(multi_weak_aucs) if len(multi_weak_aucs) > 0 else 0
+        multi_weak_aocs = [content["y_aoc"] for content in grouped_aocs[4]]
+        multi_weak_auc = np.mean(multi_weak_aocs) if len(multi_weak_aocs) > 0 else 0
             
         final_feedback_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.2f} with standard deviation {auc_std:0.2f}.
 """

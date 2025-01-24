@@ -297,10 +297,12 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         n_query_threads = 0
         n_eval_workers = 0
         
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results, 
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, 
+                              n_generation=n_generations, n_retry=3, sup_results=other_results,
                               time_out_per_eval=time_out_per_eval,
                               n_query_threads=n_query_threads, 
-                              n_eval_workers=n_eval_workers
+                              n_eval_workers=n_eval_workers,
+                              max_interval=5
                               )
         progress_bar.update(1)
 
@@ -312,7 +314,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 if __name__ == "__main__":
-    setup_logger(level=logging.DEBUG)
+    setup_logger(level=logging.INFO)
 
     # logging.info(os.environ)
     # logging.info("CPU count: %s", os.cpu_count())
@@ -340,7 +342,7 @@ if __name__ == "__main__":
     prompt_generator = BaselinePromptGenerator()
 
     N_INTERATIONS = 2
-    N_GENERATIONS = 2
+    N_GENERATIONS = 30
     # BUDGET = 100
     BUDGET = 2000 * 5
 
@@ -362,8 +364,8 @@ if __name__ == "__main__":
 
     
     # bbob experiment
-    # run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS, BUDGET)
+    run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS, BUDGET)
 
     # IndividualLogger.merge_logs("logs_bbob").save_reader_format()
     # test_multiple_processes()
-    plot()
+    # plot()
