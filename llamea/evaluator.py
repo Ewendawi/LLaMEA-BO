@@ -974,7 +974,7 @@ class IOHEvaluator(AbstractEvaluator):
             eval_result.score = np.mean([r.y_aoc_from_ioh for r in eval_result.result])
             # logging.info("Evaluating %s: Score - %s - %s", cls_name, score, eval_result.score)
         else:                            
-            eval_result.score = -np.Inf
+            eval_result.score = 0.0
 
         return eval_result
 
@@ -1006,7 +1006,7 @@ class IOHEvaluator(AbstractEvaluator):
                 'instance_id': instance_id,
                 'exec_id': repeat_id,
                 'n_gen': gen+1,
-                "log_y_aoc": res.y_aoc,
+                "log_y_aoc": res.y_aoc_from_ioh,
                 "y_aoc": res.y_aoc,
                 "best_y": res.best_y,
                 'loss': abs(res.optimal_value - res.best_y)
@@ -1042,7 +1042,7 @@ class IOHEvaluator(AbstractEvaluator):
                 baseline_y_aoc.append(group['y_aoc'].values[0])
                 baseline_y_aoc_labels.append(name)
                 continue
-            
+
             # fill the missing generations with 0
             aoc = np.zeros(max_gen)
             log_aoc = np.zeros(max_gen)
@@ -1054,7 +1054,7 @@ class IOHEvaluator(AbstractEvaluator):
             y_aocs.append(aoc)
             log_y_aoc_labels.append(name)
             y_aoc_labels.append(name)
-            
+
         # problem-wise
         loss_list = [[] for _ in range(1, 25)]
         loss_labels = [[] for _ in range(1, 25)]
@@ -1082,15 +1082,16 @@ class IOHEvaluator(AbstractEvaluator):
             loss_list[p_id-1].append(loss)
             loss_labels[p_id-1].append(name)
             
-        # # plot aoc
-        # y = np.maximum.accumulate(np.array([log_y_aocs, y_aocs]), axis=2)
-        # base_x = np.arange(1, max_gen+1, dtype=int)
-        # x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-        # sub_titles = ["Log AOC", "AOC"]
-        # plot_result(y=y, x=x, labels=log_y_aoc_labels, 
-        #             title=None, x_labels=["Generations"], y_labels=["Log AOC"],
-        #             sub_titles=sub_titles, n_cols=2,
-        #             **kwargs)
+        # plot aoc
+        y = np.maximum.accumulate(np.array([log_y_aocs, y_aocs]), axis=2)
+        base_x = np.arange(1, max_gen+1, dtype=int)
+        x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
+        sub_titles = ["Log AOC", "AOC"]
+        labels = [log_y_aoc_labels] * 2
+        plot_result(y=y, x=x, labels=labels,
+                    title=None, 
+                    sub_titles=sub_titles, n_cols=2,
+                    **kwargs)
 
         # plot loss
         # y = np.minimum.accumulate(np.array(loss_list), axis=2)
@@ -1114,15 +1115,15 @@ class IOHEvaluator(AbstractEvaluator):
         #             **kwargs)
             
         # plot aoc
-        y = np.maximum.accumulate(np.array(aoc_list), axis=2)
-        base_x = np.arange(1, max_gen+1, dtype=int)
-        x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-        sub_titles = [f"F{p_id}" for p_id in range(1, 25)]
-        labels = aoc_labels * len(aoc_list)
-        plot_result(y=y, x=x, labels=labels, 
-                    title=None, figsize=(14, 8),
-                    sub_titles=sub_titles, n_cols=6,
-                    **kwargs)
+        # y = np.maximum.accumulate(np.array(aoc_list), axis=2)
+        # base_x = np.arange(1, max_gen+1, dtype=int)
+        # x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
+        # sub_titles = [f"F{p_id}" for p_id in range(1, 25)]
+        # labels = aoc_labels * len(aoc_list)
+        # plot_result(y=y, x=x, labels=labels, 
+        #             title=None, figsize=(14, 8),
+        #             sub_titles=sub_titles, n_cols=6,
+        #             **kwargs)
 
 
 

@@ -228,6 +228,8 @@ class ESPopulation(Population):
         self.n_parent_per_offspring = n_parent_per_offspring
         self.n_offspring = n_offspring
         self.use_elitism = use_elitism
+        self.save_per_generation = 10
+        self.save_per_generation_dir = None
 
         self.individuals:dict[str, Individual] = {}
         # all individuals per generation
@@ -286,7 +288,18 @@ class ESPopulation(Population):
             next_pop = [ind.id for ind in ind_next_pop]
             self.selected_generations.append(next_pop)
         
-    
+        n_gen = len(self.selected_generations)
+        if n_gen % self.save_per_generation == 0:
+            dir_path = self.save_per_generation_dir
+            if dir_path is None:
+                time_stamp = datetime.now().strftime("%m%d%H%M%S")
+                dir_path = f'Experiments/pop_temp/{self.__class__.__name__}_{self.name}_{time_stamp}'
+                self.save_per_generation_dir = dir_path
+            os.makedirs(dir_path, exist_ok=True)
+            file_path = f'{dir_path}/pop_{n_gen}.pkl'
+            with open(file_path, 'wb') as f:
+                pickle.dump(self, f)
+
     def get_parents(self, selection_strategy: Callable[[list[Individual], int, int], list[Individual]] = None) -> list[list[Individual|None]]:
         if len(self.selected_generations) == 0:
             return [[]] * self.n_parent

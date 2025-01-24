@@ -185,7 +185,7 @@ class RandomSearch:
                 "problem_id": problem_id,
                 "instance_id": instance_id,
                 "repeat_id": repeat_id,
-                "y_aoc": res.y_aoc
+                "y_aoc": res.y_aoc_from_ioh
             }
             grouped_aucs[group_idx].append(content)
 
