@@ -7,6 +7,8 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 from typing import List, Optional
 from collections.abc import Callable
+from enum import Enum
+from functools import cmp_to_key
 
 
 class Individual:
@@ -179,8 +181,8 @@ class Population(ABC):
     """
     def __init__(self):
         self.name = None
-        self.selection_strategy:Callable[[list[Individual], int, int], list[Individual]] = None 
-        self.update_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
+        self.get_parent_strategy:Callable[[list[Individual], int, int], list[Individual]] = None 
+        self.selection_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
 
     @abstractmethod
     def get_population_size(self):
@@ -232,8 +234,8 @@ class ESPopulation(Population):
         super().__init__()
 
         self.preorder_aware_init = False
-        self.selection_strategy:Callable[[list[Individual], int, int], list[Individual]] = None 
-        self.update_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
+        self.get_parent_strategy:Callable[[list[Individual], int, int], list[Individual]] = None 
+        self.selection_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
         
         self.n_parent = n_parent
         self.n_parent_per_offspring = n_parent_per_offspring
@@ -293,7 +295,7 @@ class ESPopulation(Population):
         if len(self.selected_generations) > 0:
             last_pop = self.selected_generations[-1]
 
-        if self.update_strategy is None:
+        if self.selection_strategy is None:
             candidates = None
             if self.use_elitism:
                 candidates = last_gen + last_pop
@@ -309,7 +311,7 @@ class ESPopulation(Population):
         else:
             ind_last_gen = [self.individuals[id] for id in last_gen]
             ind_last_pop = [self.individuals[id] for id in last_pop]
-            ind_next_pop = self.update_strategy(ind_last_gen, ind_last_pop, self.n_parent)
+            ind_next_pop = self.selection_strategy(ind_last_gen, ind_last_pop, self.n_parent)
             next_pop = [ind.id for ind in ind_next_pop]
             self.selected_generations.append(next_pop)
         
@@ -340,8 +342,8 @@ class ESPopulation(Population):
         last_pop = self.selected_generations[-1]
         last_pop = [self.individuals[id] for id in last_pop if id in self.individuals]
 
-        if self.selection_strategy is not None:
-            return self.selection_strategy(last_pop, self.n_parent, self.n_parent_per_offspring)
+        if self.get_parent_strategy is not None:
+            return self.get_parent_strategy(last_pop, self.n_parent_per_offspring, self.n_offspring)
             
         n_last_pop_needed = self.n_parent_per_offspring * self.n_offspring
         if len(last_pop) < n_last_pop_needed:
@@ -371,6 +373,96 @@ class ESPopulation(Population):
                 if ind.fitness < best.fitness:
                     best = ind
         return best
+
+class IslandESPopulation(Population):
+
+    class IslandStatus(Enum):
+        NORMAL = 0
+        KILLED = 1
+        RESETING = 2
+        REQUIRE_MIGRANT = 3
+    
+    class IslandOperation(Enum):
+        MIGRATION = 0
+        KILL = 1
+        RESET = 2
+    
+    
+    def __init__(self, n_islands: int = 1, n_parent: int = 1, n_offspring: int = 1, n_parent_per_offspring: int = 1, use_elitism: bool = True):
+        super().__init__()
+
+        self.n_islands = n_islands
+        self.n_parent = n_parent
+        self.n_offspring = n_offspring
+        self.n_parent_per_offspring = n_parent_per_offspring
+        self.use_elitism = use_elitism
+
+        self.populations = [ESPopulation(n_parent, n_parent_per_offspring, n_offspring, use_elitism) for _ in range(n_islands)]
+
+        self.pop_status = [self.IslandStatus.NORMAL] * n_islands
+
+    def __set_island_index(self, individual: Individual, island_index: int):
+        individual.add_metadata("island_index", island_index)
+
+    def __get_island_index(self, individual: Individual):
+        index = individual.get_metadata("island_index")
+        if index is None and individual.parent_id is not None:
+            parent_ids = individual.parent_id
+            if isinstance(individual.parent_id, str):
+                parent_ids = [individual.parent_id] 
+            for parent_id in parent_ids:
+                parent = self.__get_individual_with_id(parent_id)
+                if parent is not None:
+                    index = self.__get_island_index(parent)
+                    break
+        return index
+
+    def __get_individual_with_id(self, individual_id: str):
+        for pop in self.populations:
+            if individual_id in pop.individuals:
+                return pop.individuals[individual_id]
+        return None
+
+    def get_population_size(self):
+        return sum([pop.get_population_size() for pop in self.populations])
+
+    def add_individual(self, individual: Individual):
+        island_index = self.__get_island_index(individual)
+        if island_index is not None:
+            self.populations[island_index].add_individual(individual)
+            self.__set_island_index(individual, island_index)
+    
+    def remove_individual(self, individual):
+        island_index = self.__get_island_index(individual)
+        if island_index is not None:
+            self.populations[island_index].remove_individual(individual)
+            
+    def select_next_generation(self):
+        for pop in self.populations:
+            pop.select_next_generation()
+            
+    def get_parents(self) -> list[list[Individual]]:
+        parents = []
+        for pop in self.populations:
+            parents.extend(pop.get_parents())
+        return parents
+    
+    def get_current_generation(self):
+        return self.populations[0].get_current_generation()
+
+    def get_best_individual(self, maximize: bool = False):
+        best = None
+        for pop in self.populations:
+            ind = pop.get_best_individual(maximize)
+            if best is None or (ind is not None and ind.fitness > best.fitness):
+                best = ind
+        return best
+
+    def all_individuals(self):
+        all_inds = []
+        for pop in self.populations:
+            all_inds.extend(pop.all_individuals())
+        return all_inds
 
 class SequencePopulation(Population):
     """
@@ -434,14 +526,61 @@ class SequencePopulation(Population):
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 
-def max_divese_desc_selection_fn(individuals: list[Individual], n_parent: int, n_offspring: int) -> list[Individual]:
+def diversity_awarness_selection_fn(next_inds: list[Individual], last_inds: list[Individual], n_parent: int, fitness_threshold: float = None) -> list[Individual]:
+    candidates = []
+    if last_inds:
+        candidates += last_inds
+    if next_inds:
+        candidates += next_inds
+    if len(candidates) <= n_parent:
+        return candidates
+
+    def get_score(ind):
+        return Population.get_handler_from_individual(ind).eval_result.score
+    
+    def get_desc(ind):
+        return Population.get_handler_from_individual(ind).desc
+
+    # Calculate the diversity of the candidates based on the description
+    descs = [get_desc(ind) for ind in candidates]
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    embeddings = model.encode(descs, convert_to_tensor=False)
+    similarity_matrix = util.cos_sim(embeddings, embeddings).numpy()
+    # Calculate mean similarity excluding diagonal (self-similarity)
+    mean_similarity = np.array([
+        np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
+        for i in range(len(candidates))
+    ])
+
+    if fitness_threshold is None:
+        mean_score = np.mean([get_score(ind) for ind in candidates])
+        mae_score = np.mean([abs(get_score(ind) - mean_score) for ind in candidates])
+        fitness_threshold = mae_score
+
+    def cmp_inds(a, b):
+        ind1, sim1 = a
+        ind2, sim2 = b
+        score1, score2 = get_score(ind1), get_score(ind2)
+        if abs(score1 - score2) > fitness_threshold:
+            return score1 - score2
+        else:
+            return -(sim1 - sim2)
+    
+    tuple_cands = sorted(list(zip(candidates, mean_similarity)), key=cmp_to_key(cmp_inds), reverse=True)
+    sorted_candidates = [ind for ind, _ in tuple_cands]
+    return sorted_candidates[:n_parent]
+
+def max_divese_desc_get_parent_fn(individuals: list[Individual], n_parent: int, n_offspring: int) -> list[Individual]:
     descs = [Population.get_handler_from_individual(ind).desc for ind in individuals]
     
     model = SentenceTransformer('all-MiniLM-L6-v2')
     embeddings = model.encode(descs, convert_to_tensor=False)
     similarity_matrix = util.cos_sim(embeddings, embeddings).numpy()
 
-    mean_similarity = np.mean(similarity_matrix, axis=1)
+    mean_similarity = np.array([
+        np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
+        for i in range(len(descs))
+    ])
     # get n_offspring individuals with the lowest similarity
     candidate_idxs = np.argsort(mean_similarity)[:n_offspring].tolist()
     parent_ids = []
@@ -457,7 +596,47 @@ def max_divese_desc_selection_fn(individuals: list[Individual], n_parent: int, n
         parents.append(parent)
     return parents
 
-def test_max_diverse_selection_fn():
+def test_diversity_awarness_selection_fn():
+    descs = [
+        "A Bayesian Optimization algorithm that uses a Gaussian Process surrogate model with Expected Improvement acquisition function and a batch-sequential optimization strategy with quasi-Monte Carlo sampling for initial points and a local search around the best point.",
+        "A Bayesian Optimization algorithm using a Tree-structured Parzen Estimator (TPE) surrogate model with a multi-point acquisition strategy, employing random sampling for initialization and a trust-region-like exploration around promising regions."
+    ]
+    scores = [0.6, 0.7]
+    descs2 = [
+        "A Bayesian Optimization algorithm that combines Thompson sampling and Expected Improvement with an ensemble of GPs, adaptive batch sizes, trust region based local search, and dynamic adjustment of exploration/exploitation balance, and incorporates a warm restart strategy.",
+        "A Bayesian optimization algorithm that adaptively balances exploration and exploitation using a dynamic trust region with a mixed batch strategy, local search, adaptive kernel length scale and focuses on exploration when progress stagnates."
+    ] 
+    scores2 = [0.8, 0.6]
+
+    class test_res:
+        def __init__(self):
+            self.score = 0.0
+    class Res_handler:
+        def __init__(self):
+            self.desc = ""
+            self.eval_result = test_res()
+
+    last_inds = []
+    next_inds = []
+    for i in range(2):
+        last = Individual()
+        res = Res_handler()
+        res.desc = descs[i]
+        res.eval_result.score = scores[i]
+        Population.set_handler_to_individual(last, res)
+        last_inds.append(last)
+
+        next = Individual()
+        res = Res_handler()
+        res.desc = descs2[i]
+        res.eval_result.score = scores2[i]
+        Population.set_handler_to_individual(next, res)
+        next_inds.append(next)
+        
+    selected = diversity_awarness_selection_fn(last_inds=last_inds, next_inds=next_inds, n_parent=2)
+    assert len(selected) == 2
+
+def test_max_diverse_parent_fn():
     descs = [
         "A Bayesian Optimization algorithm that uses a Gaussian Process surrogate model with Expected Improvement acquisition function and a batch-sequential optimization strategy with quasi-Monte Carlo sampling for initial points and a local search around the best point.",
         "A Bayesian Optimization algorithm using a Gaussian Process surrogate model with Expected Improvement, employing a batch-sequential strategy with Sobol sequence for initial sampling and a gradient-based local search around the best point for exploitation.",
@@ -476,5 +655,5 @@ def test_max_diverse_selection_fn():
         res.desc = desc
         Population.set_handler_to_individual(ind, res)
         inds.append(ind)
-    parents = max_divese_desc_selection_fn(inds, 2, 1)
+    parents = max_divese_desc_get_parent_fn(inds, 2, 1)
     assert len(parents) == 2

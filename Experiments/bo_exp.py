@@ -5,7 +5,7 @@ import os
 import tqdm
 import numpy as np
 from llamea import LLaMBO, LLMmanager
-from llamea.individual import Individual, Population, SequencePopulation, ESPopulation, max_divese_desc_selection_fn
+from llamea.individual import Individual, Population, SequencePopulation, ESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
 from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BaselinePromptGenerator
 from llamea.utils import setup_logger, IndividualLogger
 from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator, AbstractEvaluator
@@ -251,28 +251,20 @@ def plot():
     IOHEvaluator.plot_results(results=strategy_list, other_results=None)
         
 
-def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, 
+def run_exp(model:tuple, prompt_generator:PromptGenerator, 
                  n_iterations:int=1, n_generations:int=1, n_population:int=1, 
-                 n_parent:int=1, n_parent_per_offspring:int=1, n_offspring:int=1,
                  n_query_threads:int=0, n_eval_workers:int=0, time_out_per_eval:int=None,
-                 mocker=None, get_evaluator=None,
+                 mocker=None, get_evaluator=None, get_population=None
                  ):
 
     llambo = LLaMBO()
 
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
-    llm.mock_res_provider = mocker 
-
-    time_out_per_eval = None
+    llm.mock_res_provider = mocker
 
     progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations", position=0)
     for _ in range(n_iterations):
-        population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-        population.name = f"bbob_exp_{model[0]}_{prompt_generator.__class__.__name__}"
-        population.save_per_generation = 8
-        # population.preorder_aware_init = True
-        # population.selection_strategy = max_divese_desc_selection_fn
-
+        population = get_population()
         evaluator = get_evaluator()
 
         # other_results = evaluator.evaluate_others()
@@ -319,14 +311,14 @@ if __name__ == "__main__":
     N_INTERATIONS = 1
     N_GENERATIONS = 200
     N_POPULATION = 30
-    BUDGET = 100
+    # BUDGET = 100
     BUDGET = 2000 * 5
 
-    N_PARENT = 2
+    N_PARENT = 4
     N_PARENT_PER_OFFSPRING = 2
     N_OFFSPRING = 1
 
-    N_QUERY_THREADS = 2
+    N_QUERY_THREADS = 0
     N_EVAL_WORKERS = 0
     TIME_OUT_PER_EVAL = 60 * 20
     TIME_OUT_PER_EVAL = None
@@ -341,7 +333,7 @@ if __name__ == "__main__":
             "Experiments/bbob_test_res/fail_overbudget_res.md",
         ]
         file_path = np.random.choice(file_list, size=1, p=[0.0, 0.0, 1.0, 0.0, 0.0])[0]
-        # file_path = "Experiments/bbob_test_res/successful_bl.md"
+        file_path = "Experiments/bbob_test_res/successful_bl.md"
         response = None
         with open(file_path, "r") as f:
             response = f.read()
@@ -356,15 +348,23 @@ if __name__ == "__main__":
         repeat = 3
         evaluator = IOHEvaluator(budget=BUDGET, dim=DIM, problems=problems, instances=instances, repeat=repeat)
         return evaluator
+
+    def get_population():
+        population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
+        population.name = f"bbob_exp_{MODEL[0]}_{prompt_generator.__class__.__name__}"
+        population.save_per_generation = 8
+        population.preorder_aware_init = True
+        population.get_parent_strategy = max_divese_desc_get_parent_fn
+        population.selection_strategy = diversity_awarness_selection_fn
+        return population
     
-    run_bbob_exp(MODEL, prompt_generator,
-                 n_iterations=N_INTERATIONS, n_generations=N_GENERATIONS, 
-                 n_population=N_POPULATION,
-                 n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING, 
-                 n_query_threads=N_QUERY_THREADS, n_eval_workers=N_EVAL_WORKERS, time_out_per_eval=TIME_OUT_PER_EVAL,
-                 mocker=mocker,
-                 get_evaluator=get_evaluator,
-                 )
+    run_exp(MODEL, prompt_generator,
+            n_iterations=N_INTERATIONS, n_generations=N_GENERATIONS, n_population=N_POPULATION,
+            n_query_threads=N_QUERY_THREADS, n_eval_workers=N_EVAL_WORKERS, time_out_per_eval=TIME_OUT_PER_EVAL,
+            mocker=mocker,
+            get_evaluator=get_evaluator,
+            get_population=get_population,
+            )
 
     # IndividualLogger.merge_logs("logs_bbob").save_reader_format()
     # test_multiple_processes()

@@ -88,7 +88,10 @@ class BaselinePromptGenerator(PromptGenerator):
                 n_solution = len(candidates)
                 pre_solution_prompt = f"{n_solution} algorithms have been designed. The next algorithm should be as diverse as possible from the previous ones.\n"
                 for i, candidate in enumerate(candidates):
-                    pre_solution_prompt += f"- {candidate.desc}\n"
+                    candidate_prompt = self.__get_candidate_prompt(candidate)
+                    pre_solution_prompt += f"## {i}.{candidate.code_name}\n{candidate_prompt}\n"
+
+                    # pre_solution_prompt += f"- {candidate.desc}\n"
                 pre_solution_prompt += "\n"
             
             code_structure_prompt = "A code structure guide is as follows:\n" + self.code_structure()
@@ -139,7 +142,7 @@ class BaselinePromptGenerator(PromptGenerator):
             feedback = self.evaluation_feedback_prompt(candidate.eval_result, None)
 
         
-        return f"{description}\n With code:\n{solution}\n{feedback}\n"
+        return f"{description}\nWith code:\n{solution}\n{feedback}\n"
 
     def task_description(self, task:GenerationTask, extra:str="") -> str:
         if self.is_bo:
