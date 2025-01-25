@@ -213,7 +213,7 @@ class RandomSearch:
         return f"""
 ```python
 from typing import Callable
-from scipy.stats import qmc # If you are using QMC sampling. Otherwise or you have a better alternative, remove this line.
+from scipy.stats import qmc #If you are using QMC sampling, qmc from scipy is encouraged. Remove this line if you have better alternatives.
 import numpy as np
 class <AlgorithmName>:
     def __init__(self, budget:int, dim:int):
