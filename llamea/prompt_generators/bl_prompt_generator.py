@@ -98,7 +98,7 @@ class BaselinePromptGenerator(PromptGenerator):
             final_prompt = f"""{task_prompt}\n{pre_solution_prompt}\n{code_structure_prompt}\n{response_format_prompt}"""
         else:
             if len(candidates) > 1:
-                crossover_operator = "Combine the selected solutions to create a new solution."
+                crossover_operator = "Combine the selected solutions to create a new solution. then refine the strategy of the new solution to improve it."
 
                 selected_prompt = "The selected solutions to update are:\n"
 

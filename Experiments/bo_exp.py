@@ -304,15 +304,16 @@ if __name__ == "__main__":
     # MODEL = LLMS["o_gemini-2.0-flash-exp"]
 
     prompt_generator = BaselinePromptGenerator()
+
     # prompt_generator.is_bo = True
+    # BUDGET = 100
+    BUDGET = 2000 * 5
 
     DIM = 5
 
     N_INTERATIONS = 1
     N_GENERATIONS = 200
     N_POPULATION = 30
-    # BUDGET = 100
-    BUDGET = 2000 * 5
 
     N_PARENT = 4
     N_PARENT_PER_OFFSPRING = 2
@@ -320,6 +321,10 @@ if __name__ == "__main__":
 
     N_QUERY_THREADS = 0
     N_EVAL_WORKERS = 0
+
+    # if using multiple processes, set this to false to avoid issues with tokenizers
+    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
     TIME_OUT_PER_EVAL = 60 * 20
     TIME_OUT_PER_EVAL = None
 
