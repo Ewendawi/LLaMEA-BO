@@ -5,8 +5,8 @@ import os
 import tqdm
 import numpy as np
 from llamea import LLaMBO, LLMmanager
-from llamea.individual import Individual, Population, SequencePopulation, ESPopulation
-from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BoBaselinePromptGenerator, BaselinePromptGenerator
+from llamea.individual import Individual, Population, SequencePopulation, ESPopulation, max_divese_desc_selection_fn
+from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BaselinePromptGenerator
 from llamea.utils import setup_logger, IndividualLogger
 from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator, AbstractEvaluator
 from llamea.llm import LLMS
@@ -261,8 +261,8 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
             "Experiments/bbob_test_res/fail_excute_res.md",
             "Experiments/bbob_test_res/fail_overbudget_res.md",
         ]
-        file_path = np.random.choice(file_list, size=1, p=[0.0, 1.0, 0.0, 0.0, 0.0])[0]
-        file_path = "Experiments/bbob_test_res/successful_bl.md"
+        file_path = np.random.choice(file_list, size=1, p=[0.0, 0.0, 1.0, 0.0, 0.0])[0]
+        # file_path = "Experiments/bbob_test_res/successful_bl.md"
         response = None
         with open(file_path, "r") as f:
             response = f.read()
@@ -271,7 +271,7 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
     llambo = LLaMBO()
 
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
-    # llm.mock_res_provider = mock_res_provider
+    llm.mock_res_provider = mock_res_provider
 
     dim = 5
     # time_out_per_eval = 60 * 20
@@ -285,10 +285,13 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
         population.name = f"bbob_exp_{model[0]}_{prompt_generator.__class__.__name__}"
         population.save_per_generation = 8
+        # population.preorder_aware_init = True
+        # population.selection_strategy = max_divese_desc_selection_fn
+
         problems = list(range(1, 25))
-        # problems = [6,7]
+        problems = [6]
         instances = [[1, 2, 3]] * len(problems)
-        repeat = 3
+        repeat = 1
         evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
 
         # other_results = evaluator.evaluate_others()
@@ -314,8 +317,8 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 if __name__ == "__main__":
-    # setup_logger(level=logging.DEBUG)
-    setup_logger(level=logging.INFO)
+    setup_logger(level=logging.DEBUG)
+    # setup_logger(level=logging.INFO)
 
     # logging.info(os.environ)
     # logging.info("CPU count: %s", os.cpu_count())
@@ -339,12 +342,12 @@ if __name__ == "__main__":
     # prompt_generator = BoZeroPromptGenerator()
     # prompt_generator.use_botorch = USE_BOTROCH
 
-    prompt_generator = BoBaselinePromptGenerator()
-    # prompt_generator = BaselinePromptGenerator()
+    prompt_generator = BaselinePromptGenerator()
+    prompt_generator.is_bo = True
 
     N_INTERATIONS = 1
-    N_GENERATIONS = 30
-    BUDGET = 100
+    N_GENERATIONS = 2
+    BUDGET = 40
     # BUDGET = 2000 * 5
 
     # initial solution generation experiment

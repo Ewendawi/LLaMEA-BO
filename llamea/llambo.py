@@ -19,8 +19,8 @@ class LLaMBO:
     """
     A class that represents the Language Model powered Bayesian Optimization(LLaMBO).
     """
-    def update_current_task(self, parent:list[Individual] = []) -> GenerationTask:
-        if len(parent) == 0:
+    def update_current_task(self, parent:list[Individual] = None, generation:int = 0) -> GenerationTask:
+        if parent is None or generation == 0:
             return GenerationTask.INITIALIZE_SOLUTION
         elif len(parent) == 1:
             if parent[0].error:
@@ -109,9 +109,9 @@ class LLaMBO:
         evolved_sharedbroad = prompt_generator.get_prompt_sharedbroad()
 
         last_query_time = 0
-        generation = 0
-        while generation < n_generation:
-            logging.info("""=====================Generation: %s=====================""", generation)
+        current_generation = 0
+        while current_generation < n_generation:
+            logging.info("""=====================Generation: %s=====================""", current_generation)
             
             parents = population.get_parents()
             current_query_time = time.time()
@@ -123,7 +123,7 @@ class LLaMBO:
             next_handlers:list[ResponseHandler] = []
             params = []
             for i, parent in enumerate(parents):
-                current_task = self.update_current_task(parent=parent)
+                current_task = self.update_current_task(parent=parent, generation=current_generation)
 
                 # Get prompt
                 other_results = (None, sup_results)
@@ -170,7 +170,7 @@ class LLaMBO:
             for i, handler in enumerate(next_handlers):
 
                 parent_ids = [p.id for p in parents[i] if p is not None]
-                ind = Individual(solution=handler.code, name=handler.code_name, parent_id=parent_ids, generation=generation)
+                ind = Individual(solution=handler.code, name=handler.code_name, parent_id=parent_ids, generation=current_generation)
                 ind.add_metadata("res_handler", handler)
                 if handler.error:
                     ind.add_metadata("error_type", handler.error_type)
@@ -188,7 +188,7 @@ class LLaMBO:
                 ind.add_metadata("model", llm.model_name())
                 ind.add_metadata("raw_response", handler.raw_response)
                 tags = ind.metadata["tags"] if "tags" in ind.metadata else []
-                tags.append(f"gen:{generation}")
+                tags.append(f"gen:{current_generation}")
                 tags.append(f"task:{current_task.name}")
                 tags.append(f"dim:{evaluator.problem_dim()}")
                 ind.add_metadata("tags", tags)
@@ -199,14 +199,17 @@ class LLaMBO:
                 else:
                     logging.info(ind.feedback)
 
-                population.add_individual(ind, generation)
+                population.add_individual(ind, current_generation)
 
             population.select_next_generation()
+            
             prompt_generator.update_sharedbroad(evolved_sharedbroad, next_handlers, population)
 
             best_ind = population.get_best_individual(maximize=True)
-            logging.info("Best Individual: %s", best_ind.get_summary())
-            generation += 1
+            if best_ind is not None:
+                logging.info("Best Individual: %s", best_ind.get_summary())
+
+            current_generation = population.get_current_generation()
             # progress_bar.update(1)
 
         # progress_bar.close()

@@ -2,6 +2,7 @@ import os
 import json
 import pickle
 import uuid
+import logging
 from datetime import datetime
 from abc import ABC, abstractmethod
 from typing import List, Optional
@@ -178,6 +179,8 @@ class Population(ABC):
     """
     def __init__(self):
         self.name = None
+        self.selection_strategy:Callable[[list[Individual], int, int], list[Individual]] = None 
+        self.update_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
 
     @abstractmethod
     def get_population_size(self):
@@ -191,12 +194,16 @@ class Population(ABC):
     def remove_individual(self, individual):
         pass
 
-    def select_next_generation(self, update_strategy: Callable[[list[Individual], list[Individual], int], list[Individual]] = None):
+    def select_next_generation(self):
         pass
         
     @abstractmethod
-    def get_parents(self, selection_strategy: Callable[[list[Individual], int, int], list[Individual]] = None) -> list[list[Individual]]:
+    def get_parents(self) -> list[list[Individual]]:
         return None
+
+    @abstractmethod
+    def get_current_generation(self):
+        return 0
 
     def get_last_successful_parent(self, candidate: Individual) -> Individual:
         return None
@@ -224,6 +231,10 @@ class ESPopulation(Population):
     def __init__(self,n_parent:int=2, n_parent_per_offspring: int = 1, n_offspring: int = 1, use_elitism: bool = True):
         super().__init__()
 
+        self.preorder_aware_init = False
+        self.selection_strategy:Callable[[list[Individual], int, int], list[Individual]] = None 
+        self.update_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
+        
         self.n_parent = n_parent
         self.n_parent_per_offspring = n_parent_per_offspring
         self.n_offspring = n_offspring
@@ -236,6 +247,13 @@ class ESPopulation(Population):
         self.generations:list[list[str]] = []
         # selected individuals per generation
         self.selected_generations:list[list[str]] = []
+
+        if not self.use_elitism and self.n_parent > self.n_offspring:
+            raise ValueError("n_parent should be less than or equal to n_offspring when not using elitism.")
+
+        if self.n_parent_per_offspring * self.n_offspring > self.n_parent:
+            raise ValueError("n_parent should be greater than or equal to n_parent_per_offspring * n_offspring.")
+
 
     def all_individuals(self):
         return self.individuals.values()
@@ -262,21 +280,28 @@ class ESPopulation(Population):
                     if individual.id in gen:
                         gen.remove(individual.id)
         
-    def select_next_generation(self, update_strategy: Callable[[list[Individual], list[Individual], int], list[Individual]] = None):
+    def select_next_generation(self):
         if len(self.generations) == 0 or len(self.generations[-1]) == 0:
             return
-        
+
+        # If the population is not full in the first generation and the init is preorder-aware, do not select next generation
+        if self.get_current_generation() == 0 and self.preorder_aware_init and len(self.generations[0]) < self.n_parent:
+            return
+
         last_gen = self.generations[-1]
         last_pop = []
         if len(self.selected_generations) > 0:
             last_pop = self.selected_generations[-1]
 
-        if update_strategy is None:
+        if self.update_strategy is None:
             candidates = None
             if self.use_elitism:
                 candidates = last_gen + last_pop
             else:
                 candidates = last_gen
+                if len(candidates) < self.n_parent:
+                    logging.warning("Population size is less than n_parent. Using elitism.")
+                    candidates = candidates + last_pop
 
             next_candidates = sorted(candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
             next_pop = next_candidates[:self.n_parent]
@@ -284,10 +309,11 @@ class ESPopulation(Population):
         else:
             ind_last_gen = [self.individuals[id] for id in last_gen]
             ind_last_pop = [self.individuals[id] for id in last_pop]
-            ind_next_pop = update_strategy(ind_last_gen, ind_last_pop, self.n_parent)
+            ind_next_pop = self.update_strategy(ind_last_gen, ind_last_pop, self.n_parent)
             next_pop = [ind.id for ind in ind_next_pop]
             self.selected_generations.append(next_pop)
         
+        # Save population every n generations
         n_gen = len(self.selected_generations)
         if n_gen % self.save_per_generation == 0:
             dir_path = self.save_per_generation_dir
@@ -300,15 +326,22 @@ class ESPopulation(Population):
             with open(file_path, 'wb') as f:
                 pickle.dump(self, f)
 
-    def get_parents(self, selection_strategy: Callable[[list[Individual], int, int], list[Individual]] = None) -> list[list[Individual|None]]:
+    def get_current_generation(self):
+        return len(self.selected_generations)
+
+    def get_parents(self) -> list[list[Individual|None]]:
         if len(self.selected_generations) == 0:
-            return [[]] * self.n_parent
+            if self.preorder_aware_init:
+                parents = [self.individuals[id] for id in self.generations[0]] if len(self.generations) > 0 else []
+                return [parents]
+            else:
+                return [[]] * self.n_parent
 
         last_pop = self.selected_generations[-1]
         last_pop = [self.individuals[id] for id in last_pop if id in self.individuals]
 
-        if selection_strategy is not None:
-            return selection_strategy(last_pop, self.n_parent, self.n_parent_per_offspring)
+        if self.selection_strategy is not None:
+            return self.selection_strategy(last_pop, self.n_parent, self.n_parent_per_offspring)
             
         n_last_pop_needed = self.n_parent_per_offspring * self.n_offspring
         if len(last_pop) < n_last_pop_needed:
@@ -394,3 +427,54 @@ class SequencePopulation(Population):
                 if ind.fitness < best.fitness:
                     best = ind
         return best
+
+
+
+# Utility functions
+from sentence_transformers import SentenceTransformer, util
+import numpy as np
+
+def max_divese_desc_selection_fn(individuals: list[Individual], n_parent: int, n_offspring: int) -> list[Individual]:
+    descs = [Population.get_handler_from_individual(ind).desc for ind in individuals]
+    
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    embeddings = model.encode(descs, convert_to_tensor=False)
+    similarity_matrix = util.cos_sim(embeddings, embeddings).numpy()
+
+    mean_similarity = np.mean(similarity_matrix, axis=1)
+    # get n_offspring individuals with the lowest similarity
+    candidate_idxs = np.argsort(mean_similarity)[:n_offspring].tolist()
+    parent_ids = []
+    for i in candidate_idxs:
+        parent_id = [i]
+        others = np.argsort(similarity_matrix[i])[:n_parent-1].tolist()
+        for j in others:
+            parent_id.append(j)
+        parent_ids.append(parent_id)
+    parents = []
+    for parent_id in parent_ids:
+        parent = [individuals[i] for i in parent_id]
+        parents.append(parent)
+    return parents
+
+def test_max_diverse_selection_fn():
+    descs = [
+        "A Bayesian Optimization algorithm that uses a Gaussian Process surrogate model with Expected Improvement acquisition function and a batch-sequential optimization strategy with quasi-Monte Carlo sampling for initial points and a local search around the best point.",
+        "A Bayesian Optimization algorithm using a Gaussian Process surrogate model with Expected Improvement, employing a batch-sequential strategy with Sobol sequence for initial sampling and a gradient-based local search around the best point for exploitation.",
+        "A Bayesian Optimization algorithm using a Gaussian Process surrogate model with Expected Improvement, employing a batch-sequential strategy with Latin Hypercube Sampling for initial sampling and a CMA-ES local search around the best point for exploitation.",
+        "A Bayesian Optimization algorithm using a Tree-structured Parzen Estimator (TPE) surrogate model with a multi-point acquisition strategy, employing random sampling for initialization and a trust-region-like exploration around promising regions."
+    ]
+    inds = []
+    for desc in descs:
+        ind = Individual()
+
+        class Res_handler:
+            def __init__(self):
+                self.desc = ""
+
+        res = Res_handler()
+        res.desc = desc
+        Population.set_handler_to_individual(ind, res)
+        inds.append(ind)
+    parents = max_divese_desc_selection_fn(inds, 2, 1)
+    assert len(parents) == 2
