@@ -89,16 +89,18 @@ class LLaMBO:
                        prompt_generator: PromptGenerator,
                        population: Population,
                        sup_results: list[EvaluatorResult] = None,
-                       n_generation: int = 1,
+                       n_generation: int = np.inf,
+                       n_population: int = 1,
                        n_retry: int = 3,
                        n_query_threads: int = 0,
                        n_eval_workers: int = 0,
                        max_interval: int = 0,
                        time_out_per_eval: int = 1800):
 
-        logging.info("Starting LLaMBO")
-        logging.info("Model: %s", llm.model_name())
-        logging.info(evaluator.problem_name())
+        logging.info("==========Starting==========")
+        logging.info("%s", llm.model_name())
+        logging.info("%s", prompt_generator)
+        logging.info("%s", evaluator)
 
         # progress_bar = tqdm(total=n_generation, desc="Generation", position=1, leave=True)
 
@@ -110,8 +112,9 @@ class LLaMBO:
 
         last_query_time = 0
         current_generation = 0
-        while current_generation < n_generation:
-            logging.info("""=====================Generation: %s=====================""", current_generation)
+        current_population = 0
+        while current_population < n_population and current_generation < n_generation:
+            logging.info("""======Start Generation %s with %s Population=======""", current_generation+1, current_population)
             
             parents = population.get_parents()
             current_query_time = time.time()
@@ -202,7 +205,7 @@ class LLaMBO:
                 population.add_individual(ind, current_generation)
 
             population.select_next_generation()
-            
+
             prompt_generator.update_sharedbroad(evolved_sharedbroad, next_handlers, population)
 
             best_ind = population.get_best_individual(maximize=True)
@@ -210,6 +213,9 @@ class LLaMBO:
                 logging.info("Best Individual: %s", best_ind.get_summary())
 
             current_generation = population.get_current_generation()
+            current_population = population.get_population_size()
+        
+        logging.info("======Finished with %s Generations and %s Population======", current_generation, current_population)
             # progress_bar.update(1)
 
         # progress_bar.close()

@@ -251,8 +251,87 @@ def plot():
     IOHEvaluator.plot_results(results=strategy_list, other_results=None)
         
 
-def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1, budget:int=100):
+def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, 
+                 n_iterations:int=1, n_generations:int=1, n_population:int=1, 
+                 n_parent:int=1, n_parent_per_offspring:int=1, n_offspring:int=1,
+                 n_query_threads:int=0, n_eval_workers:int=0, time_out_per_eval:int=None,
+                 mocker=None, get_evaluator=None,
+                 ):
 
+    llambo = LLaMBO()
+
+    llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
+    llm.mock_res_provider = mocker 
+
+    time_out_per_eval = None
+
+    progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations", position=0)
+    for _ in range(n_iterations):
+        population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
+        population.name = f"bbob_exp_{model[0]}_{prompt_generator.__class__.__name__}"
+        population.save_per_generation = 8
+        # population.preorder_aware_init = True
+        # population.selection_strategy = max_divese_desc_selection_fn
+
+        evaluator = get_evaluator()
+
+        # other_results = evaluator.evaluate_others()
+        other_results = None
+
+        llambo.run_evolutions(llm, evaluator, prompt_generator, population, 
+                              n_generation=n_generations, n_population=n_population,
+                              n_retry=3, sup_results=other_results,
+                              time_out_per_eval=time_out_per_eval,
+                              n_query_threads=n_query_threads,
+                              n_eval_workers=n_eval_workers,
+                              max_interval=5
+                              )
+        progress_bar.update(1)
+
+        log_file_name = f"bbob_exp_{model[0]}"
+        if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
+            aggressiveness = prompt_generator.aggressiveness
+            log_file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
+        log_dir_name = "logs_bbob"
+        log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
+
+if __name__ == "__main__":
+    # logging.info(os.environ)
+    # logging.info("CPU count: %s", os.cpu_count())
+
+    # setup_logger(level=logging.DEBUG)
+    setup_logger(level=logging.INFO)
+
+    # MODEL = LLMS["deepseek/deepseek-chat"]
+    MODEL = LLMS["gemini-2.0-flash-exp"]
+    # MODEL = LLMS["gemini-1.5-flash"]
+    # MODEL = LLMS["gemini-exp-1206"]
+    # MODEL = LLMS["llama-3.1-70b-versatile"]
+    # MODEL = LLMS["llama-3.3-70b-versatile"]
+    # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
+    # MODEL = LLMS["o_gemini-2.0-flash-exp"]
+
+    prompt_generator = BaselinePromptGenerator()
+    # prompt_generator.is_bo = True
+
+    DIM = 5
+
+    N_INTERATIONS = 1
+    N_GENERATIONS = 200
+    N_POPULATION = 30
+    BUDGET = 100
+    BUDGET = 2000 * 5
+
+    N_PARENT = 2
+    N_PARENT_PER_OFFSPRING = 2
+    N_OFFSPRING = 1
+
+    N_QUERY_THREADS = 2
+    N_EVAL_WORKERS = 0
+    TIME_OUT_PER_EVAL = 60 * 20
+    TIME_OUT_PER_EVAL = None
+
+    # bbob experiment
     def mock_res_provider(*args, **kwargs):
         file_list = [
             "Experiments/bbob_test_res/successful_heavy_res.md",
@@ -267,108 +346,25 @@ def run_bbob_exp(model:tuple, prompt_generator:PromptGenerator, n_iterations:int
         with open(file_path, "r") as f:
             response = f.read()
         return response
-    
-    llambo = LLaMBO()
+    mocker = None
+    # mocker = mock_res_provider
 
-    llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
-    llm.mock_res_provider = mock_res_provider
-
-    dim = 5
-    # time_out_per_eval = 60 * 20
-    time_out_per_eval = None
-
-    progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations", position=0)
-    for _ in range(n_iterations):
-        n_parent = 1
-        n_parent_per_offspring = 1
-        n_offspring = 1
-        population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-        population.name = f"bbob_exp_{model[0]}_{prompt_generator.__class__.__name__}"
-        population.save_per_generation = 8
-        # population.preorder_aware_init = True
-        # population.selection_strategy = max_divese_desc_selection_fn
-
+    def get_evaluator():
         problems = list(range(1, 25))
-        problems = [6]
+        # problems = [6]
         instances = [[1, 2, 3]] * len(problems)
-        repeat = 1
-        evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
-
-        # other_results = evaluator.evaluate_others()
-        other_results = None
-
-        n_query_threads = 0
-        n_eval_workers = 0
-        
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, 
-                              n_generation=n_generations, n_retry=3, sup_results=other_results,
-                              time_out_per_eval=time_out_per_eval,
-                              n_query_threads=n_query_threads, 
-                              n_eval_workers=n_eval_workers,
-                              max_interval=5
-                              )
-        progress_bar.update(1)
-
-        log_file_name = f"bbob_exp_{model[0]}"
-        if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
-            aggressiveness = prompt_generator.aggressiveness
-            log_file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
-        log_dir_name = "logs_bbob"
-        log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
-
-if __name__ == "__main__":
-    setup_logger(level=logging.DEBUG)
-    # setup_logger(level=logging.INFO)
-
-    # logging.info(os.environ)
-    # logging.info("CPU count: %s", os.cpu_count())
-
-    # MODEL = LLMS["deepseek/deepseek-chat"]
-    MODEL = LLMS["gemini-2.0-flash-exp"]
-    # MODEL = LLMS["gemini-1.5-flash"]
-    # MODEL = LLMS["gemini-exp-1206"]
-    # MODEL = LLMS["llama-3.1-70b-versatile"]
-    # MODEL = LLMS["llama-3.3-70b-versatile"]
-    # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
-    # MODEL = LLMS["o_gemini-2.0-flash-exp"]
-
-    AGGRESSIVENESS = [0.3, 0.5, 0.7, 1.0]
-    USE_BOTROCH = False
-
-    # prompt_generator = BoZeroPlusPromptGenerator()
-    # prompt_generator.aggressiveness = AGGRESSIVENESS[3]
-    # prompt_generator.use_botorch = USE_BOTROCH
-
-    # prompt_generator = BoZeroPromptGenerator()
-    # prompt_generator.use_botorch = USE_BOTROCH
-
-    prompt_generator = BaselinePromptGenerator()
-    prompt_generator.is_bo = True
-
-    N_INTERATIONS = 1
-    N_GENERATIONS = 2
-    BUDGET = 40
-    # BUDGET = 2000 * 5
-
-    # initial solution generation experiment
-    # run_bo_exp_code_generation(MODEL, AGGRESSIVENESS, USE_BOTROCH, prompt_generator, n_interations, n_generations)
-
-
-    # fix errors experiment
-    # log_path = """
-    # logs_temp/bo_exp_p1_o_gemini-2.0-flash-exp_1.0_False
-    # """
-    # run_bo_exp_fix_errors(model=MODEL, log_path=log_path, prompt_generator=prompt_generator, n_iterations=n_interations, n_generations=n_generations)
-
-    # optimize performance experiment
-    # log_path = """
-    # logs_temp/bo_exp_p2_o_gemini-2.0-flash-exp
-    # """
-    # run_bo_exp_optimize_performance(model=MODEL, log_path=log_path, prompt_generator=prompt_generator, n_iterations=n_interations, n_generations=n_generations)
-
+        repeat = 3
+        evaluator = IOHEvaluator(budget=BUDGET, dim=DIM, problems=problems, instances=instances, repeat=repeat)
+        return evaluator
     
-    # bbob experiment
-    run_bbob_exp(MODEL, prompt_generator, N_INTERATIONS, N_GENERATIONS, BUDGET)
+    run_bbob_exp(MODEL, prompt_generator,
+                 n_iterations=N_INTERATIONS, n_generations=N_GENERATIONS, 
+                 n_population=N_POPULATION,
+                 n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING, 
+                 n_query_threads=N_QUERY_THREADS, n_eval_workers=N_EVAL_WORKERS, time_out_per_eval=TIME_OUT_PER_EVAL,
+                 mocker=mocker,
+                 get_evaluator=get_evaluator,
+                 )
 
     # IndividualLogger.merge_logs("logs_bbob").save_reader_format()
     # test_multiple_processes()

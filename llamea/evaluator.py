@@ -752,6 +752,10 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     
 
 class IOHEvaluator(AbstractEvaluator):
+
+    def __str__(self):
+        return f"IOHEvaluator: {self._problem_name}_dim-{self.dim}_budget-{self.budget}_instances-{self.instances}_repeat-{self.reapeat}"
+    
     def __init__(self, dim:int = 5, budget:int = 40, problems:list[int]= None, instances:list[list[int]]=None, repeat:int = 1):
         super().__init__()
         if problems is not None and instances is not None and len(problems) != len(instances):

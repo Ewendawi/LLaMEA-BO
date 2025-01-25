@@ -61,6 +61,10 @@ class BaselinePromptGenerator(PromptGenerator):
         super().__init__()
         self.is_bo = False
 
+    def __str__(self):
+        is_bo = "BO" if self.is_bo else ""
+        return f"{is_bo}BaselinePromptGenerator"
+
 # prompt generation
     def get_prompt(self, task:GenerationTask, problem_desc:str,
                    candidates:list[BaselineResponseHandler]= None,
