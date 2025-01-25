@@ -1,6 +1,7 @@
 import re
 from typing import Any
 import numpy as np
+import torch
 from .abstract_prompt_generator import PromptGenerator, ResponseHandler, GenerationTask, EvaluatorResult
 from .bo_zeroplus_prompt_generator import BOPromptGeneratorReturnChecker
 from ..individual import Individual, ESPopulation
@@ -56,6 +57,10 @@ class BaselineResponseHandler(ResponseHandler):
 
 class BaselinePromptGenerator(PromptGenerator):
 
+    def __init__(self):
+        super().__init__()
+        self.is_bo = False
+
 # prompt generation
     def get_prompt(self, task:GenerationTask, problem_desc:str,
                    candidates:list[BaselineResponseHandler]= None,
@@ -74,21 +79,33 @@ class BaselinePromptGenerator(PromptGenerator):
         response_format_prompt = self.response_format(task=task)
 
         if task == GenerationTask.INITIALIZE_SOLUTION:
+            pre_solution_prompt = ""
+            if len(candidates) > 0:
+                n_solution = len(candidates)
+                pre_solution_prompt = f"{n_solution} algorithms have been designed. The next algorithm should be as diverse as possible from the previous ones.\n"
+                for i, candidate in enumerate(candidates):
+                    pre_solution_prompt += f"- {candidate.desc}\n"
+                pre_solution_prompt += "\n"
+            
             code_structure_prompt = "A code structure guide is as follows:\n" + self.code_structure()
-            final_prompt = f"""{task_prompt}\n{code_structure_prompt}\n{response_format_prompt}"""
+            final_prompt = f"""{task_prompt}\n{pre_solution_prompt}\n{code_structure_prompt}\n{response_format_prompt}"""
         else:
-            candidate = candidates[0]
-            description = candidate.desc
-            solution = f"```python\n{candidate.code}\n```"
-            if candidate.error:
-                if candidate.error_type == "NoCodeException":
-                    feedback = "No code was extracted. The code should be encapsulated with ``` in your response."
-                else:
-                    feedback = f"An error occurred : {candidate.error}"
-            else:
-                feedback = self.evaluation_feedback_prompt(candidate.eval_result, other_results)
+            if len(candidates) > 1:
+                crossover_operator = "Combine the selected solutions to create a new solution."
 
-            mutation_operator = "Refine the strategy of the selected solution to improve it."
+                selected_prompt = "The selected solutions to update are:\n"
+
+                for candidate in candidates:
+                    candidate_prompt = self.__get_candidate_prompt(candidate)
+                    selected_prompt += f"## {candidate.code_name}\n{candidate_prompt}\n"
+
+                selected_prompt += f"{crossover_operator}\n"
+            else:
+                candidate = candidates[0]
+                candidate_prompt = self.__get_candidate_prompt(candidate)
+                mutation_operator = "Refine the strategy of the selected solution to improve it."
+
+                selected_prompt = f"""The selected solution to update is:\n{candidate_prompt}\n{mutation_operator}\n"""
 
             population_summary = ""
             if isinstance(population, ESPopulation) and len(population.selected_generations) > 0:
@@ -100,20 +117,46 @@ class BaselinePromptGenerator(PromptGenerator):
             final_prompt = f"""{task_prompt}
 {population_summary}
 
-The selected solution to update is:
-{description}
+{selected_prompt}
 
-With code:
-{solution}
-
-{feedback}
-
-{mutation_operator}
 {response_format_prompt}
 """
         return role_prompt, final_prompt
 
-    def task_description(self, task, extra = ""):
+    def __get_candidate_prompt(self, candidate:BaselineResponseHandler) -> str:
+        description = candidate.desc
+        solution = f"```python\n{candidate.code}\n```"
+        if candidate.error:
+            if candidate.error_type == "NoCodeException":
+                feedback = "No code was extracted. The code should be encapsulated with ``` in your response."
+            else:
+                feedback = f"An error occurred : {candidate.error}"
+        else:
+            feedback = self.evaluation_feedback_prompt(candidate.eval_result, None)
+
+        
+        return f"{description}\n With code:\n{solution}\n{feedback}\n"
+
+    def task_description(self, task:GenerationTask, extra:str="") -> str:
+        if self.is_bo:
+            return self.__bo_task_description(task, extra)
+        return self.__task_description(task, extra)
+
+    def __bo_task_description(self, task, extra = ""):
+        lib_prompt = "As an expert of numpy, scipy, scikit-learn, you are allowed to use these libraries."
+        if torch.cuda.is_available():
+            lib_prompt = "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries, and using GPU for acceleration is mandatory."
+        # problem_desc = "one noiseless functions:f6-Attractive Sector Function"
+        problem_desc = "24 noiseless functions"
+        task_prompt = f"""
+The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of {problem_desc}. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
+The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
+{lib_prompt} Do not use any other libraries unless they cannot be replaced by the above libraries. Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
+Give an excellent and novel Bayesian Optimization algorithm to solve this task and also give it a one-line description with the main idea. 
+"""
+        return task_prompt
+    
+    def __task_description(self, task:GenerationTask, extra:str="") -> str:
         task_prompt = """
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
@@ -129,7 +172,12 @@ Provide the Python code and a one-line description with the main idea (without e
 """
         return output_format_prompt
 
-    def code_structure(self, extra:str="") -> str:
+    def code_structure(self, extra = ""):
+        if self.is_bo:
+            return self.__bo_code_structure(extra)
+        return self.__code_structure(extra)
+
+    def __code_structure(self, extra:str="") -> str:
         return """
 ```python
 import numpy as np
@@ -151,6 +199,60 @@ class RandomSearch:
                 self.x_opt = x
             
         return self.f_opt, self.x_opt
+```
+"""
+
+    def __bo_code_structure(self, extra:str="") -> str:
+        return f"""
+```python
+from typing import Callable
+from scipy.stats import qmc # If you are using QMC sampling. Otherwise or you have a better alternative, remove this line.
+import numpy as np
+class <AlgorithmName>:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points) -> np.ndarray:
+        # sample points
+        # return array of shape (n_points, n_dims)
+    
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model 
+        # return the model
+
+    def _acquisition_function(self, X) -> np.ndarray:
+        # Implement acquisition function 
+        # calculate the acquisition function value for each point in X
+        # return array of shape (n_points, 1)
+
+    def _select_next_points(self, batch_size) -> np.ndarray:
+        # Implement the strategy to select the next points to evaluate
+        # return array of shape (batch_size, n_dims)
+    
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # Do not change the function signature
+        # Return a tuple (best_y, best_x)
+        
+        n_initial_points = <your_strategy>
+        rest_of_budget = budget - n_initial_points
+        while rest_of_budget > 0:
+           # Optimization
+           
+           rest_of_budget -= <the number of func being called in this iteration>
+        return best_y, best_x
+
+    # Code Implementation only contain the algorithm class. No usage examples"
+    {extra}
 ```
 """
 
@@ -186,7 +288,7 @@ class RandomSearch:
                 "problem_id": problem_id,
                 "instance_id": instance_id,
                 "repeat_id": repeat_id,
-                "y_aoc": res.y_aoc_from_ioh
+                "y_aoc": aoc
             }
             grouped_aocs[group_idx].append(content)
 
@@ -208,9 +310,9 @@ class RandomSearch:
         multi_weak_aocs = [content["y_aoc"] for content in grouped_aocs[4]]
         multi_weak_auc = np.mean(multi_weak_aocs) if len(multi_weak_aocs) > 0 else 0
             
-        final_feedback_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.2f} with standard deviation {auc_std:0.2f}."""
-
-        detailed_feedback_prompt = f"""
+        final_feedback_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.2f} with standard deviation {auc_std:0.2f}.
+"""
+        detailed_feedback = f"""
 The mean AOCC score of the algorithm {algorithm_name} on Separable functions was {separated_auc:.02f}, on functions with low or moderate conditioning {low_mod_auc:.02f}, on functions with high conditioning and unimodal {high_uni_auc:.02f}, on Multi-modal functions with adequate global structure {multi_adequate_auc:.02f}, and on Multi-modal functions with weak global structure {multi_weak_auc:.02f}
 """
         return final_feedback_prompt
