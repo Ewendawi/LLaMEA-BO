@@ -981,7 +981,7 @@ class IOHEvaluator(AbstractEvaluator):
         if eval_result.error is None:
             # eval_result.score = np.mean([r.y_aoc for r in eval_result.result])
             eval_result.score = np.mean([r.y_aoc_from_ioh for r in eval_result.result])
-            # logging.info("Evaluating %s: Score - %s - %s", cls_name, score, eval_result.score)
+            logging.info("Evaluated %s: %s", cls_name, eval_result.score)
         else:                           
             eval_result.score = 0.0
 
