@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from .individual import Individual, Population
+from .individual import Individual, Population, PopulationQueryItem
 from .llm import LLMmanager
 from .prompt_generators import PromptGenerator, GenerationTask, ResponseHandler
 from .utils import IndividualLogger, NoCodeException 
@@ -19,11 +19,11 @@ class LLaMBO:
     """
     A class that represents the Language Model powered Bayesian Optimization(LLaMBO).
     """
-    def update_current_task(self, parent:list[Individual] = None, generation:int = 0) -> GenerationTask:
-        if parent is None or generation == 0:
+    def update_current_task(self, query_item:PopulationQueryItem = None, generation:int = 0) -> GenerationTask:
+        if query_item.is_initialized or query_item.parent is None or generation == 0:
             return GenerationTask.INITIALIZE_SOLUTION
-        elif len(parent) == 1:
-            if parent[0].error:
+        elif len(query_item.parent) == 1:
+            if query_item.parent[0].error:
                 return GenerationTask.FIX_ERRORS
             else:
                 return GenerationTask.OPTIMIZE_PERFORMANCE
@@ -53,23 +53,20 @@ class LLaMBO:
                 logging.error("No response from the model.") 
                 logging.error("Retrying: %s/%s", i_try + 1, retry)
             else:
-                break
+                response_handler.extract_response(response, task=task)
+                if not response_handler.code or not response_handler.code_name:
+                    err = NoCodeException("ExtractionError: No code extracted from the model.")
+                    response_handler.error = str(err)
+                    response_handler.error_type = err.__class__.__name__
+                    logging.error("No code extracted from the model.")
+                    logging.error("Retrying: %s/%s", i_try + 1, retry)
+                else:
+                    break
+
         # logging.debug("Response:\n%s\n", response)
         logging.info("Response:\n%s\n", response)
 
-        if response is None or response == "":
-            logging.error("No response from the model. Exiting")
-            err = NoCodeException("No response from the model.")
-            response_handler.error = str(err)
-            response_handler.error_type = err.__class__.__name__
-            return response_handler
-
-        response_handler.extract_response(response, task=task)
-        if not response_handler.code or not response_handler.code_name:
-            err = NoCodeException("ExtractionError: No code extracted from the model.")
-            response_handler.error = str(err)
-            response_handler.error_type = err.__class__.__name__
-            logging.error("No code extracted from the model.")
+        if response_handler.error:
             return response_handler
 
         # search whether the code include "cuda"
@@ -114,24 +111,23 @@ class LLaMBO:
         current_generation = 0
         current_population = 0
         while current_population < n_population and current_generation < n_generation:
-            logging.info("""======Start Generation %s with %s Population=======""", current_generation+1, current_population)
+            logging.info("""======Start Generation %s with %s Population=======""", current_generation, current_population)
             
-            parents = population.get_parents()
+            query_items = population.get_offspring_queryitems()
             current_query_time = time.time()
             if current_query_time - last_query_time < max_interval:
                 logging.info("Sleeping for %s seconds", max_interval - (current_query_time - last_query_time))
                 time.sleep(max_interval - (current_query_time - last_query_time))
             last_query_time = time.time()
 
-            next_handlers:list[ResponseHandler] = []
             params = []
-            for i, parent in enumerate(parents):
-                current_task = self.update_current_task(parent=parent, generation=current_generation)
+            for i, query_item in enumerate(query_items):
+                current_task = self.update_current_task(query_item=query_item, generation=current_generation)
 
                 # Get prompt
                 other_results = (None, sup_results)
 
-                parent_handlers = [Population.get_handler_from_individual(p) for p in parent if p is not None]
+                parent_handlers = [Population.get_handler_from_individual(p) for p in query_item.parent if p is not None]
                 role_setting, prompt = prompt_generator.get_prompt(
                     task=current_task,
                     problem_desc=problem_description,
@@ -159,24 +155,37 @@ class LLaMBO:
 
             logging.info("Querying and Evaluating %s individuals", len(params))
 
+            next_handlers:dict[str, ResponseHandler] = {}
             if n_query_threads > 0:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=n_query_threads) as executor:
-                    futures = {executor.submit(self.evalution_func, **kwargs): kwargs for kwargs in params}
+                    futures = {}
+                    for i, kwargs in enumerate(params):
+                        future = executor.submit(self.evalution_func, **kwargs)
+                        futures[future] = query_items[i].offspring.id
                     for future in concurrent.futures.as_completed(futures):
+                        ind_id = futures[future]
                         handler = future.result()
-                        next_handlers.append(future.result())
+                        if handler.code and handler.code_name:
+                            next_handlers[ind_id] = handler
             else:
-                for kwargs in params:
+                for i, kwargs in enumerate(params):
                     next_handler = self.evalution_func(**kwargs)
-                    next_handlers.append(next_handler)
+                    if next_handler.code and next_handler.code_name:
+                        ind_id = query_items[i].offspring.id
+                        next_handlers[ind_id] = next_handler
 
-            for i, handler in enumerate(next_handlers):
-
-                parent_ids = [p.id for p in parents[i] if p is not None]
-                ind = Individual(solution=handler.code, name=handler.code_name, parent_id=parent_ids, generation=current_generation)
-                ind.add_metadata("res_handler", handler)
+            query_item_map = {query_item.offspring.id: query_item for query_item in query_items}
+            for ind_id, handler in next_handlers.items():
+                parent_ids = [p.id for p in query_item_map[ind_id].parent if p is not None]
+                
+                ind = query_item_map[ind_id].offspring
+                ind.description = getattr(handler , "desc", "")
+                ind.solution = handler.code
+                ind.name = handler.code_name
+                ind.parent_id = parent_ids
+                ind.generation = current_generation
+                Population.set_handler_to_individual(ind, handler)
                 if handler.error:
-                    ind.add_metadata("error_type", handler.error_type)
                     ind.error = str(handler.error)
                     ind.fitness = handler.eval_result.score if handler.eval_result else -np.inf
                 else:
@@ -189,7 +198,6 @@ class LLaMBO:
                 ind.add_metadata("role_setting", role_setting)
                 ind.add_metadata("prompt", prompt)
                 ind.add_metadata("model", llm.model_name())
-                ind.add_metadata("raw_response", handler.raw_response)
                 tags = ind.metadata["tags"] if "tags" in ind.metadata else []
                 tags.append(f"gen:{current_generation}")
                 tags.append(f"task:{current_task.name}")

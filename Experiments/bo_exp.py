@@ -5,7 +5,7 @@ import os
 import tqdm
 import numpy as np
 from llamea import LLaMBO, LLMmanager
-from llamea.individual import Individual, Population, SequencePopulation, ESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
+from llamea.individual import Individual, Population, SequencePopulation, ESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn, IslandESPopulation
 from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BaselinePromptGenerator
 from llamea.utils import setup_logger, IndividualLogger
 from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator, AbstractEvaluator
@@ -306,24 +306,31 @@ if __name__ == "__main__":
     prompt_generator = BaselinePromptGenerator()
 
     # prompt_generator.is_bo = True
-    # BUDGET = 100
+    # BUDGET = 40
+
     BUDGET = 2000 * 5
 
     DIM = 5
 
     N_INTERATIONS = 1
-    N_GENERATIONS = 200
+    N_GENERATIONS = 15
     N_POPULATION = 30
 
-    N_PARENT = 4
+    N_PARENT = 2
     N_PARENT_PER_OFFSPRING = 2
     N_OFFSPRING = 1
+
+    N_ISLAND = 3
+    N_WARMUP_GENERATIONS = 2
+    N_CAMBRIAN_GENERATIONS = 2
+    N_NEOGENE_GENERATIONS = 2
+    PREODER_AWARE_INIT = True
 
     N_QUERY_THREADS = 0
     N_EVAL_WORKERS = 0
 
     # if using multiple processes, set this to false to avoid issues with tokenizers
-    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     TIME_OUT_PER_EVAL = 60 * 20
     TIME_OUT_PER_EVAL = None
@@ -355,12 +362,18 @@ if __name__ == "__main__":
         return evaluator
 
     def get_population():
-        population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
-        population.name = f"bbob_exp_{MODEL[0]}_{prompt_generator.__class__.__name__}"
-        population.save_per_generation = 8
-        population.preorder_aware_init = True
-        population.get_parent_strategy = max_divese_desc_get_parent_fn
-        population.selection_strategy = diversity_awarness_selection_fn
+        # population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
+        # population.save_per_generation = 8
+        # population.preorder_aware_init = True
+        # population.get_parent_strategy = max_divese_desc_get_parent_fn
+        # population.selection_strategy = diversity_awarness_selection_fn
+        # population.name = f"bbob_exp_diversity_{MODEL[0]}_{prompt_generator.__class__.__name__}"
+
+        population = IslandESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING, n_islands=N_ISLAND, 
+                                        preoder_aware_init=PREODER_AWARE_INIT, update_strategy=max_divese_desc_get_parent_fn, selection_strategy=diversity_awarness_selection_fn,
+                                        n_warmup_generations=N_WARMUP_GENERATIONS, n_cambrian_generations=N_CAMBRIAN_GENERATIONS, n_neogene_generations=N_NEOGENE_GENERATIONS)
+        population.name = f"bbob_exp_island_{MODEL[0]}_{prompt_generator.__class__.__name__}"
+
         return population
     
     run_exp(MODEL, prompt_generator,

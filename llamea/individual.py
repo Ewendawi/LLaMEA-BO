@@ -3,12 +3,14 @@ import json
 import pickle
 import uuid
 import logging
+import math
 from datetime import datetime
 from abc import ABC, abstractmethod
 from typing import List, Optional
 from collections.abc import Callable
 from enum import Enum
 from functools import cmp_to_key
+import numpy as np
 
 
 class Individual:
@@ -174,6 +176,14 @@ class Individual:
             str: A JSON string representation of the individual.
         """
         return json.dumps(self.to_dict(), default=str, indent=4)
+        
+
+class PopulationQueryItem:
+    def __init__(self, qid=None, parent=None, offspring=None):
+        self.qid = qid
+        self.is_initialized = False
+        self.parent: list[Individual] = parent
+        self.offspring: Individual = offspring
 
 class Population(ABC):
     """
@@ -181,7 +191,7 @@ class Population(ABC):
     """
     def __init__(self):
         self.name = None
-        self.get_parent_strategy:Callable[[list[Individual], int, int], list[Individual]] = None 
+        self.get_parent_strategy:Callable[[list[Individual], int, int], list[PopulationQueryItem]] = None 
         self.selection_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
 
     @abstractmethod
@@ -189,7 +199,7 @@ class Population(ABC):
         pass
 
     @abstractmethod
-    def add_individual(self, individual: Individual):
+    def add_individual(self, individual: Individual, generation: int):
         pass
 
     @abstractmethod
@@ -198,17 +208,17 @@ class Population(ABC):
 
     def select_next_generation(self):
         pass
-        
+
     @abstractmethod
-    def get_parents(self) -> list[list[Individual]]:
+    def get_offspring_queryitems(self, n_parent:int=None) -> list[PopulationQueryItem]:
         return None
 
     @abstractmethod
     def get_current_generation(self):
         return 0
 
-    def get_last_successful_parent(self, candidate: Individual) -> Individual:
-        return None
+    def get_individuals(self, generation: int = None):
+        return []
 
     @abstractmethod
     def get_best_individual(self, maximize: bool = False):
@@ -234,8 +244,7 @@ class ESPopulation(Population):
         super().__init__()
 
         self.preorder_aware_init = False
-        self.get_parent_strategy:Callable[[list[Individual], int, int], list[Individual]] = None 
-        self.selection_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
+        self.cross_over_rate = 0.6
         
         self.n_parent = n_parent
         self.n_parent_per_offspring = n_parent_per_offspring
@@ -243,6 +252,8 @@ class ESPopulation(Population):
         self.use_elitism = use_elitism
         self.save_per_generation = 10
         self.save_per_generation_dir = None
+
+        self.update_simliarity_per_generation = True
 
         self.individuals:dict[str, Individual] = {}
         # all individuals per generation
@@ -281,7 +292,7 @@ class ESPopulation(Population):
                 for gen in self.generations:
                     if individual.id in gen:
                         gen.remove(individual.id)
-        
+
     def select_next_generation(self):
         if len(self.generations) == 0 or len(self.generations[-1]) == 0:
             return
@@ -314,10 +325,17 @@ class ESPopulation(Population):
             ind_next_pop = self.selection_strategy(ind_last_gen, ind_last_pop, self.n_parent)
             next_pop = [ind.id for ind in ind_next_pop]
             self.selected_generations.append(next_pop)
+
+        if self.update_simliarity_per_generation and self.n_parent > 1:
+            # Update the similarity matrix
+            mean_similarity, _ = desc_similarity([self.individuals[id] for id in next_pop])
+            for i, ind_id in enumerate(next_pop):
+                ind = self.individuals[ind_id]
+                Population.get_handler_from_individual(ind).eval_result.simiarity = mean_similarity[i]
         
         # Save population every n generations
         n_gen = len(self.selected_generations)
-        if n_gen % self.save_per_generation == 0:
+        if self.save_per_generation is not None and n_gen % self.save_per_generation == 0:
             dir_path = self.save_per_generation_dir
             if dir_path is None:
                 time_stamp = datetime.now().strftime("%m%d%H%M%S")
@@ -331,32 +349,70 @@ class ESPopulation(Population):
     def get_current_generation(self):
         return len(self.selected_generations)
 
-    def get_parents(self) -> list[list[Individual|None]]:
+    def get_offspring_queryitems(self, n_parent:int=None) -> list[PopulationQueryItem]:
         if len(self.selected_generations) == 0:
+            # Initial population
             if self.preorder_aware_init:
                 parents = [self.individuals[id] for id in self.generations[0]] if len(self.generations) > 0 else []
-                return [parents]
+                query_item = PopulationQueryItem(parent=parents, offspring=Individual())
+                query_item.is_initialized = True
+                return [query_item]
             else:
-                return [[]] * self.n_parent
+                query_items = []
+                for i in range(self.n_parent):
+                    query_item = PopulationQueryItem(qid=i, parent=[], offspring=Individual())
+                    query_item.is_initialized = True
+                    query_items.append(query_item)
+                return query_items
+
+        if n_parent is not None:
+            n_parent_per_offspring = n_parent
+        else:
+            if self.n_parent_per_offspring > 1:
+                # decide mutation or crossover
+                if np.random.rand() < self.cross_over_rate:
+                    n_parent_per_offspring = self.n_parent_per_offspring
+                else:
+                    n_parent_per_offspring = 1
+            else:
+                n_parent_per_offspring = self.n_parent_per_offspring
 
         last_pop = self.selected_generations[-1]
         last_pop = [self.individuals[id] for id in last_pop if id in self.individuals]
 
+        # custom parent selection strategy
         if self.get_parent_strategy is not None:
-            return self.get_parent_strategy(last_pop, self.n_parent_per_offspring, self.n_offspring)
+            return self.get_parent_strategy(last_pop, n_parent_per_offspring, self.n_offspring)
             
-        n_last_pop_needed = self.n_parent_per_offspring * self.n_offspring
+        # if donot have enough parents, repeat the last population
+        n_last_pop_needed = n_parent_per_offspring * self.n_offspring
         if len(last_pop) < n_last_pop_needed:
             last_pop = last_pop * (n_last_pop_needed // len(last_pop) + 1)
 
         parents = []
         idx_last_pop = 0
         for _ in range(self.n_offspring):
-            parent = last_pop[idx_last_pop: idx_last_pop+self.n_parent_per_offspring]
+            parent = last_pop[idx_last_pop: idx_last_pop+n_parent_per_offspring]
             parents.append(parent)
-            idx_last_pop += self.n_parent_per_offspring
+            idx_last_pop += n_parent_per_offspring
+
+        query_items = []
+        for parent in parents:
+            query_item = PopulationQueryItem(qid=0, parent=parent, offspring=Individual())
+            query_items.append(query_item)
             
-        return parents
+        return query_items
+
+    def get_individuals(self, generation: int = None):
+        gen = generation
+        if gen is None:
+            gen = len(self.selected_generations) - 1
+        if gen < 0 or gen >= len(self.selected_generations):
+            gen = len(self.selected_generations) - 1
+        
+        ind_ids = self.selected_generations[gen]
+        inds = [self.individuals[id] for id in ind_ids]
+        return inds
 
     def get_best_individual(self, maximize: bool = False):
         best = None
@@ -377,19 +433,50 @@ class ESPopulation(Population):
 class IslandESPopulation(Population):
 
     class IslandStatus(Enum):
-        NORMAL = 0
-        KILLED = 1
-        RESETING = 2
-        REQUIRE_MIGRANT = 3
-    
-    class IslandOperation(Enum):
-        MIGRATION = 0
-        KILL = 1
-        RESET = 2
-    
-    
-    def __init__(self, n_islands: int = 1, n_parent: int = 1, n_offspring: int = 1, n_parent_per_offspring: int = 1, use_elitism: bool = True):
+        INITIAL = 0
+        GROWING = 1
+        MATURE = 2
+        RESETING = 3
+        KILLED = 4
+
+    class IslandAge(Enum):
+        WARMUP = 0
+        CAMBRIAN = 1
+        NEOGENE = 2
+
+    class IslandPopWrapper:
+        def __init__(self, pop:ESPopulation, status):
+            self.pop:ESPopulation = pop
+            self.status = status
+            self.island_id = None
+            self.growing_gen = 1
+
+        def update_growth(self):
+            if self.status == IslandESPopulation.IslandStatus.GROWING:
+                self.growing_gen += 1
+            else:
+                self.growing_gen = 1
+
+    def __init__(self, n_islands: int = 1,
+                 n_parent: int = 1,
+                 n_offspring: int = 1,
+                 n_parent_per_offspring: int = 1,
+                 use_elitism: bool = True,
+                 crossover_rate: float = 0.6,
+                 update_strategy: Callable[[list[Individual], list[Individual], int], list[Individual]] = None,
+                 selection_strategy: Callable[[list[Individual], list[Individual], int], list[Individual]] = None,
+                 preoder_aware_init: bool = False, 
+                 cyclic_migration: bool = False, 
+                 migration_batch: int = 1,
+                 n_warmup_generations: int = 3,
+                 n_cambrian_generations: int = 10,
+                 n_neogene_generations: int = 10,):
         super().__init__()
+
+        self.generation = 0
+        self.geo_age = self.IslandAge.WARMUP
+        self.migration_batch = migration_batch
+        self.cyclic_migration = cyclic_migration
 
         self.n_islands = n_islands
         self.n_parent = n_parent
@@ -397,71 +484,304 @@ class IslandESPopulation(Population):
         self.n_parent_per_offspring = n_parent_per_offspring
         self.use_elitism = use_elitism
 
-        self.populations = [ESPopulation(n_parent, n_parent_per_offspring, n_offspring, use_elitism) for _ in range(n_islands)]
+        self.n_warmup_generations = n_warmup_generations
+        self.n_cambrian_generations = n_cambrian_generations
+        self.n_neogene_generations = n_neogene_generations
 
-        self.pop_status = [self.IslandStatus.NORMAL] * n_islands
+        self.reset_rate = 0.5
+        self.kill_rate = 0.5
 
+        self.preorder_aware_init = preoder_aware_init
+
+        self.populations = []
+        for i in range(n_islands):
+            wrapper = IslandESPopulation.IslandPopWrapper(ESPopulation(n_parent, n_parent_per_offspring, n_offspring, use_elitism), IslandESPopulation.IslandStatus.INITIAL)
+            wrapper.island_id = i
+            wrapper.pop.preorder_aware_init = self.preorder_aware_init
+            wrapper.pop.selection_strategy = selection_strategy
+            wrapper.pop.get_parent_strategy = update_strategy
+            wrapper.cross_over_rate = crossover_rate
+            self.populations.append(wrapper)
+
+        self.__preorder_init_queue = []
+        if self.preorder_aware_init:
+            for wrapper in self.populations:
+                self.__preorder_init_queue.append(wrapper.island_id)
+
+
+    def __gen_to_age(self, generation: int):
+        if generation < self.n_warmup_generations:
+            return self.IslandAge.WARMUP
+        else:
+            evol_gen = generation - self.n_warmup_generations
+            rest = evol_gen % (self.n_cambrian_generations + self.n_neogene_generations)
+            if rest < self.n_cambrian_generations:
+                return self.IslandAge.CAMBRIAN
+            else:
+                return self.IslandAge.NEOGENE
+
+    def __is_the_end_of_age(self, generation: int, age: IslandAge):
+        if age == self.IslandAge.WARMUP:
+            return generation == self.n_warmup_generations - 1
+        elif age == self.IslandAge.CAMBRIAN:
+            return (generation - self.n_warmup_generations) % (self.n_cambrian_generations + self.n_neogene_generations) == self.n_cambrian_generations - 1
+        elif age == self.IslandAge.NEOGENE:
+            return (generation - self.n_warmup_generations) % (self.n_cambrian_generations + self.n_neogene_generations) == self.n_cambrian_generations + self.n_neogene_generations - 1
+        return False
+
+    def __is_the_start_of_age(self, generation: int, age: IslandAge):
+        if age == self.IslandAge.WARMUP:
+            return generation == 0
+        elif age == self.IslandAge.CAMBRIAN:
+            return (generation - self.n_warmup_generations) % (self.n_cambrian_generations + self.n_neogene_generations) == 0
+        elif age == self.IslandAge.NEOGENE:
+            return (generation - self.n_warmup_generations) % (self.n_cambrian_generations + self.n_neogene_generations) == self.n_cambrian_generations
+        return False
+        
     def __set_island_index(self, individual: Individual, island_index: int):
-        individual.add_metadata("island_index", island_index)
+        setattr(individual, "island_index", island_index)
 
     def __get_island_index(self, individual: Individual):
-        index = individual.get_metadata("island_index")
-        if index is None and individual.parent_id is not None:
-            parent_ids = individual.parent_id
-            if isinstance(individual.parent_id, str):
-                parent_ids = [individual.parent_id] 
-            for parent_id in parent_ids:
-                parent = self.__get_individual_with_id(parent_id)
-                if parent is not None:
-                    index = self.__get_island_index(parent)
-                    break
+        index = getattr(individual, "island_index", None)
         return index
 
-    def __get_individual_with_id(self, individual_id: str):
-        for pop in self.populations:
-            if individual_id in pop.individuals:
-                return pop.individuals[individual_id]
-        return None
-
     def get_population_size(self):
-        return sum([pop.get_population_size() for pop in self.populations])
+        return sum([wrapper.pop.get_population_size() for wrapper in self.populations])
 
-    def add_individual(self, individual: Individual):
+    def add_individual(self, individual: Individual, generation: int):
         island_index = self.__get_island_index(individual)
         if island_index is not None:
-            self.populations[island_index].add_individual(individual)
+            self.populations[island_index].pop.add_individual(individual, generation)
             self.__set_island_index(individual, island_index)
+        else:
+            # raise ValueError("Individual does not belong to any island.")
+            pass
     
     def remove_individual(self, individual):
         island_index = self.__get_island_index(individual)
         if island_index is not None:
             self.populations[island_index].remove_individual(individual)
-            
+
+    def __get_all_mature_individuals(self, sort: bool = False, revserse: bool = False):
+        all_mature_inds = []
+        for wrapper in self.populations:
+            if wrapper.status == self.IslandStatus.MATURE:
+                ind = wrapper.pop.get_best_individual()
+                if ind is not None:
+                    all_mature_inds.append(ind)
+        if sort:
+            all_mature_inds = sorted(all_mature_inds, key=lambda x: x.fitness, reverse=revserse)
+        return all_mature_inds
+
+    def __get_all_best_individuals(self, sort: bool = False, revserse: bool = False):
+        all_best_inds = []
+        for wrapper in self.populations:
+            if wrapper.status == self.IslandStatus.KILLED:
+                continue
+            ind = wrapper.pop.get_best_individual()
+            if ind is not None:
+                all_best_inds.append(ind)
+
+        if sort:
+            all_best_inds = sorted(all_best_inds, key=lambda x: x.fitness, reverse=revserse)
+        return all_best_inds
+
     def select_next_generation(self):
-        for pop in self.populations:
-            pop.select_next_generation()
+        should_update = False
+        if self.preorder_aware_init and len(self.__preorder_init_queue) > 0:
+            island_index = self.__preorder_init_queue[0]
+            wrapper = self.populations[island_index]
+            wrapper.pop.select_next_generation()
+            if wrapper.pop.get_current_generation() == 1:
+                self.__preorder_init_queue.pop(0)
+
+            if len(self.__preorder_init_queue) == 0:
+                should_update = True
+        else:
+            should_update = True
+            for wrapper in self.populations:
+                status = wrapper.status
+                if status != self.IslandStatus.KILLED:
+                    wrapper.pop.select_next_generation()
+
+                    if status == self.IslandStatus.INITIAL:
+                        wrapper.status = self.IslandStatus.GROWING
+                    elif status == self.IslandStatus.RESETING:
+                        wrapper.status = self.IslandStatus.GROWING
+                    elif status == self.IslandStatus.GROWING:
+                        wrapper.update_growth()
+                        if wrapper.growing_gen >= self.n_warmup_generations:
+                            wrapper.status = self.IslandStatus.MATURE
+                            wrapper.update_growth()
+
+        if not should_update:
+            return
+
+        if self.geo_age == self.IslandAge.NEOGENE:
+            if self.__is_the_end_of_age(self.generation, self.IslandAge.NEOGENE):
+                all_best_inds = self.__get_all_mature_individuals(sort=True)
+                # kill the worst kill_rate of the islands
+                n_islands = len(all_best_inds)
+                n_killed = int(n_islands * self.kill_rate)
+                if n_islands - n_killed < 1:
+                    n_killed = n_islands - 1
+                n_killed = max(0, n_killed)
+                for i in range(n_killed):
+                    ind = all_best_inds[i]
+                    island_index = self.__get_island_index(ind)
+                    self.populations[island_index].status = self.IslandStatus.KILLED
+                    logging.info("Island %s is killed.", island_index)
+
+        self.generation += 1
+        # update the age of the islands
+        self.geo_age = self.__gen_to_age(self.generation)
+
+        # update the status of the islands 
+        if self.geo_age == self.IslandAge.CAMBRIAN:
+            if self.__is_the_start_of_age(self.generation, self.IslandAge.CAMBRIAN):
+                all_best_inds = self.__get_all_mature_individuals(sort=True)
+                # reset the worst reset_rate of individuals
+                n_islands = len(all_best_inds)
+                n_reset = int(n_islands * self.reset_rate)
+                if n_islands - n_reset < 1:
+                    n_reset = n_islands - 1
+                n_reset = max(0, n_reset)
+                for i in range(n_reset):
+                    ind = all_best_inds[i]
+                    island_index = self.__get_island_index(ind)
+                    self.populations[island_index].status = self.IslandStatus.RESETING
+                    logging.info("Island %s is reseting.", island_index)
+
+
+    def __get_prob_migration_queryitems(self, all_best_inds: list[Individual], migration_batch: int, wrapper: IslandPopWrapper, similarity_matrix: np.ndarray) -> list[PopulationQueryItem]:
+
+        all_best_inds = sorted(all_best_inds, key=lambda x: x.fitness, reverse=True)
+        
+        max_fitness = all_best_inds[0].fitness
+        mean_fitness = np.mean([ind.fitness for ind in all_best_inds])
+        my_best_ind = wrapper.pop.get_best_individual()
+        migration_prob = score_to_probability_with_logarithmic_curve(score=my_best_ind.fitness, max_score=min(1.0,max_fitness*1.5))
+
+        migration_batch = min(self.migration_batch, len(all_best_inds))
+        migration_batch = max(wrapper.pop.n_parent_per_offspring-1, migration_batch) 
+
+        if np.random.random() > migration_prob:
+            return wrapper.pop.get_offspring_queryitems()
+        else:
+            migrant_parent = []
+            if my_best_ind.fitness >= mean_fitness:
+                # diversity
+                # find the index of the individual
+                sim_index = -1
+                for i, ind in enumerate(all_best_inds):
+                    if ind.id == my_best_ind.id:
+                        sim_index = i
+                        break
+                # get the least similar individuals
+                if sim_index >= 0:
+                    sim_inds = np.argsort(similarity_matrix[sim_index])
+                    for i in range(migration_batch):
+                        ind = all_best_inds[sim_inds[i]]
+                        migrant_parent.append(ind)
+            else:
+                # fitness
+                migrant_parent = [all_best_inds[i] for i in range(migration_batch)]
+
+            # get the rest of the parents from the population
+            items = []
+            n_parent = wrapper.pop.n_parent_per_offspring - len(migrant_parent)
+            p_items = wrapper.pop.get_offspring_queryitems(n_parent=n_parent)
+            for p_item in p_items:
+                parent = p_item.parent + migrant_parent
+                query_item = PopulationQueryItem(qid=wrapper.island_id, parent=parent, offspring=Individual())
+                items.append(query_item)
+        return items
+
+    def get_offspring_queryitems(self, n_parent:int=None) -> list[PopulationQueryItem]:
+
+        if self.preorder_aware_init and len(self.__preorder_init_queue) > 0:
+            logging.info("Generation %s, Age %s", self.generation, self.geo_age)
+            island_index = self.__preorder_init_queue[0]
+            wrapper = self.populations[island_index]
+            items = wrapper.pop.get_offspring_queryitems()
+            migrant = self.all_individuals()
+            for item in items:
+                parent = item.parent + migrant
+                item.parent = parent
+                self.__set_island_index(item.offspring, island_index)
+            return items
             
-    def get_parents(self) -> list[list[Individual]]:
+        # migration: get individuals from other islands(diversity)
+        # killed: ignore this island
+        # reseting: return empty parents
         parents = []
-        for pop in self.populations:
-            parents.extend(pop.get_parents())
+        all_best_inds = self.__get_all_best_individuals()
+        similarity_matrix = None
+        if self.geo_age == self.IslandAge.CAMBRIAN and len(all_best_inds) > 1:
+            _, similarity_matrix = desc_similarity(all_best_inds)
+
+        logging.info("Generation %s, Age %s, %s Islands ", self.generation, self.geo_age, len(all_best_inds))
+
+        for wrapper in self.populations:
+            status = wrapper.status
+            items = []
+            if status == self.IslandStatus.INITIAL:
+                items = wrapper.pop.get_offspring_queryitems()
+            elif status == self.IslandStatus.GROWING:
+                n_parent_per_offspring = 1
+                items = wrapper.pop.get_offspring_queryitems(n_parent = n_parent_per_offspring)
+            elif status == self.IslandStatus.MATURE:
+                if self.geo_age == self.IslandAge.CAMBRIAN:
+                    if len(all_best_inds) > 1:
+                        if self.cyclic_migration:
+                            # TODO: cyclic migration
+                            items = wrapper.pop.get_offspring_queryitems()
+                        else:
+                            query_items = self.__get_prob_migration_queryitems(all_best_inds, self.migration_batch, wrapper, similarity_matrix)
+                            items.extend(query_items)
+                    else:
+                        items = wrapper.pop.get_offspring_queryitems()
+
+                elif self.geo_age == self.IslandAge.NEOGENE:
+                    items = wrapper.pop.get_offspring_queryitems()
+            elif status == self.IslandStatus.KILLED:
+                continue
+            elif status == self.IslandStatus.RESETING:
+                for _ in range(wrapper.pop.n_offspring):
+                    sample_size = min(wrapper.pop.n_parent_per_offspring, len(all_best_inds))
+                    parent = np.random.choice(all_best_inds, size=sample_size, replace=False).tolist()
+                    query_item = PopulationQueryItem(qid=wrapper.island_id, parent=parent, offspring=Individual())
+                    query_item.is_initialized = True
+                    items.append(query_item)
+            # Set the island index for the offspring
+            for query_item in items:
+                self.__set_island_index(query_item.offspring, wrapper.island_id)
+            parents.extend(items)
+
         return parents
+
+    def get_individuals(self, generation = None):
+        inds = []
+        for wrapper in self.populations:
+            if wrapper.status != self.IslandStatus.KILLED:
+                inds.extend(wrapper.pop.get_individuals(generation))
+        return inds
     
     def get_current_generation(self):
-        return self.populations[0].get_current_generation()
+        return self.generation
 
     def get_best_individual(self, maximize: bool = False):
         best = None
-        for pop in self.populations:
-            ind = pop.get_best_individual(maximize)
+        for wrapper in self.populations:
+            ind = wrapper.pop.get_best_individual(maximize)
             if best is None or (ind is not None and ind.fitness > best.fitness):
                 best = ind
         return best
 
     def all_individuals(self):
         all_inds = []
-        for pop in self.populations:
-            all_inds.extend(pop.all_individuals())
+        for wrapper in self.populations:
+            all_inds.extend(wrapper.pop.all_individuals())
         return all_inds
 
 class SequencePopulation(Population):
@@ -482,26 +802,11 @@ class SequencePopulation(Population):
     def remove_individual(self, individual):
         self.individuals = [ind for ind in self.individuals if ind.id != individual.id]
 
-    def get_parents(self) -> list[list[Individual]]:
+    def get_offspring_queryitems(self, n_parent:int=None) -> list[list[Individual]]:
         if not self.individuals:
             return [[]]
 
         return [self.individuals[-1:]]
-
-    def get_last_successful_parent(self, candidate: Individual) -> Individual:
-        if candidate is None:
-            return None
-
-        # Find the last successful parent of the candidate
-        is_before_candidate = True 
-        for ind in reversed(self.individuals):
-            if is_before_candidate: 
-                if ind.id == candidate.id:
-                    is_before_candidate = False
-            else:
-                if ind.error is None:
-                    return ind
-        return None
 
     def all_individuals(self):
         return self.individuals
@@ -524,7 +829,27 @@ class SequencePopulation(Population):
 
 # Utility functions
 from sentence_transformers import SentenceTransformer, util
-import numpy as np
+
+# disable sentence transformer logging
+logging.getLogger('sentence_transformers').setLevel(logging.WARNING)
+
+def desc_similarity(inds:list[Individual]) -> tuple[np.ndarray, np.ndarray]:
+    if not inds:
+        return np.array([]), np.array([])
+
+    logging.info("Calculating desc diversity of %s individuals", len(inds))
+    # Calculate the diversity of the candidates based on the description
+    descs = [Population.get_handler_from_individual(ind).desc for ind in inds]
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    embeddings = model.encode(descs, convert_to_tensor=False)
+    similarity_matrix = util.cos_sim(embeddings, embeddings).numpy()
+    # Calculate mean similarity excluding diagonal (self-similarity)
+    mean_similarity = np.array([
+        np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
+        for i in range(len(inds))
+    ])
+
+    return mean_similarity, similarity_matrix
 
 def diversity_awarness_selection_fn(next_inds: list[Individual], last_inds: list[Individual], n_parent: int, fitness_threshold: float = None) -> list[Individual]:
     candidates = []
@@ -538,19 +863,8 @@ def diversity_awarness_selection_fn(next_inds: list[Individual], last_inds: list
     def get_score(ind):
         return Population.get_handler_from_individual(ind).eval_result.score
     
-    def get_desc(ind):
-        return Population.get_handler_from_individual(ind).desc
-
-    # Calculate the diversity of the candidates based on the description
-    descs = [get_desc(ind) for ind in candidates]
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    embeddings = model.encode(descs, convert_to_tensor=False)
-    similarity_matrix = util.cos_sim(embeddings, embeddings).numpy()
-    # Calculate mean similarity excluding diagonal (self-similarity)
-    mean_similarity = np.array([
-        np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
-        for i in range(len(candidates))
-    ])
+    # Calculate the similarity of the candidates based on the description
+    mean_similarity, _ = desc_similarity(candidates)
 
     if fitness_threshold is None:
         mean_score = np.mean([get_score(ind) for ind in candidates])
@@ -565,22 +879,13 @@ def diversity_awarness_selection_fn(next_inds: list[Individual], last_inds: list
             return score1 - score2
         else:
             return -(sim1 - sim2)
-    
+
     tuple_cands = sorted(list(zip(candidates, mean_similarity)), key=cmp_to_key(cmp_inds), reverse=True)
     sorted_candidates = [ind for ind, _ in tuple_cands]
     return sorted_candidates[:n_parent]
 
-def max_divese_desc_get_parent_fn(individuals: list[Individual], n_parent: int, n_offspring: int) -> list[Individual]:
-    descs = [Population.get_handler_from_individual(ind).desc for ind in individuals]
-    
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    embeddings = model.encode(descs, convert_to_tensor=False)
-    similarity_matrix = util.cos_sim(embeddings, embeddings).numpy()
-
-    mean_similarity = np.array([
-        np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
-        for i in range(len(descs))
-    ])
+def max_divese_desc_get_parent_fn(individuals: list[Individual], n_parent: int, n_offspring: int) -> list[PopulationQueryItem]:
+    mean_similarity, similarity_matrix = desc_similarity(individuals)
     # get n_offspring individuals with the lowest similarity
     candidate_idxs = np.argsort(mean_similarity)[:n_offspring].tolist()
     parent_ids = []
@@ -590,11 +895,91 @@ def max_divese_desc_get_parent_fn(individuals: list[Individual], n_parent: int, 
         for j in others:
             parent_id.append(j)
         parent_ids.append(parent_id)
-    parents = []
+    query_items = []
     for parent_id in parent_ids:
         parent = [individuals[i] for i in parent_id]
-        parents.append(parent)
-    return parents
+        query_item = PopulationQueryItem()
+        query_item.parent = parent
+        query_item.offspring = Individual()
+        query_item.qid = 0
+        query_items.append(query_item)
+    return query_items
+
+def score_to_probability_with_logarithmic_curve(
+    score: float,
+    min_score: float = 0.0,
+    max_score: float = 1.0,
+    curve_factor: float = 1.0
+) -> float:
+    """
+    Convert score to probability using tunable logarithmic curve
+    Args:
+        score: Input score value
+        min_score: Minimum possible score
+        max_score: Maximum possible score
+        curve_factor: Controls curve shape (>1 steeper, <1 flatter)
+    Returns:
+        probability: float between 0.0 and 1.0
+    """
+    if not all(isinstance(x, (int, float)) for x in [score, min_score, max_score, curve_factor]):
+        logging.error("All inputs must be numbers")
+        return 0.0
+        
+    if min_score >= max_score:
+        logging.error("min_score must be less than max_score")
+        return 0.0
+        
+    if score < min_score or score > max_score:
+        logging.error("Score must be between %s and %s", min_score, max_score)
+        return 0.0
+        
+    if curve_factor <= 0:
+        logging.error("curve_factor must be positive")
+        return 0.0
+
+    # Normalize score to 0-1 range
+    normalized_score = (score - min_score) / (max_score - min_score)
+    
+    # Apply tunable log transformation
+    epsilon = 1e-10
+    probability = math.log(normalized_score * curve_factor + epsilon + 1) / math.log(curve_factor + 1)
+    
+    return min(max(probability, 0.0), 1.0)  # Ensure output is between 0 and 1
+
+
+def score_to_probability_with_sigmoid(
+    score: float,
+    min_score: float = 0.0,
+    max_score: float = 1.0,
+    steepness: float = 12.0,
+    center: float = 6.0
+) -> float:
+    """
+    Convert a score to probability using configurable sigmoid function
+    Args:
+        score: Input score value
+        min_score: Minimum possible score
+        max_score: Maximum possible score
+        steepness: Controls how steep the S-curve is (default 12.0)
+        center: Controls the midpoint shift (default 6.0)
+    """
+    if not all(isinstance(x, (int, float)) for x in [score, min_score, max_score]):
+        logging.error("All inputs must be numbers")
+        return 0.0
+        
+    if min_score >= max_score:
+        logging.error("min_score must be less than max_score")
+        return 0.0
+        
+    if score < min_score or score > max_score:
+        logging.error("Score must be between %s and %s", min_score, max_score)
+        return 0.0
+
+    normalized_score = (score - min_score) / (max_score - min_score)
+    x = steepness * normalized_score - center
+    probability = 1 / (1 + math.exp(-x))
+    
+    return probability
 
 def test_diversity_awarness_selection_fn():
     descs = [
