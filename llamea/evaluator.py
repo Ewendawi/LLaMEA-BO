@@ -75,6 +75,15 @@ def track_exec(code_string, name, _globals=None, _locals=None):
 
 def format_track_exec_with_code(name, code_str, exc_info, context_lines=2):
     trace_lines = traceback.format_exception(*exc_info)
+
+    # remove local traceback
+    new_trace_lines = []
+    for line in trace_lines:
+        match = re.search(r'File ".*\.py", line (\d+), in', line)
+        if not match:
+            new_trace_lines.append(line)
+    trace_lines = new_trace_lines
+
     formatted_trace = ['']
 
     last_match_index = 0

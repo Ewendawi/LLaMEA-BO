@@ -332,9 +332,6 @@ if __name__ == "__main__":
     N_EVAL_WORKERS = 0
     GPU_NAME = "cuda:7"
 
-    # if using multiple processes, set this to false to avoid issues with tokenizers
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
     TIME_OUT_PER_EVAL = 60 * 20
     TIME_OUT_PER_EVAL = None
 
