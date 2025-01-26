@@ -86,20 +86,22 @@ class BaselinePromptGenerator(PromptGenerator):
             pre_solution_prompt = ""
             if len(candidates) > 0:
                 n_solution = len(candidates)
-                pre_solution_prompt = f"{n_solution} algorithms have been designed. The next algorithm should be as diverse as possible from the previous ones.\n"
-                pre_solution_prompt += "Be careful about the provided errors of the algorithms.\n"
+                pre_solution_prompt = f"{n_solution} algorithms have been designed. The new algorithm should be as **diverse** as possible from the previous ones.\n"
+                pre_solution_prompt += "If the errors from the previous algorithms are provided, analyze them. The new algorithm should be designed to avoid these errors.\n"
                 for i, candidate in enumerate(candidates):
                     candidate_prompt = self.__get_candidate_prompt(candidate)
-                    pre_solution_prompt += f"## {i+1}.{candidate.code_name}\n{candidate_prompt}\n"
+                    pre_solution_prompt += f"## {candidate.code_name}\n{candidate_prompt}\n"
 
                     # pre_solution_prompt += f"- {candidate.desc}\n"
                 pre_solution_prompt += "\n"
+
+            print(pre_solution_prompt)
             
             code_structure_prompt = "A code structure guide is as follows:\n" + self.code_structure()
             final_prompt = f"""{task_prompt}\n{pre_solution_prompt}\n{code_structure_prompt}\n{response_format_prompt}"""
         else:
             if len(candidates) > 1:
-                crossover_operator = "Combine the selected solutions to create a new solution. Be careful about the errors of the selected solutions. Then refine the strategy of the new solution to improve it."
+                crossover_operator = "Combine the selected solutions to create a new solution. Then refine the strategy of the new solution to improve it. If the errors from the previous algorithms are provided, analyze them. The new algorithm should be designed to avoid these errors.\n"
 
                 selected_prompt = "The selected solutions to update are:\n"
 
