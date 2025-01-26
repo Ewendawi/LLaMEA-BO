@@ -281,7 +281,7 @@ def run_exp(model:tuple, prompt_generator:PromptGenerator,
                               )
         progress_bar.update(1)
 
-        log_file_name = f"bbob_exp_{model[0]}"
+        log_file_name = population.name
         if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
             aggressiveness = prompt_generator.aggressiveness
             log_file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
@@ -307,9 +307,17 @@ if __name__ == "__main__":
     prompt_generator = BaselinePromptGenerator()
 
     # prompt_generator.is_bo = True
-    # BUDGET = 40
+    # BUDGET = 100
 
     BUDGET = 2000 * 5
+
+    PROBLEMS = list(range(1, 25))
+    INSTANCES = [[1, 2, 3]] * len(PROBLEMS)
+    REPEAT = 3
+
+    # PROBLEMS = [6]
+    # INSTANCES = [[1, 2, 3]] * len(PROBLEMS)
+    # REPEAT = 1
 
     DIM = 5
 
@@ -326,7 +334,7 @@ if __name__ == "__main__":
     N_CAMBRIAN_GENERATIONS = 2
     N_NEOGENE_GENERATIONS = 2
     PREODER_AWARE_INIT = True
-    CROSSOVER_RATE = 1.0
+    CROSSOVER_RATE = 0.6
 
     N_QUERY_THREADS = 0
     N_EVAL_WORKERS = 0
@@ -354,11 +362,7 @@ if __name__ == "__main__":
     # mocker = mock_res_provider
 
     def get_evaluator():
-        problems = list(range(1, 25))
-        # problems = [6]
-        instances = [[1, 2, 3]] * len(problems)
-        repeat = 3
-        evaluator = IOHEvaluator(budget=BUDGET, dim=DIM, problems=problems, instances=instances, repeat=repeat)
+        evaluator = IOHEvaluator(budget=BUDGET, dim=DIM, problems=PROBLEMS, instances=INSTANCES, repeat=REPEAT)
         return evaluator
 
     def get_population():

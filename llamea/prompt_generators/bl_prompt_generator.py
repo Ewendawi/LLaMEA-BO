@@ -95,8 +95,6 @@ class BaselinePromptGenerator(PromptGenerator):
                     # pre_solution_prompt += f"- {candidate.desc}\n"
                 pre_solution_prompt += "\n"
 
-            print(pre_solution_prompt)
-            
             code_structure_prompt = "A code structure guide is as follows:\n" + self.code_structure()
             final_prompt = f"""{task_prompt}\n{pre_solution_prompt}\n{code_structure_prompt}\n{response_format_prompt}"""
         else:

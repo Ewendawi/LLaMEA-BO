@@ -47,6 +47,7 @@ class LLaMBO:
         logging.debug("Session Messages:")
         logging.debug("\n%s\n%s", session_messages[0]["content"], session_messages[1]["content"])
 
+        logging.info("Querying the model")
         for i_try in range(retry):
             response = llm.chat(session_messages)
             # Retry if no response from the model
@@ -56,13 +57,15 @@ class LLaMBO:
             else:
                 response_handler.extract_response(response, task=task)
                 if not response_handler.code or not response_handler.code_name:
-                    err = NoCodeException("ExtractionError: No code extracted from the model.")
-                    response_handler.error = str(err)
-                    response_handler.error_type = err.__class__.__name__
                     logging.error("No code extracted from the model.")
                     logging.error("Retrying: %s/%s", i_try + 1, retry)
                 else:
                     break
+
+        if not response_handler.code or not response_handler.code_name:
+            err = NoCodeException("ExtractionError: No code extracted from the model.")
+            response_handler.error = str(err)
+            response_handler.error_type = err.__class__.__name__
 
         # logging.debug("Response:\n%s\n", response)
         logging.info("Response:\n%s\n", response)
@@ -71,12 +74,13 @@ class LLaMBO:
             return response_handler
 
         # search whether the code include "cuda"
-        if torch.cuda.is_available() and "cuda" not in response_handler.code:
-            raise Exception("CUDA is available but the code does not use 'cuda'.")
-        else:
-            if gpu_name is not None:
-                response_handler.code = response_handler.code.replace("\"cuda\"", f"\"{gpu_name}\"")
-                logging.info("replaced 'cuda' with '%s'", gpu_name)
+        if torch.cuda.is_available(): 
+            if "cuda" not in response_handler.code:
+                raise Exception("CUDA is available but the code does not use 'cuda'.")
+            else:
+                if gpu_name is not None:
+                    response_handler.code = response_handler.code.replace("\"cuda\"", f"\"{gpu_name}\"")
+                    logging.info("replaced 'cuda' with '%s'", gpu_name)
 
         res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name, max_eval_workers=n_eval_workers, timeout=timeout)
 

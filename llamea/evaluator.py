@@ -695,7 +695,8 @@ class IOHObjectiveFn:
                 self.progress_bar = None
 
     def __call__(self, x):
-        if self.obj_fn is not None and self.budget is not None and self.obj_fn.state.evaluations >= self.budget:
+        if self.obj_fn is not None and self.budget is not None and self.obj_fn.state.evaluations > self.budget:
+            logging.error("%s Over budget: %s/%s", self.name, self.obj_fn.state.evaluations, self.budget)
             raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by func should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the func to evaluate the points is a alternative option.")
 
         if self.x_hist is None:

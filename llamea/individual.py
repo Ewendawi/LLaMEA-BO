@@ -706,8 +706,7 @@ class IslandESPopulation(Population):
             items = wrapper.pop.get_offspring_queryitems()
             migrant = self.all_individuals()
             for item in items:
-                parent = item.parent + migrant
-                item.parent = parent
+                item.parent = migrant
                 self.__set_island_index(item.offspring, island_index)
             return items
             
