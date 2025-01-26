@@ -376,6 +376,7 @@ class EvaluatorResult:
     def __init__(self):
         self.name = None
         self.score = None
+        self.similarity = None
         self.error = None
         self.error_type = None
         
@@ -934,12 +935,15 @@ class IOHEvaluator(AbstractEvaluator):
             max_workers = min(os.cpu_count() - 1, max_eval_workers)
 
             # if cuda is available, use thread pool executor
-            if torch.cuda.is_available() and "cuda" in code:
-                logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
-                executor_cls = concurrent.futures.ThreadPoolExecutor
-            else:
-                logging.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
-                executor_cls = concurrent.futures.ProcessPoolExecutor
+            # if torch.cuda.is_available() and "cuda" in code:
+            #     logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+            #     executor_cls = concurrent.futures.ThreadPoolExecutor
+            # else:
+            #     logging.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+            #     executor_cls = concurrent.futures.ProcessPoolExecutor
+
+            logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+            executor_cls = concurrent.futures.ThreadPoolExecutor
                 
             with executor_cls(max_workers=max_workers) as executor:
                 futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
@@ -949,6 +953,7 @@ class IOHEvaluator(AbstractEvaluator):
                     if eval_basic_result.error is not None:
                         eval_result.error = eval_basic_result.error
                         eval_result.error_type = eval_basic_result.error_type
+                        logging.info("Evaluating %s: Got Error - %s", cls_name, eval_basic_result.error_type)
                         executor.shutdown(wait=False)
                         break
                     else:
