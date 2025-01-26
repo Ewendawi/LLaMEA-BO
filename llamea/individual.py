@@ -728,7 +728,7 @@ class IslandESPopulation(Population):
             if status == self.IslandStatus.INITIAL:
                 items = wrapper.pop.get_offspring_queryitems()
             elif status == self.IslandStatus.GROWING:
-                n_parent_per_offspring = 1
+                n_parent_per_offspring = wrapper.pop.n_parent_per_offspring
                 items = wrapper.pop.get_offspring_queryitems(n_parent = n_parent_per_offspring)
             elif status == self.IslandStatus.MATURE:
                 if self.geo_age == self.IslandAge.CAMBRIAN:

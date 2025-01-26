@@ -325,6 +325,7 @@ if __name__ == "__main__":
     N_CAMBRIAN_GENERATIONS = 2
     N_NEOGENE_GENERATIONS = 2
     PREODER_AWARE_INIT = True
+    CROSSOVER_RATE = 1.0
 
     N_QUERY_THREADS = 0
     N_EVAL_WORKERS = 0
@@ -371,6 +372,7 @@ if __name__ == "__main__":
 
         population = IslandESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING, n_islands=N_ISLAND, 
                                         preoder_aware_init=PREODER_AWARE_INIT, update_strategy=max_divese_desc_get_parent_fn, selection_strategy=diversity_awarness_selection_fn,
+                                        crossover_rate=CROSSOVER_RATE,
                                         n_warmup_generations=N_WARMUP_GENERATIONS, n_cambrian_generations=N_CAMBRIAN_GENERATIONS, n_neogene_generations=N_NEOGENE_GENERATIONS)
         population.name = f"bbob_exp_island_{MODEL[0]}_{prompt_generator.__class__.__name__}"
 
