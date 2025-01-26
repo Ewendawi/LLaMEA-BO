@@ -38,6 +38,7 @@ class LLaMBO:
                        evaluator:AbstractEvaluator,
                        n_eval_workers:int=0,
                        timeout:int=1800,
+                       gpu_name:str=None,
                        retry:int=3,
                        ) -> ResponseHandler:
         if session_messages is None:
@@ -72,6 +73,10 @@ class LLaMBO:
         # search whether the code include "cuda"
         if torch.cuda.is_available() and "cuda" not in response_handler.code:
             raise Exception("CUDA is available but the code does not use 'cuda'.")
+        else:
+            if gpu_name is not None:
+                response_handler.code = response_handler.code.replace("\"cuda\"", f"\"{gpu_name}\"")
+                logging.info("replaced 'cuda' with '%s'", gpu_name)
 
         res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name, max_eval_workers=n_eval_workers, timeout=timeout)
 
@@ -92,6 +97,7 @@ class LLaMBO:
                        n_query_threads: int = 0,
                        n_eval_workers: int = 0,
                        max_interval: int = 0,
+                       gpu_name: str = None,
                        time_out_per_eval: int = 1800):
 
         logging.info("==========Starting==========")
@@ -150,6 +156,7 @@ class LLaMBO:
                     "n_eval_workers": n_eval_workers,
                     "timeout": time_out_per_eval,
                     "retry": n_retry,
+                    "gpu_name": gpu_name,
                 }
                 params.append(kwargs)
 

@@ -254,7 +254,7 @@ def plot():
 def run_exp(model:tuple, prompt_generator:PromptGenerator, 
                  n_iterations:int=1, n_generations:int=1, n_population:int=1, 
                  n_query_threads:int=0, n_eval_workers:int=0, time_out_per_eval:int=None,
-                 mocker=None, get_evaluator=None, get_population=None
+                 mocker=None, get_evaluator=None, get_population=None, gpu_name:str=None,
                  ):
 
     llambo = LLaMBO()
@@ -276,6 +276,7 @@ def run_exp(model:tuple, prompt_generator:PromptGenerator,
                               time_out_per_eval=time_out_per_eval,
                               n_query_threads=n_query_threads,
                               n_eval_workers=n_eval_workers,
+                              gpu_name=gpu_name,
                               max_interval=5
                               )
         progress_bar.update(1)
@@ -329,6 +330,7 @@ if __name__ == "__main__":
 
     N_QUERY_THREADS = 0
     N_EVAL_WORKERS = 0
+    GPU_NAME = "cuda:7"
 
     # if using multiple processes, set this to false to avoid issues with tokenizers
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -384,6 +386,7 @@ if __name__ == "__main__":
             mocker=mocker,
             get_evaluator=get_evaluator,
             get_population=get_population,
+            gpu_name=GPU_NAME,
             )
 
     # IndividualLogger.merge_logs("logs_bbob").save_reader_format()
