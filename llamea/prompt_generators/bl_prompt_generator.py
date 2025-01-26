@@ -89,7 +89,7 @@ class BaselinePromptGenerator(PromptGenerator):
                 pre_solution_prompt = f"{n_solution} algorithms have been designed. The next algorithm should be as diverse as possible from the previous ones.\n"
                 for i, candidate in enumerate(candidates):
                     candidate_prompt = self.__get_candidate_prompt(candidate)
-                    pre_solution_prompt += f"## {i}.{candidate.code_name}\n{candidate_prompt}\n"
+                    pre_solution_prompt += f"## {i+1}.{candidate.code_name}\n{candidate_prompt}\n"
 
                     # pre_solution_prompt += f"- {candidate.desc}\n"
                 pre_solution_prompt += "\n"
@@ -115,11 +115,10 @@ class BaselinePromptGenerator(PromptGenerator):
                 selected_prompt = f"""The selected solution to update is:\n{candidate_prompt}\n{mutation_operator}\n"""
 
             population_summary = ""
-            if isinstance(population, ESPopulation) and len(population.selected_generations) > 0:
+            current_population = population.get_individuals()
+            if len(current_population) > 0:
                 population_summary = "The current population of algorithms already evaluated (name, description, score) is:\n"
-                last_population = population.selected_generations[-1]
-                last_inds = [population.individuals[ind_id] for ind_id in last_population if ind_id is not None]
-                population_summary += "\n".join([ind.get_summary() for ind in last_inds])
+                population_summary += "\n".join([ind.get_summary() for ind in current_population])
 
             final_prompt = f"""{task_prompt}
 {population_summary}
@@ -193,12 +192,14 @@ class RandomSearch:
     def __init__(self, budget=10000, dim=10):
         self.budget = budget
         self.dim = dim
+        # bounds has (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
         self.f_opt = np.Inf
         self.x_opt = None
 
     def __call__(self, func):
         for i in range(self.budget):
-            x = np.random.uniform(func.bounds.lb, func.bounds.ub)
+            x = np.random.uniform(self.bounds[0], self.bounds[1])
             
             f = func(x)
             if f < self.f_opt:
