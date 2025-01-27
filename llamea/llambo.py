@@ -78,7 +78,7 @@ class LLaMBO:
             if "cuda" not in response_handler.code:
                 raise Exception("CUDA is available but the code does not use 'cuda'.")
             else:
-                if gpu_name is not None:
+                if gpu_name is not None and gpu_name not in response_handler.code:
                     response_handler.code = response_handler.code.replace("\"cuda\"", f"\"{gpu_name}\"")
                     logging.info("replaced 'cuda' with '%s'", gpu_name)
 
