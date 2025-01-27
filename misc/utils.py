@@ -70,8 +70,8 @@ class aoc_logger(logger.AbstractLogger):
         Args:
             log_info (ioh.LogInfo): info about current values.
         """
-        if log_info.evaluations > self.budget:
-            raise OverBudgetException
+        # if log_info.evaluations > self.budget:
+        #     raise OverBudgetException
         if log_info.evaluations == self.budget:
             return
         if self.stop_on_threshold and abs(log_info.raw_y_best) < self.lower:
