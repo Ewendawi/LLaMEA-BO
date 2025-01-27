@@ -281,12 +281,14 @@ def run_exp(model:tuple, prompt_generator:PromptGenerator,
                               )
         progress_bar.update(1)
 
-        log_file_name = population.name
-        if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
-            aggressiveness = prompt_generator.aggressiveness
-            log_file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
-        log_dir_name = "logs_bbob"
-        log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
+        population.save()
+
+        # log_file_name = population.name
+        # if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
+        #     aggressiveness = prompt_generator.aggressiveness
+        #     log_file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
+        # log_dir_name = "logs_bbob"
+        # log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 if __name__ == "__main__":
     # logging.info(os.environ)
@@ -321,12 +323,12 @@ if __name__ == "__main__":
 
     DIM = 5
 
-    N_INTERATIONS = 1
-    N_GENERATIONS = 15
+    N_INTERATIONS = 2
+    N_GENERATIONS = 200
     N_POPULATION = 30
 
-    N_PARENT = 2
-    N_PARENT_PER_OFFSPRING = 2
+    N_PARENT = 1
+    N_PARENT_PER_OFFSPRING = 1
     N_OFFSPRING = 1
 
     N_ISLAND = 3
@@ -366,6 +368,9 @@ if __name__ == "__main__":
         return evaluator
 
     def get_population():
+        population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
+        population.name = f"bbob_ga_{MODEL[0]}_{prompt_generator}"
+        
         # population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
         # population.save_per_generation = 8
         # population.preorder_aware_init = True
@@ -373,11 +378,11 @@ if __name__ == "__main__":
         # population.selection_strategy = diversity_awarness_selection_fn
         # population.name = f"bbob_exp_diversity_{MODEL[0]}_{prompt_generator.__class__.__name__}"
 
-        population = IslandESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING, n_islands=N_ISLAND, 
-                                        preoder_aware_init=PREODER_AWARE_INIT, update_strategy=max_divese_desc_get_parent_fn, selection_strategy=diversity_awarness_selection_fn,
-                                        crossover_rate=CROSSOVER_RATE,
-                                        n_warmup_generations=N_WARMUP_GENERATIONS, n_cambrian_generations=N_CAMBRIAN_GENERATIONS, n_neogene_generations=N_NEOGENE_GENERATIONS)
-        population.name = f"bbob_exp_island_{MODEL[0]}_{prompt_generator.__class__.__name__}"
+        # population = IslandESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING, n_islands=N_ISLAND, 
+        #                                 preoder_aware_init=PREODER_AWARE_INIT, update_strategy=max_divese_desc_get_parent_fn, selection_strategy=diversity_awarness_selection_fn,
+        #                                 crossover_rate=CROSSOVER_RATE,
+        #                                 n_warmup_generations=N_WARMUP_GENERATIONS, n_cambrian_generations=N_CAMBRIAN_GENERATIONS, n_neogene_generations=N_NEOGENE_GENERATIONS)
+        # population.name = f"bbob_exp_island_{MODEL[0]}_{prompt_generator.__class__.__name__}"
 
         return population
     

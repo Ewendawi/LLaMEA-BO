@@ -239,6 +239,33 @@ class Population(ABC):
             return individual.metadata["res_handler"] if "res_handler" in individual.metadata else None
         return None
 
+    def save(self, filename=None, dirname=None):
+        if dirname is None:
+            dirname = "population_logs"
+        if not os.path.exists(dirname):
+            os.mkdir(dirname)
+        if filename is None:
+            filename = self.name
+        filename = filename.replace(" ", "")
+        filename = filename.replace(":", "_")
+        filename = filename.replace("/", "_")
+        time_stamp = datetime.now().strftime("%m%d%H%M%S")
+        filename = os.path.join(dirname, f"{self.__class__.__name__}_{filename}_{time_stamp}.pkl")
+        with open(filename, "wb") as f:
+            pickle.dump(self, f)
+    
+    @classmethod
+    def load(cls, filepath=None):
+        if filepath is None and not os.path.exists(filepath):
+            return None
+        if os.path.exists(filepath):
+            with open(filepath, "rb") as f:
+                pop = pickle.load(f)
+            return pop
+        else:
+            raise FileNotFoundError(f"File {filepath} not found")
+        return None
+
 class ESPopulation(Population):
     def __init__(self,n_parent:int=2, n_parent_per_offspring: int = 1, n_offspring: int = 1, use_elitism: bool = True):
         super().__init__()
