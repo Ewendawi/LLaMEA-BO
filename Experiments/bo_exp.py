@@ -314,11 +314,11 @@ if __name__ == "__main__":
     BUDGET = 2000 * 5
 
     PROBLEMS = list(range(1, 25))
-    INSTANCES = [[1, 2, 3]] * len(PROBLEMS)
-    REPEAT = 3
+    INSTANCES = [[1, 2]] * len(PROBLEMS)
+    REPEAT = 2
 
     # PROBLEMS = [6]
-    # INSTANCES = [[1, 2, 3]] * len(PROBLEMS)
+    # INSTANCES = [[1, 2]] * len(PROBLEMS)
     # REPEAT = 1
 
     DIM = 5
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     N_CAMBRIAN_GENERATIONS = 2
     N_NEOGENE_GENERATIONS = 2
     PREODER_AWARE_INIT = True
-    CROSSOVER_RATE = 0.9
+    CROSSOVER_RATE = 1.0
 
     N_QUERY_THREADS = 0
     N_EVAL_WORKERS = 0
@@ -368,21 +368,24 @@ if __name__ == "__main__":
         return evaluator
 
     def get_population():
+        # population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
+        # population.name = f"bbob_1+1_{MODEL[0]}_{prompt_generator}"
+
         population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
-        population.name = f"bbob_ga_{MODEL[0]}_{prompt_generator}"
+        population.name = f"bbob_2+1_{MODEL[0]}_{prompt_generator}"
         
         # population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
         # population.save_per_generation = 8
         # population.preorder_aware_init = True
         # population.get_parent_strategy = max_divese_desc_get_parent_fn
         # population.selection_strategy = diversity_awarness_selection_fn
-        # population.name = f"bbob_exp_diversity_{MODEL[0]}_{prompt_generator.__class__.__name__}"
+        # population.name = f"bbob_2+1+warmstart+diversity_{MODEL[0]}_{prompt_generator}"
 
         # population = IslandESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING, n_islands=N_ISLAND, 
         #                                 preoder_aware_init=PREODER_AWARE_INIT, update_strategy=max_divese_desc_get_parent_fn, selection_strategy=diversity_awarness_selection_fn,
         #                                 crossover_rate=CROSSOVER_RATE,
         #                                 n_warmup_generations=N_WARMUP_GENERATIONS, n_cambrian_generations=N_CAMBRIAN_GENERATIONS, n_neogene_generations=N_NEOGENE_GENERATIONS)
-        # population.name = f"bbob_exp_island_{MODEL[0]}_{prompt_generator.__class__.__name__}"
+        # population.name = f"bbob_island_{MODEL[0]}_{prompt_generator}"
 
         return population
     
