@@ -37,14 +37,14 @@ class VanillaBO:
             if "cuda" in self.device:
                 torch.cuda.manual_seed(seed)
 
-    def _sample_points(self, n_points: int) -> np.ndarray:
+    def _sample_points(self, n_points: int) -> torch.Tensor:
         samples = draw_sobol_samples(bounds=torch.tensor(self.bounds, dtype=torch.float64, device=self.device),
-                                     n=n_points, q=1).squeeze(1).cpu().numpy()
+                                     n=n_points, q=1).squeeze(1)
         return samples
 
-    def _fit_model(self, X: np.ndarray, y: np.ndarray):
-        train_X = torch.tensor(X, dtype=torch.float64, device=self.device)
-        train_y = torch.tensor(y, dtype=torch.float64, device=self.device)
+    def _fit_model(self, X: torch.Tensor, y: torch.Tensor) -> SingleTaskGP:
+        train_X = X.to(self.device)
+        train_y = y.to(self.device)
 
         # Configure the surrogate model based on the user's choice
         if self.surrogate_model == "RBFKernel":
@@ -84,7 +84,7 @@ class VanillaBO:
         fit_gpytorch_mll(mll)
         return model
 
-    def _select_next_points(self, model, batch_size: int) -> np.ndarray:
+    def _select_next_points(self, model, batch_size: int) -> torch.Tensor:
         bounds = torch.tensor(self.bounds, dtype=torch.float64, device=self.device)
         candidate, _ = optimize_acqf(
             acq_function=qLogNoisyExpectedImprovement(
@@ -105,12 +105,12 @@ class VanillaBO:
                 "batch_limit": 64,
             }
         )
-        return candidate.detach().cpu().numpy()
+        return candidate.detach()
 
     def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:
         n_initial_points = min(self.n_init, self.budget)
         self.X = self._sample_points(n_initial_points)
-        self.y = np.array([func(x) for x in self.X]).reshape(-1, 1)
+        self.y = torch.tensor([func(x) for x in self.X.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
 
         rest_of_budget = self.budget - n_initial_points
         best_y = self.y.min()
@@ -122,10 +122,10 @@ class VanillaBO:
 
             # Select the next points to evaluate
             next_points = self._select_next_points(model, batch_size)
-            next_evaluations = np.array([func(x) for x in next_points]).reshape(-1, 1)
+            next_evaluations = torch.tensor([func(x) for x in next_points.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
 
-            self.X = np.vstack([self.X, next_points])
-            self.y = np.vstack([self.y, next_evaluations])
+            self.X = torch.vstack([self.X, next_points])
+            self.y = torch.vstack([self.y, next_evaluations])
 
             if next_evaluations.min() < best_y:
                 best_y = next_evaluations.min()
@@ -133,4 +133,4 @@ class VanillaBO:
 
             rest_of_budget -= batch_size
 
-        return best_y, best_x
+        return best_y.cpu().numpy().item(), best_x.cpu().numpy().flatten()
