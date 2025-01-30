@@ -16,13 +16,12 @@ from abc import ABC, abstractmethod
 import inspect
 from tqdm import tqdm
 import numpy as np
-import pandas as pd
 import torch
 from botorch.test_functions import synthetic
 from botorch.test_functions.synthetic import SyntheticTestFunction, ConstrainedSyntheticTestFunction
 
 from .individual import Individual
-from .utils import BOOverBudgetException, plot_result
+from .utils import BOOverBudgetException 
 
 #========================================
 #BoTorch test functions
@@ -253,7 +252,8 @@ class EvaluatorBasicResult:
         self.best_x = None
 
         self.y_aoc = 0.0
-        self.y_aoc_from_ioh = 0.0
+        self.log_y_aoc = 0.0
+        self.y_aoc_from_ioh = 0.0  ##deprecated
         self.x_mean = None
         self.x_std = None
         self.y_mean = None
@@ -341,17 +341,20 @@ class EvaluatorBasicResult:
             self.x_mean_tuple = (np.mean(self.x_hist[:self.n_initial_points,:], axis=0), np.mean(x_hist, axis=0))
             self.x_std_tuple = (np.std(self.x_hist[:self.n_initial_points,:], axis=0), np.std(x_hist, axis=0))
 
-    def update_aoc(self, optimal_value = None, log_scale=False, min_y=None, max_y=None):
+    def update_aoc(self, optimal_value = None, min_y=None, max_y=None):
         if self.y_hist is None:
             return
 
         y_hist = self.y_hist
-        y_aoc = ConvergenceCurveAnalyzer(max_y=max_y, min_y=min_y, log_scale=log_scale, shift_value=optimal_value).calculate_aoc(y_hist)
+        y_aoc = ConvergenceCurveAnalyzer(max_y=max_y, min_y=min_y, log_scale=False, shift_value=optimal_value).calculate_aoc(y_hist)
         self.y_aoc = y_aoc
+
+        log_y_aoc = ConvergenceCurveAnalyzer(max_y=max_y, min_y=min_y, log_scale=True, shift_value=optimal_value).calculate_aoc(y_hist)
+        self.log_y_aoc = log_y_aoc
 
         if self.n_initial_points > 0 and len(y_hist) > self.n_initial_points:
             y_hist = self.y_hist[self.n_initial_points:]
-            non_init_y_aoc = ConvergenceCurveAnalyzer(max_y=max_y, min_y=min_y, log_scale=log_scale, shift_value=optimal_value).calculate_aoc(y_hist)
+            non_init_y_aoc = ConvergenceCurveAnalyzer(max_y=max_y, min_y=min_y, log_scale=False, shift_value=optimal_value).calculate_aoc(y_hist)
             self.non_init_y_aoc = non_init_y_aoc
 
     def set_capture_output(self, captured_output):
@@ -410,6 +413,7 @@ class EvaluatorResult:
 class AbstractEvaluator(ABC):
     def __init__(self):
         self.return_checker:Callable[[tuple], str] = lambda x: ""
+        self.ignore_over_budget = False
 
     @abstractmethod
     def problem_prompt(self) -> str:
@@ -432,17 +436,13 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = 0, timeout:int=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = 0, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
         pass
 
     def evaluate_others(self) -> list[EvaluatorResult]:
         pass
 
-    @classmethod
-    def plot_results(cls, results:list[tuple[str,list[EvaluatorResult]]], 
-                     other_results:list[EvaluatorResult] = None, **kwargs):
-        pass
-
+# Botorch test functions
 class BotorchObjectivexFn:
     def __init__(self, obj_fn, budget=None):
         self.obj_fn = obj_fn
@@ -673,6 +673,7 @@ class IOHObjectiveFn:
 
         self.progress_bar = None
         self.show_progress_bar = show_progress_bar
+        self.ignore_over_budget = False
 
     def reset(self):
         self.obj_fn = None
@@ -697,7 +698,8 @@ class IOHObjectiveFn:
     def __call__(self, x):
         if self.obj_fn is not None and self.budget is not None and self.obj_fn.state.evaluations > self.budget:
             logging.error("%s Over budget: %s/%s", self.name, self.obj_fn.state.evaluations, self.budget)
-            raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by func should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the func to evaluate the points is a alternative option.")
+            if not self.ignore_over_budget:
+                raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by func should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the func to evaluate the points is a alternative option.")
 
         if self.x_hist is None:
             self.x_hist = x
@@ -734,9 +736,10 @@ class IOHObjectiveFn:
             return np.array(y).reshape(-1,1)
         return y
 
-def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None) -> EvaluatorBasicResult:
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ingore_over_budget:bool=False) -> EvaluatorBasicResult:
 
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
+    obj_fn.ignore_over_budget = ingore_over_budget
 
     l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
     obj_fn.obj_fn.attach_logger(l2)
@@ -745,11 +748,16 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
 
     init_kwargs = {
         "dim": dim,
-        "budget": budget
+        "budget": budget,
     }
+    if cls_init_kwargs is not None:
+        init_kwargs.update(cls_init_kwargs)
+    
     call_kwargs = {
         "func": obj_fn
     }
+    if cls_call_kwargs is not None:
+        call_kwargs.update(cls_call_kwargs)
 
     res, captured_output, err = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, time_out=time_out)
     exec_time = time.perf_counter() - start_time
@@ -763,9 +771,8 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     
 
 class IOHEvaluator(AbstractEvaluator):
-
     def __str__(self):
-        return f"IOHEvaluator: {self._problem_name}_dim-{self.dim}_budget-{self.budget}_instances-{self.instances}_repeat-{self.reapeat}"
+        return f"IOHEvaluator: {self._problem_name}_dim-{self.dim}_budget-{self.budget}_instances-{self.instances[0]}_repeat-{self.reapeat}"
     
     def __init__(self, dim:int = 5, budget:int = 40, problems:list[int]= None, instances:list[list[int]]=None, repeat:int = 1):
         super().__init__()
@@ -865,7 +872,7 @@ class IOHEvaluator(AbstractEvaluator):
             rs_result.x_hist = rs_x
             rs_result.execution_time = time.perf_counter() - start_time
             rs_result.update_stats()
-            rs_result.update_aoc(optimal_value=optimal_value, log_scale=True, min_y=1e-8, max_y=1e2)
+            rs_result.update_aoc(optimal_value=optimal_value, min_y=1e-8, max_y=1e2)
 
             eval_result.result.append(rs_result)
             progress_bar.update(1)
@@ -914,11 +921,11 @@ class IOHEvaluator(AbstractEvaluator):
             # eval_basic_result.model_loss_name = surrogate_model_losses[1]
             # eval_basic_result.n_initial_points = n_initial_points
             eval_basic_result.update_stats()
-            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, log_scale=False, min_y=1e-8, max_y=1e2)
+            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8, max_y=1e2)
 
         return eval_basic_result
 
-    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, timeout:int=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
         """Evaluate an individual."""
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
@@ -933,7 +940,10 @@ class IOHEvaluator(AbstractEvaluator):
                 "code": code,
                 "cls_name": cls_name,
                 "cls": cls,
-                "time_out": timeout
+                "time_out": timeout,
+                "ingore_over_budget": self.ignore_over_budget,
+                "cls_init_kwargs": cls_init_kwargs,
+                "cls_call_kwargs": cls_call_kwargs
             }
             new_param.update(param)
             params.append(new_param)
@@ -989,164 +999,13 @@ class IOHEvaluator(AbstractEvaluator):
                         logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
 
         if eval_result.error is None:
-            # eval_result.score = np.mean([r.y_aoc for r in eval_result.result])
-            eval_result.score = np.mean([r.y_aoc_from_ioh for r in eval_result.result])
+            eval_result.score = np.mean([r.log_y_aoc for r in eval_result.result])
             logging.info("Evaluated %s: %s", cls_name, eval_result.score)
         else:                           
             eval_result.score = 0.0
 
         return eval_result
 
-    @classmethod
-    def plot_results(cls, results:list[tuple[str,list[EvaluatorResult]]], 
-                     other_results:list[EvaluatorResult] = None, **kwargs):
-        #results: (n_strategies, n_generations, n_evaluations)
-        column_names = [
-            'strategy',
-            'problem_id',
-            'instance_id',
-            'exec_id',
-            'n_gen',
-            "log_y_aoc",
-            "y_aoc",
-            "best_y",
-            'loss'
-            ]
-
-        def res_to_row(res, gen:int):
-            res_id = res.id
-            res_split = res_id.split("-")
-            problem_id = int(res_split[0])
-            instance_id = int(res_split[1])
-            repeat_id = int(res_split[2])
-            row = {
-                'strategy': strategy_name,
-                'problem_id': problem_id,
-                'instance_id': instance_id,
-                'exec_id': repeat_id,
-                'n_gen': gen+1,
-                "log_y_aoc": res.y_aoc_from_ioh,
-                "y_aoc": res.y_aoc,
-                "best_y": res.best_y,
-                'loss': abs(res.optimal_value - res.best_y)
-            }
-            return row
-        
-        res_df = pd.DataFrame(columns=column_names)
-        for res_tuple in results:
-            strategy_name, gen_list = res_tuple 
-            for i, gen_res in enumerate(gen_list):
-                if gen_res.error is not None:
-                    continue
-                for res in gen_res.result:
-                    row = res_to_row(res, i) 
-                    res_df.loc[len(res_df)] = row
-        
-        if other_results is not None:
-            for other_res in other_results:
-                for res in other_res.result:
-                    row = res_to_row(res, -1)
-                    res_df.loc[len(res_df)] = row
-
-        # strategy-wise
-        log_y_aocs, log_y_aoc_labels = [], []
-        baseline_y_aoc, baseline_y_aoc_labels = [], []
-        y_aocs, y_aoc_labels = [], []
-        baseline_y_aoc, baseline_y_aoc_labels = [], []
-        g_log_y_aoc = res_df.groupby(['strategy', 'n_gen'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
-        max_gen = g_log_y_aoc['n_gen'].max()
-        for name, group in g_log_y_aoc.groupby('strategy'):
-            gens = group['n_gen'].values
-            if len(gens) == 1 and gens[0] == -1:
-                baseline_y_aoc.append(group['y_aoc'].values[0])
-                baseline_y_aoc_labels.append(name)
-                continue
-
-            # fill the missing generations with 0
-            aoc = np.zeros(max_gen)
-            log_aoc = np.zeros(max_gen)
-            for gen in gens:
-                log_aoc[gen-1] = group[group['n_gen'] == gen]['log_y_aoc'].values[0]
-                aoc[gen-1] = group[group['n_gen'] == gen]['y_aoc'].values[0]
-
-            log_y_aocs.append(log_aoc)
-            y_aocs.append(aoc)
-            log_y_aoc_labels.append(name)
-            y_aoc_labels.append(name)
-
-        # problem-wise
-        loss_list = [[] for _ in range(1, 25)]
-        loss_labels = [[] for _ in range(1, 25)]
-        aoc_list = [[] for _ in range(1, 25)]
-        aoc_labels = [[] for _ in range(1, 25)]
-        g_best_y = res_df.groupby(['strategy', 'n_gen', 'problem_id'])[['y_aoc', 'loss']].agg(np.mean).reset_index()
-        max_gen = g_best_y['n_gen'].max()
-        for (name, p_id), group in g_best_y.groupby(['strategy', 'problem_id']):
-            gens = group['n_gen'].values
-            if len(gens) == 1 and gens[0] == -1:
-                continue
-
-            aoc = np.zeros(max_gen)
-            loss = np.zeros(max_gen)
-            max_loss = group['loss'].max()
-            missing_gens = set(range(1, max_gen+1)) - set(gens)
-            for missing_gen in missing_gens:
-                loss[missing_gen-1] = max_loss
-            for gen in gens:
-                loss[gen-1] = group[group['n_gen'] == gen]['loss'].values[0]
-                aoc[gen-1] = group[group['n_gen'] == gen]['y_aoc'].values[0]
-
-            aoc_list[p_id-1].append(aoc)
-            aoc_labels[p_id-1].append(name)
-            loss_list[p_id-1].append(loss)
-            loss_labels[p_id-1].append(name)
-            
-        # plot aoc
-        y = np.maximum.accumulate(np.array([log_y_aocs, y_aocs]), axis=2)
-        base_x = np.arange(1, max_gen+1, dtype=int)
-        x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-        sub_titles = ["Log AOC", "AOC"]
-        labels = [log_y_aoc_labels] * 2
-        plot_result(y=y, x=x, labels=labels,
-                    title=None, 
-                    sub_titles=sub_titles, n_cols=2,
-                    **kwargs)
-
-        # plot loss
-        # y = np.minimum.accumulate(np.array(loss_list), axis=2)
-        # base_x = np.arange(1, max_gen+1, dtype=int)
-        # x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-        # sub_titles = [f"F{p_id}" for p_id in range(1, 25)]
-        # labels = loss_labels * len(loss_list)
-        # x_labels = ["Generations"] * len(loss_list)
-        # n_cols = 6
-        # for i, _ in enumerate(x_labels):
-        #     if i < len(x_labels) - n_cols:
-        #         x_labels[i] = ""
-        # y_labels = ["Loss"] * len(loss_list)
-        # for i, _ in enumerate(y_labels):
-        #     if i % n_cols != 0:
-        #         y_labels[i] = ""
-        # plot_result(y=y, x=x, labels=labels, 
-        #             title=None, figsize=(14, 8),
-        #             x_labels=x_labels, y_labels=y_labels,
-        #             sub_titles=sub_titles, n_cols=n_cols,
-        #             **kwargs)
-            
-        # plot aoc
-        # y = np.maximum.accumulate(np.array(aoc_list), axis=2)
-        # base_x = np.arange(1, max_gen+1, dtype=int)
-        # x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-        # sub_titles = [f"F{p_id}" for p_id in range(1, 25)]
-        # labels = aoc_labels * len(aoc_list)
-        # plot_result(y=y, x=x, labels=labels, 
-        #             title=None, figsize=(14, 8),
-        #             sub_titles=sub_titles, n_cols=6,
-        #             **kwargs)
-
-
-
-        
     @classmethod
     def evaluate_from_cls(cls, bo_cls, problems:list[int]=None, dim:int = 5, budget:int = 40, eval_others:bool=False):
         evaluator = cls(dim=dim, budget=budget, problems=problems)
