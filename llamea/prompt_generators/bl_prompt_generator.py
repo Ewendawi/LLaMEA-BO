@@ -4,7 +4,8 @@ import numpy as np
 import torch
 from .abstract_prompt_generator import PromptGenerator, ResponseHandler, GenerationTask, EvaluatorResult
 from .bo_zeroplus_prompt_generator import BOPromptGeneratorReturnChecker
-from ..individual import Individual, ESPopulation
+from ..individual import Individual
+from ..population import Population
 
 
 class BaselineResponseHandler(ResponseHandler):
@@ -68,7 +69,7 @@ class BaselinePromptGenerator(PromptGenerator):
 # prompt generation
     def get_prompt(self, task:GenerationTask, problem_desc:str,
                    candidates:list[BaselineResponseHandler]= None,
-                   population:ESPopulation= None,
+                   population:Population= None,
                    other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
                    sharedborad:Any=None) -> tuple[str, str]:
 

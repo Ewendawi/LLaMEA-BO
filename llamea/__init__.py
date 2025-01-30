@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from .ast import analyze_run, plot_optimization_graphs, process_code
-from .individual import Individual, Population, SequencePopulation
+from .individual import Individual 
 from .llamea import LLaMEA
 from .llambo import LLaMBO
 from .prompt_generators import PromptGenerator, GenerationTask, ResponseImpReturnChecker, ResponseHandler 

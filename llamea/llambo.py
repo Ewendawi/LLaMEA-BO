@@ -9,7 +9,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from .individual import Individual, Population, PopulationQueryItem
+from .population.population import Population, PopulationQueryItem
+from .individual import Individual
 from .llm import LLMmanager
 from .prompt_generators import PromptGenerator, GenerationTask, ResponseHandler
 from .utils import IndividualLogger, NoCodeException 
