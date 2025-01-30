@@ -17,7 +17,10 @@ from Experiments.test_cands.AdaptiveBatchTrustRegionBOv2 import AdaptiveBatchTru
 # r = IOHEvaluator.evaluate_from_cls(AdaptiveBatchTrustRegionBOv2, budget=200, eval_others=False)
 
 from Experiments.test_cands.GPHybridAdaptiveBatchBOv2 import GPHybridAdaptiveBatchBOv2
-r = IOHEvaluator.evaluate_from_cls(GPHybridAdaptiveBatchBOv2, budget=100, eval_others=False)
+# r = IOHEvaluator.evaluate_from_cls(GPHybridAdaptiveBatchBOv2, budget=100, eval_others=False)
+
+from Experiments.baselines.bo_baseline import BLRandomSearch, BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO
+r = IOHEvaluator.evaluate_from_cls(BLTuRBOM, budget=100, eval_others=False)
 
 print(r[0])
 # for _r in r[1]:

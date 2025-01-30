@@ -1,40 +1,12 @@
 import random
 import logging
 import time
-import os
 import tqdm
-import numpy as np
 from llamea import LLaMBO, LLMmanager
-from llamea.individual import Individual, Population, SequencePopulation, ESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn, IslandESPopulation
 from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BaselinePromptGenerator
-from llamea.utils import setup_logger, IndividualLogger
+from llamea.utils import setup_logger, IndividualLogger, plot_results
 from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator, AbstractEvaluator
 from llamea.llm import LLMS
-
-def log_aggressiveness_and_botorch(population:SequencePopulation, aggressiveness:float, use_botorch:bool):
-    for individual in population.all_individuals():
-        individual.add_metadata("aggressiveness", aggressiveness)
-        tags = individual.metadata["tags"] if "tags" in individual.metadata else []
-        if use_botorch:
-            tags.append("botorch")
-        tags.append(f"aggr:{aggressiveness}")
-        individual.add_metadata("tags", tags)
-
-def log_population(population:SequencePopulation, save:bool=True, dirname:str="logs_temp", filename:str="bo_exp"):
-    ind_logger = IndividualLogger()
-    ind_logger.file_name = filename
-    ind_logger.dirname = dirname
-    ind_ids = []
-    for individual in population.all_individuals():
-        ind_logger.log_individual(individual)
-        ind_ids.append(individual.id)
-    exp_name = population.name
-    ind_logger.log_experiment(name=exp_name, id_list=ind_ids)
-
-    if save:
-        ind_logger.save()
-        ind_logger.save_reader_format()
-
 
 def run_bo_exp_code_generation(model:tuple, aggressiveness:float, use_botorch:bool, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
     llambo = LLaMBO()
@@ -184,7 +156,6 @@ def run_bo_exp_optimize_performance(model:tuple, log_path:str, prompt_generator:
     log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 def test_multiple_processes():
-
     def mock_res_provider(*args, **kwargs):
         response = None
         with open("Experiments/bbob_test_res/successful_light_res2.md", "r") as f:
@@ -195,7 +166,7 @@ def test_multiple_processes():
     model = LLMS["deepseek/deepseek-chat"]
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
     llm.mock_res_provider = mock_res_provider
-    prompt_generator = BoBaselinePromptGenerator()
+    prompt_generator = BaselinePromptGenerator()
 
     budget = 100
     dim = 5
@@ -233,63 +204,6 @@ def test_multiple_processes():
     end = time.perf_counter()
     logging.info("Time taken: %s with %s processes", end - start, n_eval_workers)
 
-
-def plot():
-    file_paths = [
-        # ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0121222958.pkl", "bo"),
-        ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0124195614.pkl", "es-1+1"),
-        ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0124195643.pkl", "es-1+1"),
-    ]
-    strategy_list = []
-    for file_path, name in file_paths:
-        ind_logger = IndividualLogger.load(file_path)
-        ind_ids = list(ind_logger.experiment_map.values())[0]["id_list"]
-        inds = [ind_logger.get_individual(ind_id) for ind_id in ind_ids]
-        res_list = [ind.metadata["res_handler"].eval_result for ind in inds]
-        strategy_list.append((name, res_list))
-
-    IOHEvaluator.plot_results(results=strategy_list, other_results=None)
-        
-
-def run_exp(model:tuple, prompt_generator:PromptGenerator, 
-                 n_iterations:int=1, n_generations:int=1, n_population:int=1, 
-                 n_query_threads:int=0, n_eval_workers:int=0, time_out_per_eval:int=None,
-                 mocker=None, get_evaluator=None, get_population=None, gpu_name:str=None,
-                 ):
-
-    llambo = LLaMBO()
-
-    llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
-    llm.mock_res_provider = mocker
-
-    progress_bar = tqdm.tqdm(range(n_iterations), desc="Iterations", position=0)
-    for _ in range(n_iterations):
-        population = get_population()
-        evaluator = get_evaluator()
-
-        # other_results = evaluator.evaluate_others()
-        other_results = None
-
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, 
-                              n_generation=n_generations, n_population=n_population,
-                              n_retry=3, sup_results=other_results,
-                              time_out_per_eval=time_out_per_eval,
-                              n_query_threads=n_query_threads,
-                              n_eval_workers=n_eval_workers,
-                              gpu_name=gpu_name,
-                              max_interval=5
-                              )
-        progress_bar.update(1)
-
-        population.save()
-
-        # log_file_name = population.name
-        # if isinstance(prompt_generator, BoZeroPlusPromptGenerator):
-        #     aggressiveness = prompt_generator.aggressiveness
-        #     log_file_name = f"bbob_exp_{model[0]}_{aggressiveness}"
-        # log_dir_name = "logs_bbob"
-        # log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
-
 if __name__ == "__main__":
     # logging.info(os.environ)
     # logging.info("CPU count: %s", os.cpu_count())
@@ -297,107 +211,4 @@ if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
-    # MODEL = LLMS["deepseek/deepseek-chat"]
-    MODEL = LLMS["gemini-2.0-flash-exp"]
-    # MODEL = LLMS["gemini-1.5-flash"]
-    # MODEL = LLMS["gemini-exp-1206"]
-    # MODEL = LLMS["llama-3.1-70b-versatile"]
-    # MODEL = LLMS["llama-3.3-70b-versatile"]
-    # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
-    # MODEL = LLMS["o_gemini-2.0-flash-exp"]
-
-    prompt_generator = BaselinePromptGenerator()
-
-    # prompt_generator.is_bo = True
-    # BUDGET = 100
-
-    BUDGET = 2000 * 5
-
-    PROBLEMS = list(range(1, 25))
-    INSTANCES = [[1, 2]] * len(PROBLEMS)
-    REPEAT = 2
-
-    # PROBLEMS = [6]
-    # INSTANCES = [[1, 2]] * len(PROBLEMS)
-    # REPEAT = 1
-
-    DIM = 5
-
-    N_INTERATIONS = 2
-    N_GENERATIONS = 200
-    N_POPULATION = 30
-
-    N_PARENT = 1
-    N_PARENT_PER_OFFSPRING = 1
-    N_OFFSPRING = 1
-
-    N_ISLAND = 3
-    N_WARMUP_GENERATIONS = 3
-    N_CAMBRIAN_GENERATIONS = 2
-    N_NEOGENE_GENERATIONS = 2
-    PREODER_AWARE_INIT = True
-    CROSSOVER_RATE = 1.0
-
-    N_QUERY_THREADS = 0
-    N_EVAL_WORKERS = 0
-    GPU_NAME = "cuda:7"
-
-    TIME_OUT_PER_EVAL = 60 * 20
-    TIME_OUT_PER_EVAL = None
-
-    # bbob experiment
-    def mock_res_provider(*args, **kwargs):
-        file_list = [
-            "Experiments/bbob_test_res/successful_heavy_res.md",
-            "Experiments/bbob_test_res/successful_light_res.md",
-            "Experiments/bbob_test_res/successful_light_res1.md",
-            "Experiments/bbob_test_res/fail_excute_res.md",
-            "Experiments/bbob_test_res/fail_overbudget_res.md",
-        ]
-        file_path = np.random.choice(file_list, size=1, p=[0.0, 0.0, 1.0, 0.0, 0.0])[0]
-        file_path = "Experiments/bbob_test_res/successful_bl.md"
-        response = None
-        with open(file_path, "r") as f:
-            response = f.read()
-        return response
-    mocker = None
-    # mocker = mock_res_provider
-
-    def get_evaluator():
-        evaluator = IOHEvaluator(budget=BUDGET, dim=DIM, problems=PROBLEMS, instances=INSTANCES, repeat=REPEAT)
-        return evaluator
-
-    def get_population():
-        # population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
-        # population.name = f"bbob_1+1_{MODEL[0]}_{prompt_generator}"
-
-        population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
-        population.name = f"bbob_2+1_{MODEL[0]}_{prompt_generator}"
-        
-        # population = ESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING)
-        # population.save_per_generation = 8
-        # population.preorder_aware_init = True
-        # population.get_parent_strategy = max_divese_desc_get_parent_fn
-        # population.selection_strategy = diversity_awarness_selection_fn
-        # population.name = f"bbob_2+1+warmstart+diversity_{MODEL[0]}_{prompt_generator}"
-
-        # population = IslandESPopulation(n_parent=N_PARENT, n_parent_per_offspring=N_PARENT_PER_OFFSPRING, n_offspring=N_OFFSPRING, n_islands=N_ISLAND, 
-        #                                 preoder_aware_init=PREODER_AWARE_INIT, update_strategy=max_divese_desc_get_parent_fn, selection_strategy=diversity_awarness_selection_fn,
-        #                                 crossover_rate=CROSSOVER_RATE,
-        #                                 n_warmup_generations=N_WARMUP_GENERATIONS, n_cambrian_generations=N_CAMBRIAN_GENERATIONS, n_neogene_generations=N_NEOGENE_GENERATIONS)
-        # population.name = f"bbob_island_{MODEL[0]}_{prompt_generator}"
-
-        return population
-    
-    run_exp(MODEL, prompt_generator,
-            n_iterations=N_INTERATIONS, n_generations=N_GENERATIONS, n_population=N_POPULATION,
-            n_query_threads=N_QUERY_THREADS, n_eval_workers=N_EVAL_WORKERS, time_out_per_eval=TIME_OUT_PER_EVAL,
-            mocker=mocker,
-            get_evaluator=get_evaluator,
-            get_population=get_population,
-            gpu_name=GPU_NAME,
-            )
-
-    # IndividualLogger.merge_logs("logs_bbob").save_reader_format()
     # test_multiple_processes()
-    # plot()
