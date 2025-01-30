@@ -116,7 +116,7 @@ def desc_similarity(inds:list[Individual]) -> tuple[np.ndarray, np.ndarray]:
     logging.info("Calculating desc diversity of %s individuals", len(inds))
     # Calculate the diversity of the candidates based on the description
     descs = [Population.get_handler_from_individual(ind).desc for ind in inds]
-    model = SentenceTransformer('all-MiniLM-L6-v2')
+    model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
     embeddings = model.encode(descs, convert_to_tensor=False)
     similarity_matrix = util.cos_sim(embeddings, embeddings).numpy()
     # Calculate mean similarity excluding diagonal (self-similarity)
