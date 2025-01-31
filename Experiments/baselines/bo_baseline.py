@@ -13,7 +13,7 @@ class BaselineSearch:
             self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
         self.n_init = n_init
         if n_init is None:
-            self.n_init = dim + 1
+            self.n_init = dim * 5
         self.seed = seed
         self.device = device
 

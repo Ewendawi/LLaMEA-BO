@@ -2,16 +2,17 @@ from collections.abc import Callable
 import numpy as np
 import torch
 from botorch.models import SingleTaskGP
-from botorch.acquisition import qLogNoisyExpectedImprovement
+from botorch.acquisition import qLogNoisyExpectedImprovement 
 from botorch.optim.optimize import optimize_acqf
+from botorch.fit import fit_gpytorch_mll, fit_gpytorch_mll_torch 
 from botorch.sampling import SobolQMCNormalSampler
 from botorch.utils.sampling import draw_sobol_samples
+from botorch.models.transforms import Standardize, Normalize
 from gpytorch.kernels.rbf_kernel import RBFKernel
 from gpytorch.kernels.scale_kernel import ScaleKernel
 from gpytorch.constraints import GreaterThan
 from gpytorch.priors import LogNormalPrior, GammaPrior
 from gpytorch.likelihoods import GaussianLikelihood
-from botorch.fit import fit_gpytorch_mll
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
 
@@ -57,7 +58,9 @@ class VanillaBO:
                 lengthscale_prior=LogNormalPrior(0.0, 1.0),
                 lengthscale_constraint=GreaterThan(1e-4)
             ).to(self.device)
-            model = SingleTaskGP(train_X, train_y, covar_module=covar_module, likelihood=likelihood).to(self.device)
+            model = SingleTaskGP(train_X, train_y, covar_module=covar_module, 
+                                 input_transform=Normalize(self.dim), outcome_transform=Standardize(1),
+                                 likelihood=likelihood).to(self.device)
             model.likelihood.noise_covar.initialize(noise=1e-4)
 
         elif self.surrogate_model == "ScaleKernel":
@@ -74,37 +77,50 @@ class VanillaBO:
                 outputscale_prior=GammaPrior(2.0, 0.15),
                 outputscale_constraint=GreaterThan(1e-4)
             ).to(self.device)
-            model = SingleTaskGP(train_X, train_y, covar_module=covar_module, likelihood=likelihood).to(self.device)
+            model = SingleTaskGP(train_X, train_y, covar_module=covar_module,   
+                                 input_transform=Normalize(self.dim), outcome_transform=Standardize(1),
+                                 likelihood=likelihood).to(self.device)
             model.likelihood.noise_covar.initialize(noise=1e-4)
 
         else:
             raise ValueError(f"Unknown surrogate model: {self.surrogate_model}")
 
         mll = ExactMarginalLogLikelihood(model.likelihood, model).to(self.device)
-        fit_gpytorch_mll(mll)
+        fit_gpytorch_mll_torch(
+            mll,
+            step_limit=100,
+        )
+        # fit_gpytorch_mll(
+        #     mll,
+        # )
         return model
 
     def _select_next_points(self, model, batch_size: int) -> torch.Tensor:
         bounds = torch.tensor(self.bounds, dtype=torch.float64, device=self.device)
-        candidate, _ = optimize_acqf(
-            acq_function=qLogNoisyExpectedImprovement(
-                model=model,
-                X_baseline=torch.tensor(self.X, dtype=torch.float64, device=self.device),
-                sampler=SobolQMCNormalSampler(sample_shape=torch.Size([128])).to(self.device),
-                prune_baseline=True
-            ),
-            bounds=bounds,
-            q=batch_size,
-            num_restarts=4,
-            raw_samples=512,
-            options={
-                "nonnegative": False,
-                "sample_around_best": True,
-                "sample_around_best_sigma": 0.1,
-                "maxiter": 300,
-                "batch_limit": 64,
-            }
-        )
+        try:
+            candidate, _ = optimize_acqf(
+                acq_function=qLogNoisyExpectedImprovement(
+                    model=model,
+                    # X_baseline=self.X.clone(),
+                    X_baseline = torch.unique(self.X.clone(), dim=0),
+                    sampler=SobolQMCNormalSampler(sample_shape=torch.Size([128])).to(self.device),
+                    prune_baseline=True,
+                ),
+                bounds=bounds,
+                q=batch_size,
+                num_restarts=40,
+                raw_samples=512,
+                options={
+                    "nonnegative": False,
+                    "sample_around_best": True,
+                    "sample_around_best_sigma": 0.1,
+                    "maxiter": 200,
+                    "batch_limit": 64,
+                    # "disp": True, # Verbose output
+                }
+            )
+        except Exception:
+            candidate = self._sample_points(batch_size)
         return candidate.detach()
 
     def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:

@@ -20,7 +20,8 @@ from Experiments.test_cands.GPHybridAdaptiveBatchBOv2 import GPHybridAdaptiveBat
 # r = IOHEvaluator.evaluate_from_cls(GPHybridAdaptiveBatchBOv2, budget=100, eval_others=False)
 
 from Experiments.baselines.bo_baseline import BLRandomSearch, BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO
-r = IOHEvaluator.evaluate_from_cls(BLTuRBOM, budget=100, eval_others=False)
+problems = [7]
+r = IOHEvaluator.evaluate_from_cls(BLRBFKernelVanillaBO, budget=100, eval_others=False, problems=problems)
 
 print(r[0])
 # for _r in r[1]:

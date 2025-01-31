@@ -135,7 +135,11 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None)
     if cls is not None:
         # helper for debugging
         cls_instance = cls(**init_kwargs)
-        with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
+        should_capture_output = call_kwargs.pop("capture_output", True) 
+        if should_capture_output:
+            with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
+                res = cls_instance(**call_kwargs)
+        else:
             res = cls_instance(**call_kwargs)
     else:
         try:
@@ -811,7 +815,8 @@ class IOHEvaluator(AbstractEvaluator):
                         raise ValueError(f"instance should be in {feasible_instances}")
             self.instances = instances
         else:
-            self.instances = [random.sample(feasible_instances, 1)] * len(self.problems)
+            # self.instances = [random.sample(feasible_instances, 1)] * len(self.problems)
+            self.instances = [[1]] * len(self.problems)
         
         self.reapeat = repeat
         self.dim = dim
@@ -1009,7 +1014,11 @@ class IOHEvaluator(AbstractEvaluator):
     @classmethod
     def evaluate_from_cls(cls, bo_cls, problems:list[int]=None, dim:int = 5, budget:int = 40, eval_others:bool=False):
         evaluator = cls(dim=dim, budget=budget, problems=problems)
-        res = evaluator.evaluate("code", bo_cls.__name__, cls=bo_cls)
+        evaluator.ignore_over_budget = True
+        cls_call_kwargs = {
+            "capture_output": False,
+        }
+        res = evaluator.evaluate("code", bo_cls.__name__, cls=bo_cls, cls_call_kwargs=cls_call_kwargs)
         other_results = None
         if eval_others:
             other_results = evaluator.evaluate_others()
