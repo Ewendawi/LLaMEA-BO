@@ -1,0 +1,349 @@
+import random
+import logging
+from typing import Any
+import time
+import os
+import concurrent.futures
+from tqdm import tqdm
+import numpy as np
+from ioh import get_problem, logger
+from misc import aoc_logger, correct_aoc
+
+from llamea.utils import BOOverBudgetException
+
+from .evaluator import AbstractEvaluator
+from .evaluator_result import EvaluatorResult, EvaluatorBasicResult
+from .exec_utils import default_exec
+
+class IOHObjectiveFn:
+    def __init__(self, problem_id, instance_id, exec_id, dim, budget, show_progress_bar=False):
+        self.problem_id = problem_id
+        self.instance_id = instance_id
+        self.exec_id = exec_id
+        self.dim = dim
+        self.budget = budget
+
+        self.obj_fn = get_problem(problem_id, instance_id, dim)
+        self.optimal_value = self.obj_fn.optimum.y
+        self.name = f"F{problem_id}-{self.obj_fn.problems[problem_id]}"
+
+        lb = self.obj_fn.bounds.lb
+        ub = self.obj_fn.bounds.ub
+        p_bounds = np.array([lb, ub])
+        self.bounds = p_bounds
+
+        self.x_hist = None
+        self.y_hist = None
+        self.aoc = 0.0
+
+        self.progress_bar = None
+        self.show_progress_bar = show_progress_bar
+        self.ignore_over_budget = False
+
+    def reset(self):
+        self.obj_fn = None
+        if self.progress_bar is not None:
+            self.progress_bar.close()
+            self.progress_bar = None
+
+    @property
+    def show_progress_bar(self):
+        return self._show_progress_bar
+    
+    @show_progress_bar.setter
+    def show_progress_bar(self, value):
+        self._show_progress_bar = value
+        if self._show_progress_bar:
+            self.progress_bar = tqdm(total=self.budget, desc=f"Evaluating {self.name}") 
+        else:
+            if self.progress_bar is not None:
+                self.progress_bar.close()
+                self.progress_bar = None
+
+    def __call__(self, x):
+        if self.obj_fn is not None and self.budget is not None and self.obj_fn.state.evaluations > self.budget:
+            logging.error("%s Over budget: %s/%s", self.name, self.obj_fn.state.evaluations, self.budget)
+            if not self.ignore_over_budget:
+                raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by func should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the func to evaluate the points is a alternative option.")
+
+        if self.x_hist is None:
+            self.x_hist = x
+        else:
+            self.x_hist = np.vstack((self.x_hist, x))
+
+        y = self.obj_fn(x)
+
+        if self.y_hist is None:
+            if isinstance(y, list):
+                self.y_hist = np.array(y).reshape(-1,1)
+            else:
+                self.y_hist = np.array([y]).reshape(-1,1)
+        else:
+            if isinstance(y, list):
+                self.y_hist = np.append(self.y_hist, np.array(y).reshape(-1,1))
+            else:
+                self.y_hist = np.append(self.y_hist, np.array([y]).reshape(-1,1))
+
+        if self.show_progress_bar:
+            progress = 1
+            if len(x.shape) > 1:
+                progress = x.shape[0]
+            self.progress_bar.update(progress)
+        else:
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                progress = len(self.x_hist)
+                interval = self.budget // 4
+                if progress % interval == 0:
+                    msg = f"{self.name}-{self.instance_id}-{self.exec_id}:{progress}/{self.budget} evaluations completed"
+                    logging.debug(msg)
+
+        if isinstance(y, list):
+            return np.array(y).reshape(-1,1)
+        return y
+
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ingore_over_budget:bool=False) -> EvaluatorBasicResult:
+
+    obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
+    obj_fn.ignore_over_budget = ingore_over_budget
+
+    l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
+    obj_fn.obj_fn.attach_logger(l2)
+        
+    start_time = time.perf_counter()
+
+    init_kwargs = {
+        "dim": dim,
+        "budget": budget,
+    }
+    if cls_init_kwargs is not None:
+        init_kwargs.update(cls_init_kwargs)
+    
+    call_kwargs = {
+        "func": obj_fn
+    }
+    if cls_call_kwargs is not None:
+        call_kwargs.update(cls_call_kwargs)
+
+    res, captured_output, err = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, time_out=time_out)
+    exec_time = time.perf_counter() - start_time
+
+    # unset the unpicklable object
+    aoc = correct_aoc(obj_fn.obj_fn, l2, budget)
+    obj_fn.aoc = aoc
+    obj_fn.reset()
+
+    return res, captured_output, err, exec_time, obj_fn
+    
+
+class IOHEvaluator(AbstractEvaluator):
+    def __str__(self):
+        return f"IOHEvaluator: {self._problem_name}_dim-{self.dim}_budget-{self.budget}_instances-{self.instances[0]}_repeat-{self.reapeat}"
+    
+    def __init__(self, dim:int = 5, budget:int = 40, problems:list[int]= None, instances:list[list[int]]=None, repeat:int = 1):
+        super().__init__()
+        if problems is not None and instances is not None and len(problems) != len(instances):
+            raise ValueError("The length of problems and instances should be the same")
+        
+        feasible_dim = [2, 3, 5, 10, 20, 40]
+        if dim not in feasible_dim:
+            raise ValueError(f"dim should be in {feasible_dim}")
+
+        self.problems = None
+        feasible_problems = list(range(1, 25))
+        if problems is not None:
+            for problem in problems:
+                if problem not in feasible_problems:
+                    raise ValueError("problem should be in range(1, 25)")
+            self.problems = problems
+        else:
+            # https://numbbo.github.io/coco/testsuites/bbob
+            # separable_problems = list(range(1, 6))
+            low_conditioning_problems = list(range(6, 10))
+            high_conditioning_problems = list(range(10, 15))
+            adequate_structure_problems = list(range(15, 20))
+            weak_structure_problems = list(range(20, 25))
+            group_problems = [low_conditioning_problems, high_conditioning_problems, adequate_structure_problems, weak_structure_problems]
+
+            selected_problems = [random.choice(group) for group in group_problems]
+            self.problems = random.sample(selected_problems, 1)
+
+        feasible_instances = list(range(1, 15))
+        self.instances = None
+        if instances is not None:
+            for p_instances in instances:
+                for instance in p_instances:
+                    if instance not in feasible_instances:
+                        raise ValueError(f"instance should be in {feasible_instances}")
+            self.instances = instances
+        else:
+            # self.instances = [random.sample(feasible_instances, 1)] * len(self.problems)
+            self.instances = [[1]] * len(self.problems)
+        
+        self.reapeat = repeat
+        self.dim = dim
+        self.budget = budget
+
+        obj_fn_params = []
+        for problem, instances in zip(self.problems, self.instances):
+            for instance in instances:
+                for i in range(self.reapeat):
+                    params = {
+                        "problem_id": problem,
+                        "instance_id": instance,
+                        "exec_id": i,
+                        "dim": self.dim,
+                        "budget": self.budget
+                    }
+                    obj_fn_params.append(params)
+        
+        self.obj_fn_params = obj_fn_params
+
+        problem_name = "bbob_" + "_".join([f"f{problem}" for problem in self.problems])
+        self._problem_name = problem_name
+
+    def is_maximization(self) -> bool:
+        return True
+
+    def problem_dim(self) -> int:
+        return self.dim
+
+    def eval_bugdet(self) -> int:
+        return self.budget
+
+    def problem_name(self) -> str:
+        return self._problem_name
+
+    def problem_prompt(self) -> str:
+        prompt = f'Problems from the BBOB test suite with dimensions {self.dim}\n'
+        return prompt
+
+    def __process_results(self, res, captured_output, err, exec_time, obj_fn):
+        eval_basic_result = EvaluatorBasicResult()
+        eval_basic_result.id = f"{obj_fn.problem_id}-{obj_fn.instance_id}-{obj_fn.exec_id}"
+        eval_basic_result.budget = obj_fn.budget
+        eval_basic_result.name = obj_fn.name
+        eval_basic_result.bounds = obj_fn.bounds
+        eval_basic_result.execution_time = exec_time
+        eval_basic_result.set_capture_output(captured_output)
+
+        if err is not None:
+            eval_basic_result.error = str(err)
+            eval_basic_result.error_type = err.__class__.__name__
+
+        if eval_basic_result.error is None and self.return_checker is not None:
+            # check the return value
+            return_check_str = self.return_checker(res)
+            if len(return_check_str) > 0:
+                eval_basic_result.error = return_check_str
+                eval_basic_result.error_type = "ReturnCheckError"
+
+        if eval_basic_result.error is None:
+            # best_y, best_x = res
+            y_hist = obj_fn.y_hist
+            x_hist = obj_fn.x_hist
+
+            eval_basic_result.y_aoc_from_ioh = obj_fn.aoc
+
+            eval_basic_result.name = obj_fn.name
+            eval_basic_result.bounds = obj_fn.bounds
+            eval_basic_result.optimal_value = obj_fn.optimal_value
+            eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
+            eval_basic_result.x_hist = x_hist
+            eval_basic_result.update_stats()
+            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8, max_y=1e2)
+
+        return eval_basic_result
+
+    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
+        """Evaluate an individual."""
+        eval_result = EvaluatorResult()
+        eval_result.name = cls_name
+        if code is None:
+            eval_result.error = "No code generated"
+            eval_result.error_type = "NoCodeGenerated"
+            return eval_result
+
+        params = []
+        for param in self.obj_fn_params:
+            new_param = {
+                "code": code,
+                "cls_name": cls_name,
+                "cls": cls,
+                "time_out": timeout,
+                "ingore_over_budget": self.ignore_over_budget,
+                "cls_init_kwargs": cls_init_kwargs,
+                "cls_call_kwargs": cls_call_kwargs
+            }
+            new_param.update(param)
+            params.append(new_param)
+
+        total_tasks = len(params)
+        interval = min(max(1, total_tasks // 4), 20)
+
+        if max_eval_workers is None or max_eval_workers > 0:
+            max_workers = min(os.cpu_count() - 1, max_eval_workers)
+
+            # if cuda is available, use thread pool executor
+            # if torch.cuda.is_available() and "cuda" in code:
+            #     logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+            #     executor_cls = concurrent.futures.ThreadPoolExecutor
+            # else:
+            #     logging.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+            #     executor_cls = concurrent.futures.ProcessPoolExecutor
+
+            logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+            executor_cls = concurrent.futures.ThreadPoolExecutor
+                
+            with executor_cls(max_workers=max_workers) as executor:
+                futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
+                for future in concurrent.futures.as_completed(futures.keys()):
+                    res, captured_output, err, exec_time, obj_fn = future.result()
+                    eval_basic_result = self.__process_results(res, captured_output, err, exec_time, obj_fn)
+                    if eval_basic_result.error is not None:
+                        eval_result.error = eval_basic_result.error
+                        eval_result.error_type = eval_basic_result.error_type
+                        logging.info("Evaluating %s: Got Error - %s", cls_name, eval_basic_result.error_type)
+                        executor.shutdown(wait=False)
+                        break
+                    else:
+                        eval_result.result.append(eval_basic_result)
+                        done_tasks = len(eval_result.result)
+                        if done_tasks % interval == 0:
+                            logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
+        else:
+            logging.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
+
+            for param in params:
+                res, captured_output, err, exec_time, obj_fn = ioh_evaluate_block(**param)
+                eval_basic_result = self.__process_results(res, captured_output, err, exec_time, obj_fn)
+                if eval_basic_result.error is not None:
+                    eval_result.error = eval_basic_result.error
+                    eval_result.error_type = eval_basic_result.error_type
+                    logging.info("Evaluating %s: Got Error - %s", cls_name, eval_basic_result.error_type)
+                    break
+                else:
+                    eval_result.result.append(eval_basic_result)
+                    done_tasks = len(eval_result.result)
+                    if done_tasks % interval == 0:
+                        logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
+
+        if eval_result.error is None:
+            eval_result.score = np.mean([r.log_y_aoc for r in eval_result.result])
+            logging.info("Evaluated %s: %s", cls_name, eval_result.score)
+        else:                           
+            eval_result.score = 0.0
+
+        return eval_result
+
+    @classmethod
+    def evaluate_from_cls(cls, bo_cls, problems:list[int]=None, dim:int = 5, budget:int = 40, eval_others:bool=False):
+        evaluator = cls(dim=dim, budget=budget, problems=problems)
+        evaluator.ignore_over_budget = True
+        cls_call_kwargs = {
+            "capture_output": False,
+        }
+        res = evaluator.evaluate("code", bo_cls.__name__, cls=bo_cls, cls_call_kwargs=cls_call_kwargs)
+        other_results = None
+        if eval_others:
+            other_results = evaluator.evaluate_others()
+        return res, other_results

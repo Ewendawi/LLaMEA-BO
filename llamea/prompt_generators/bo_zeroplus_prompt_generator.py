@@ -2,9 +2,8 @@
 import random
 import re
 import numpy as np
-
+from llamea.evaluator import EvaluatorResult
 from .abstract_prompt_generator import PromptGenerator, GenerationTask, ResponseImpReturnChecker, ResponseHandler
-from ..evaluator import EvaluatorResult
 
 
 class BOPromptGeneratorReturnChecker(ResponseImpReturnChecker):
@@ -499,19 +498,12 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
                     feedback_prompt += f"- initial best y: {result.y_best_tuple[0]:.2f}\n"
                     feedback_prompt += f"- non-initial best y: {result.y_best_tuple[1]:.2f}\n"
                 feedback_prompt += f"- AOC for non-initial y: {result.non_init_y_aoc:.2f}\n"
-                if result.x_mean_tuple is not None and result.x_std_tuple is not None:
-                    feedback_prompt += f"- mean and std of initial x: {np.array_str(result.x_mean_tuple[0], precision=2)} , {np.array_str(result.x_std_tuple[0], precision=2)}\n"
-                    feedback_prompt += f"- mean and std of non-initial x: {np.array_str(result.x_mean_tuple[1], precision=2)} , {np.array_str(result.x_std_tuple[1], precision=2)}\n"
-                if result.y_mean_tuple is not None and result.y_std_tuple is not None:
-                    feedback_prompt += f"- mean and std of non-initial y: {result.y_mean_tuple[1]:.2f} , {result.y_std_tuple[1]:.2f}\n"
             else:
                 feedback_prompt += f"- AOC for all y: {result.y_aoc:.2f}\n"
                 if result.x_mean is not None and result.x_std is not None:
                     feedback_prompt += f"- mean and std of all x: {np.array_str(result.x_mean, precision=2)} , {np.array_str(result.x_std, precision=2)}\n"
                     feedback_prompt += f"- mean and std of all y: {result.y_mean:.2f} , {result.y_std:.2f}\n"
 
-            if result.surrogate_model_losses is not None:
-                feedback_prompt += f"- mean and std {result.model_loss_name} of surrogate model: {np.mean(result.surrogate_model_losses):.2f} , {np.std(result.surrogate_model_losses):.2f}\n"
         # feedback_prompt += f"Execution Time: {result.execution_time:.4f}\n"
 
         return feedback_prompt

@@ -229,11 +229,6 @@ class IndividualLogger:
         loggers = []
         for log_file in log_files:
             logger = cls().load(log_file)
-            # for _, ind in logger.individual_map.items():
-            #     if 'result_values' in ind.metadata:
-            #         res = ind.metadata['result_values']
-            #         if res.surrogate_model_losses is not None:
-            #             res.surrogate_model_losses = np.nan_to_num(res.surrogate_model_losses)
             loggers.append(logger)
         merged_logger = cls()
         for logger in loggers:
@@ -358,7 +353,7 @@ def plot_result(y:np.ndarray, x:np.ndarray,
         plt.show(block=True)
         
 
-from .evaluator import EvaluatorResult
+from .evaluator.evaluator_result import EvaluatorResult
 
 def plot_results(results:list[tuple[str,list[EvaluatorResult]|Population]], 
                     other_results:list[EvaluatorResult] = None, **kwargs):

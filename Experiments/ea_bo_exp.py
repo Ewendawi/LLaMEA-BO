@@ -8,7 +8,7 @@ from llamea import LLaMBO
 from llamea.llm import LLMmanager, LLMS
 from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator
 from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
-from llamea.evaluator import IOHEvaluator, AbstractEvaluator
+from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
 
 

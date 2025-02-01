@@ -20,3 +20,5 @@ disable=
 
     broad-exception-caught,
     broad-exception-raised,
+
+    relative-beyond-top-level,

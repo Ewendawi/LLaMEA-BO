@@ -5,7 +5,7 @@ import tqdm
 from llamea import LLaMBO, LLMmanager
 from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BaselinePromptGenerator
 from llamea.utils import setup_logger, IndividualLogger, plot_results
-from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator, AbstractEvaluator
+from llamea.evaluator.ioh_evaluator import IOHEvaluator 
 from llamea.llm import LLMS
 
 def run_bo_exp_code_generation(model:tuple, aggressiveness:float, use_botorch:bool, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
