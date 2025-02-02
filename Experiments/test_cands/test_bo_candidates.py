@@ -1,4 +1,5 @@
-from llamea.evaluator import RandomBoTorchTestEvaluator, IOHEvaluator
+from llamea.evaluator.ioh_evaluator import IOHEvaluator
+from llamea.individual import Individual
 
 # from Experiments.test_cands.AdvancedDropWaveBO import AdvancedDropWaveBO
 # r = RandomBoTorchTestEvaluator.evaluate_from_cls(AdvancedDropWaveBO)
@@ -20,8 +21,18 @@ from Experiments.test_cands.GPHybridAdaptiveBatchBOv2 import GPHybridAdaptiveBat
 # r = IOHEvaluator.evaluate_from_cls(GPHybridAdaptiveBatchBOv2, budget=100, eval_others=False)
 
 from Experiments.baselines.bo_baseline import BLRandomSearch, BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO
-problems = [7]
-r = IOHEvaluator.evaluate_from_cls(BLRBFKernelVanillaBO, budget=100, eval_others=False, problems=problems)
+# problems = [7]
+# r = IOHEvaluator.evaluate_from_cls(BLTuRBO1, budget=100, eval_others=False, problems=problems)
+
+from Experiments.test_cands.EnsembleLocalSearchBOv1 import EnsembleLocalSearchBOv1
+# r = IOHEvaluator.evaluate_from_cls(EnsembleLocalSearchBOv1, budget=100, eval_others=False)
+
+from Experiments.test_cands.TrustRegionAdaptiveBOv1 import TrustRegionAdaptiveBOv1
+r = IOHEvaluator.evaluate_from_cls(TrustRegionAdaptiveBOv1, budget=100, eval_others=False, dim=5)
+
+
+from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
+# r = IOHEvaluator.evaluate_from_cls(EnsembleDeepKernelAdaptiveTSLocalSearchARDv1, budget=100, eval_others=False)
 
 print(r[0])
 # for _r in r[1]:

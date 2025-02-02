@@ -62,6 +62,7 @@ class Turbo1:
         min_cuda=1024,
         device="cpu",
         dtype="float64",
+        critic=None,
     ):
 
         # Very basic input checks
@@ -123,6 +124,8 @@ class Turbo1:
         if self.verbose:
             print("Using dtype = %s \nUsing device = %s" % (self.dtype, self.device))
             sys.stdout.flush()
+
+        self.critic = critic 
 
         # Initialize parameters
         self._restart()
@@ -209,6 +212,8 @@ class Turbo1:
 
         # We may have to move the GP to a new device
         gp = gp.to(dtype=dtype, device=device)
+        if self.critic is not None:
+            self.critic.update_after_model_fit(gp, X)
 
         # We use Lanczos for sampling if we have enough data
         with torch.no_grad(), gpytorch.settings.max_cholesky_size(self.max_cholesky_size):
@@ -254,6 +259,9 @@ class Turbo1:
             self._X = deepcopy(X_init)
             self._fX = deepcopy(fX_init)
 
+            if self.critic is not None:
+                self.critic.update_after_eval(None, None, X_init, fX_init)
+
             # Append data to the global history
             self.X = np.vstack((self.X, deepcopy(X_init)))
             self.fX = np.vstack((self.fX, deepcopy(fX_init)))
@@ -296,6 +304,11 @@ class Turbo1:
                     print(f"{n_evals}) New best: {fbest:.4}")
                     sys.stdout.flush()
 
+                if self.critic is not None:
+                    self.critic.update_after_eval(self.X, self.fX, X_next, fX_next)
+
                 # Append data to the global history
                 self.X = np.vstack((self.X, deepcopy(X_next)))
                 self.fX = np.vstack((self.fX, deepcopy(fX_next)))
+
+                

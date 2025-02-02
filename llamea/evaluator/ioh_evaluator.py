@@ -46,6 +46,11 @@ class IOHObjectiveFn:
             self.progress_bar.close()
             self.progress_bar = None
 
+    def stateless_call(self, x):
+        y = self.obj_fn(x)
+        self.obj_fn.reset()
+        return y
+
     @property
     def show_progress_bar(self):
         return self._show_progress_bar
@@ -101,7 +106,7 @@ class IOHObjectiveFn:
             return np.array(y).reshape(-1,1)
         return y
 
-def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ingore_over_budget:bool=False) -> EvaluatorBasicResult:
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ingore_over_budget:bool=False, inject_critic:bool=False): 
 
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
     obj_fn.ignore_over_budget = ingore_over_budget
@@ -124,7 +129,7 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     if cls_call_kwargs is not None:
         call_kwargs.update(cls_call_kwargs)
 
-    res, captured_output, err = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, time_out=time_out)
+    res, captured_output, err, critic = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, time_out=time_out, inject_critic=inject_critic)
     exec_time = time.perf_counter() - start_time
 
     # unset the unpicklable object
@@ -132,8 +137,8 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     obj_fn.aoc = aoc
     obj_fn.reset()
 
-    return res, captured_output, err, exec_time, obj_fn
-    
+    return res, captured_output, err, exec_time, obj_fn, critic
+
 
 class IOHEvaluator(AbstractEvaluator):
     def __str__(self):
@@ -217,7 +222,7 @@ class IOHEvaluator(AbstractEvaluator):
         prompt = f'Problems from the BBOB test suite with dimensions {self.dim}\n'
         return prompt
 
-    def __process_results(self, res, captured_output, err, exec_time, obj_fn):
+    def __process_results(self, res, captured_output, err, exec_time, obj_fn, critic) -> EvaluatorBasicResult:
         eval_basic_result = EvaluatorBasicResult()
         eval_basic_result.id = f"{obj_fn.problem_id}-{obj_fn.instance_id}-{obj_fn.exec_id}"
         eval_basic_result.budget = obj_fn.budget
@@ -252,6 +257,11 @@ class IOHEvaluator(AbstractEvaluator):
             eval_basic_result.update_stats()
             eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8, max_y=1e2)
 
+            if critic is not None:
+                eval_basic_result.r2_list = critic.r_2_list
+                eval_basic_result.uncertainty_list = critic.uncertainty_list
+                eval_basic_result.coverage_result = critic.convergae_result
+
         return eval_basic_result
 
     def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
@@ -271,6 +281,7 @@ class IOHEvaluator(AbstractEvaluator):
                 "cls": cls,
                 "time_out": timeout,
                 "ingore_over_budget": self.ignore_over_budget,
+                "inject_critic": self.inject_critic,
                 "cls_init_kwargs": cls_init_kwargs,
                 "cls_call_kwargs": cls_call_kwargs
             }
@@ -297,8 +308,8 @@ class IOHEvaluator(AbstractEvaluator):
             with executor_cls(max_workers=max_workers) as executor:
                 futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
                 for future in concurrent.futures.as_completed(futures.keys()):
-                    res, captured_output, err, exec_time, obj_fn = future.result()
-                    eval_basic_result = self.__process_results(res, captured_output, err, exec_time, obj_fn)
+                    res = future.result()
+                    eval_basic_result = self.__process_results(*res)
                     if eval_basic_result.error is not None:
                         eval_result.error = eval_basic_result.error
                         eval_result.error_type = eval_basic_result.error_type
@@ -314,8 +325,8 @@ class IOHEvaluator(AbstractEvaluator):
             logging.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
 
             for param in params:
-                res, captured_output, err, exec_time, obj_fn = ioh_evaluate_block(**param)
-                eval_basic_result = self.__process_results(res, captured_output, err, exec_time, obj_fn)
+                res = ioh_evaluate_block(**param)
+                eval_basic_result = self.__process_results(*res)
                 if eval_basic_result.error is not None:
                     eval_result.error = eval_basic_result.error
                     eval_result.error_type = eval_basic_result.error_type

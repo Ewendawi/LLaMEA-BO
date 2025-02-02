@@ -103,18 +103,18 @@ class VanillaBO:
                     model=model,
                     # X_baseline=self.X.clone(),
                     X_baseline = torch.unique(self.X.clone(), dim=0),
-                    sampler=SobolQMCNormalSampler(sample_shape=torch.Size([128])).to(self.device),
+                    # sampler=SobolQMCNormalSampler(sample_shape=torch.Size([128])).to(self.device),
                     prune_baseline=True,
                 ),
                 bounds=bounds,
                 q=batch_size,
-                num_restarts=40,
+                num_restarts=10,
                 raw_samples=512,
                 options={
                     "nonnegative": False,
                     "sample_around_best": True,
                     "sample_around_best_sigma": 0.1,
-                    "maxiter": 200,
+                    "maxiter": 20,
                     "batch_limit": 64,
                     # "disp": True, # Verbose output
                 }
@@ -123,10 +123,19 @@ class VanillaBO:
             candidate = self._sample_points(batch_size)
         return candidate.detach()
 
+    def _update_sample_points(self, new_X: torch.Tensor, new_y: torch.Tensor) -> None:
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = torch.vstack([self.X, new_X])
+            self.y = torch.vstack([self.y, new_y])
+
     def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:
         n_initial_points = min(self.n_init, self.budget)
-        self.X = self._sample_points(n_initial_points)
-        self.y = torch.tensor([func(x) for x in self.X.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
+        X = self._sample_points(n_initial_points)
+        y = torch.tensor([func(x) for x in X.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
+        self._update_sample_points(X, y)
 
         rest_of_budget = self.budget - n_initial_points
         best_y = self.y.min()
@@ -140,8 +149,7 @@ class VanillaBO:
             next_points = self._select_next_points(model, batch_size)
             next_evaluations = torch.tensor([func(x) for x in next_points.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
 
-            self.X = torch.vstack([self.X, next_points])
-            self.y = torch.vstack([self.y, next_evaluations])
+            self._update_sample_points(next_points, next_evaluations)
 
             if next_evaluations.min() < best_y:
                 best_y = next_evaluations.min()

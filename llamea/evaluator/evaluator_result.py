@@ -61,18 +61,19 @@ class EvaluatorCoverageResult:
         self.grid_sizes = None
         self.grid_coverage_list = []
 
-        self.eps = 0.5
-        self.min_samples = 5
         self.min_radius = 1
+        self.min_samples = 2
+        self.eps = self.min_radius * 2
         self.circle_dbscan_coverage_list = []
         self.convex_dbscan_coverage_list = []
 
         self.top_k = 3
+        self.exploitation_distance_upper_bound = 10.0
         self.k_distance_exploitation_list = []
 
     def init_grid(self, budget, dim, bounds):
         self.soft_n_grid = budget * 2
-        self.n_grid_per_dim = math.floor(self.soft_n_grid ** (1 / dim))
+        self.n_grid_per_dim = math.floor(self.soft_n_grid ** (1 / dim)) + 1
         self.grid_sizes = []
         for a,b in bounds.T:
             delta = (b - a) / self.n_grid_per_dim
@@ -83,8 +84,9 @@ class EvaluatorCoverageResult:
         self.min_samples = min_samples
         self.min_radius = min_radius
 
-    def init_distance_exploitation(self, top_k):
+    def init_distance_exploitation(self, top_k, distance_upper_bound):
         self.top_k = top_k
+        self.exploitation_distance_upper_bound = distance_upper_bound
 
     def _calculate_coverage_dbscan_circle(self, X, search_space, eps=0.5, min_samples=5, min_radius=0.2):
         """
@@ -92,7 +94,7 @@ class EvaluatorCoverageResult:
         min_samples (int): The number of samples in a neighborhood for a point to be considered as a core point.
         min_radius (float): A radius is used for outliers
         """
-        if not X:
+        if X is None:
             return 0.0
         
         if len(X[0]) != len(search_space):
@@ -119,7 +121,7 @@ class EvaluatorCoverageResult:
                 for p in cluster_points:
                     dist = distance.euclidean(p, centroid)
                     max_dist = max(max_dist, dist)
-                radius = max_dist
+                radius = max(max_dist, min_radius * 1.1)
                 total_area_cluster+= np.pi*radius**2
                 cluster_info[tuple(centroid)] = (centroid, radius)
 
@@ -158,7 +160,7 @@ class EvaluatorCoverageResult:
         coverage = total_area_cluster / space_area if space_area > 0 else 0
         return coverage
 
-    def calculate_coverage_dbscan_convex_with_outliers(self, X, search_space, eps=0.5, min_samples=5, min_radius=0.2):
+    def calculate_coverage_dbscan_convex(self, X, search_space, eps=0.5, min_samples=5, min_radius=0.2):
         """
         eps (float): The maximum distance between two samples for one to be considered as in the neighborhood of the other, used in DBSCAN.
         min_samples (int): The number of samples in a neighborhood for a point to be considered as a core point.
@@ -195,10 +197,20 @@ class EvaluatorCoverageResult:
         coverage = total_volume/ space_area if space_area > 0 else 0
         return coverage
 
-    def update_dbscan_coverage(self, X, bounds):
-        if not all([isinstance(x,list) for x in X]):
-            return 0
+    def update_next_dbscan_coverage(self, X, next_X, bounds):
+        if next_X is None:
+            return
+        if X is not None:
+            new_X = np.vstack([X, next_X])
+        else:
+            new_X = next_X
+        circle_coverage = self._calculate_coverage_dbscan_circle(new_X, bounds.T, self.eps, self.min_samples, self.min_radius)
+        self.circle_dbscan_coverage_list.extend([circle_coverage] * len(next_X))
 
+        # convex_coverage = self.calculate_coverage_dbscan_convex(new_X, bounds.T, self.eps, self.min_samples, self.min_radius)
+        # self.convex_dbscan_coverage_list.extend([convex_coverage] * len(next_X))
+
+    def update_dbscan_coverage(self, X, bounds):
         if not isinstance(X, np.ndarray):
             X = np.array(X)
 
@@ -208,18 +220,16 @@ class EvaluatorCoverageResult:
             circle_coverage = self._calculate_coverage_dbscan_circle(cur_X, bounds.T, self.eps, self.min_samples, self.min_radius)
             self.circle_dbscan_coverage_list.append(circle_coverage)
 
-            convex_coverage = self.calculate_coverage_dbscan_convex_with_outliers(cur_X, bounds.T, self.eps, self.min_samples, self.min_radius)
+            convex_coverage = self.calculate_coverage_dbscan_convex(cur_X, bounds.T, self.eps, self.min_samples, self.min_radius)
             self.convex_dbscan_coverage_list.append(convex_coverage)
             
     def calculate_grid_coverage(self, X, search_space, grid_sizes, n_grid_per_dim, accumulate=False):
         D = len(search_space)
-        if D == 0 or not all([isinstance(point,list) for point in X]):
-            return 0
         
         total_cells = n_grid_per_dim**D
         
         if total_cells == 0:
-            return 0
+            return [0]
         
         coverage_list = []
         visited_cells = set()
@@ -242,10 +252,35 @@ class EvaluatorCoverageResult:
         grid_coverage = self.calculate_grid_coverage(X, bounds.T, self.grid_sizes, self.n_grid_per_dim, accumulate=True)
         self.grid_coverage_list = grid_coverage
 
-    def update_exploitation(self, X, fX, n_initial):
-        if not all([isinstance(points, list) for points in [X, fX]]):
-            return 0
+    def update_next_grid_coverage(self, X:np.ndarray, next_X:np.ndarray, bounds):
+        if next_X is None:
+            return
 
+        if X is not None:
+            new_X = np.vstack([X, next_X])
+        else:
+            new_X = next_X
+
+        grid_coverage = self.calculate_grid_coverage(new_X, bounds.T, self.grid_sizes, self.n_grid_per_dim, accumulate=False)
+        self.grid_coverage_list.extend(grid_coverage * len(next_X))
+
+    def update_next_exploitation(self, X, fX, next_X):
+        if X is None or fX is None:
+            self.k_distance_exploitation_list.extend([0.0] * len(next_X))
+            return
+
+        cur_X = X
+        cur_fX = fX.flatten()
+
+        top_k_X = cur_X[np.argsort(cur_fX)[:self.top_k]]
+        for next in next_X:
+            distances = [distance.euclidean(next, p) for p in top_k_X]
+            min_distance = np.min(distances)
+
+            explointation_rate = max(0, self.exploitation_distance_upper_bound - min_distance) / self.exploitation_distance_upper_bound
+            self.k_distance_exploitation_list.append(explointation_rate)
+
+    def update_exploitation(self, X, fX, n_initial):
         self.k_distance_exploitation_list = []
         self.k_distance_exploitation_list.extend([0] * n_initial)
         for i in range(n_initial, len(X)):
@@ -256,8 +291,9 @@ class EvaluatorCoverageResult:
             top_k_X = cur_X[np.argsort(cur_fX)[:self.top_k]]
             distances = [distance.euclidean(next_X, p) for p in top_k_X]
             min_distance = np.min(distances)
-        
-            self.k_distance_exploitation_list.append(min_distance)
+
+            explointation_rate = max(0, self.exploitation_distance_upper_bound - min_distance) / self.exploitation_distance_upper_bound
+            self.k_distance_exploitation_list.append(explointation_rate)
     
 
 class EvaluatorBasicResult:

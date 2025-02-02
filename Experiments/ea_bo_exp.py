@@ -37,6 +37,7 @@ def get_IOHEvaluator_for_test():
     instances = [[1]] * len(problems)
     repeat = 2
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
+    evaluator.inject_critic = True
     return evaluator
 
 def get_bo_prompt_generator():
@@ -50,7 +51,7 @@ def baseline_algo_eval_param(dim, budget):
         "budget": budget,
         "dim": dim,
         "bounds": np.array([[-5.0] * 5, [5.0] * 5]),
-        "n_init": min(2 * dim, budget // 2),
+        "n_init": min(5 * dim, budget // 2),
         "seed": None,
         "device": "cpu",
         # "device": "cuda",

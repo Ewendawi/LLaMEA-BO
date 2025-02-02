@@ -1,26 +1,17 @@
 import math
 import numpy as np
 import torch
-from .vanilla_bo import VanillaBO
+from skopt import gp_minimize 
 from .TuRBO.turbo import Turbo1, TurboM
+from .vanilla_bo import VanillaBO
 
-class BaselineSearch:
-    def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
+class BLRandomSearch:
+    def __init__(self, budget:int, dim:int, bounds:np.ndarray, n_init:int=None, seed:int=None, **kwargs):
         self.budget = budget
         self.dim = dim
         self.bounds = bounds
-        if bounds is None:
-            self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
         self.n_init = n_init
-        if n_init is None:
-            self.n_init = dim * 5
-        self.seed = seed
-        self.device = device
-
-class BLRandomSearch(BaselineSearch):
-    def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, **kwargs):
-        super().__init__(budget, dim, bounds, n_init, seed, **kwargs)
-        if self.seed is not None:
+        if seed is not None:
             np.random.seed(seed)
 
     def __call__(self, func):
@@ -37,15 +28,68 @@ class BLRandomSearch(BaselineSearch):
             
         return f_opt, x_opt
 
+class BLSKOpt:
+    def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, **kwargs):
+        self.budget = budget
+        self.dim = dim
+        self.bounds = bounds
+        self.n_init = n_init
+        self.seed = seed
+        if self.seed is not None:
+            np.random.seed(seed)
 
-class BLTuRBO1(BaselineSearch):
+    def __call__(self, func):
+        res = gp_minimize(
+            func=func,
+            # acq_func="EI",
+            initial_point_generator="sobol",
+            dimensions=self.bounds.T,
+            n_calls=self.budget,
+            n_points=1000,
+            n_restarts_optimizer=5,
+            random_state=self.seed)
+
+        critic = getattr(self, "_injected_critic", None)
+        if critic is not None:
+            start_index = 0
+            next_index = self.n_init
+            while next_index < self.budget:
+                new_X = np.array(res.x_iters[:next_index])
+                model_index = next_index - self.n_init
+                model = res.models[model_index]
+                critic.update_after_model_fit(model, new_X)
+                
+                X = np.array(res.x_iters[:start_index]) if start_index > 0 else None
+                y = np.array(res.func_vals[:start_index]) if start_index > 0 else None
+                next_X = np.array(res.x_iters[start_index:next_index])
+                next_y = np.array(res.func_vals[start_index:next_index])
+                critic.update_after_eval(X, y, next_X, next_y) 
+
+                start_index = next_index
+                next_index += 1
+
+        f_opt = res.fun
+        x_opt = res.x
+
+        return f_opt, x_opt
+
+class BLTuRBO1:
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
-        super().__init__(budget, dim, bounds, n_init, seed)
+        self.budget = budget
+        self.dim = dim
+        self.bounds = bounds
+        self.n_init = n_init
+        self.seed = seed
+        self.device = device
         if seed is not None:
             np.random.seed(seed)
             torch.manual_seed(seed)
 
     def __call__(self, func):
+        critic = None
+        if hasattr(self, "_injected_critic"):
+            critic = self._injected_critic
+        
         turbo = Turbo1(
             f=func, 
             lb=self.bounds[0], 
@@ -60,6 +104,7 @@ class BLTuRBO1(BaselineSearch):
             min_cuda=1024,
             device=self.device,
             dtype="float64",
+            critic = critic
             )
         turbo.optimize()
 
@@ -70,14 +115,23 @@ class BLTuRBO1(BaselineSearch):
         return f_opt, x_opt
 
 
-class BLTuRBOM(BaselineSearch):
+class BLTuRBOM:
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
-        super().__init__(budget, dim, bounds, n_init, seed)
+        self.budget = budget
+        self.dim = dim
+        self.bounds = bounds
+        self.n_init = n_init
+        self.seed = seed
+        self.device = device
         if seed is not None:
             np.random.seed(seed)
             torch.manual_seed(seed)
 
     def __call__(self, func):
+        critic = None
+        if hasattr(self, "_injected_critic"):
+            critic = self._injected_critic
+        
         tr = int(max(self.dim/2, 2))
         n_init = math.floor(self.n_init/tr)
         
@@ -96,6 +150,7 @@ class BLTuRBOM(BaselineSearch):
             min_cuda=1024,
             device=self.device,
             dtype="float64",
+            critic=critic,
             )
         turbo.optimize()
 
@@ -105,36 +160,12 @@ class BLTuRBOM(BaselineSearch):
 
         return f_opt, x_opt
 
-class BLRBFKernelVanillaBO(BaselineSearch):
+class BLRBFKernelVanillaBO(VanillaBO):
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
-        super().__init__(budget, dim, bounds, n_init, seed)
-        self.bo = VanillaBO(
-            surrogate_model="RBFKernel",
-            budget=budget,
-            dim=dim,
-            bounds=bounds,
-            n_init=n_init,
-            seed=seed,
-            device=device
-        )
+        super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device, surrogate_model="RBFKernel")
 
-    def __call__(self, func):
-        f_opt, x_opt = self.bo(func)
-        return f_opt, x_opt
-
-class BLScaledKernelVanillaBO(BaselineSearch):
+class BLScaledKernelVanillaBO(VanillaBO):
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
-        super().__init__(budget, dim, bounds, n_init, seed)
-        self.bo = VanillaBO(
-            surrogate_model="ScaleKernel",
-            budget=budget,
-            dim=dim,
-            bounds=bounds,
-            n_init=n_init,
-            seed=seed,
-            device=device
-        )
+        super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device, surrogate_model="ScaleKernel")
 
-    def __call__(self, func):
-        f_opt, x_opt = self.bo(func)
-        return f_opt, x_opt
+        

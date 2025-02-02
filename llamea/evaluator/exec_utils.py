@@ -5,6 +5,8 @@ import concurrent.futures
 import sys
 import traceback
 import re
+import inspect
+from .injected_critic import AlgorithmCritic, critic_wrapper
 
 def track_exec(code_string, name, _globals=None, _locals=None):
     compiled_code = compile(code_string, f'<{name}>', 'exec')
@@ -59,8 +61,62 @@ def get_code_snippet(code_str, error_line, context_lines):
             formatted_code.append(f"{i:4} | {line}\n")
     return formatted_code
 
+def __inject_critic_code(code: str) -> str:
+    # Add the critic_wrapper function to the code
+    critic_wrapper_code = inspect.getsource(critic_wrapper)
+    critic_wrapper_code_lines = critic_wrapper_code.splitlines(keepends=True)
 
-def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None) -> tuple[any, str, str]:
+    lines = code.splitlines(keepends=True)
+    new_lines = []
+
+    for line in lines:
+        # find the first class in the code. then inject the critic_wrapper function above it
+        if re.search(r'^class\s+(\w+)', line):
+            new_lines.extend(critic_wrapper_code_lines)
+            new_lines.append("\n")
+        elif re.search(r'def\s+_update_sample_points', line):
+            stripped_text   = line.lstrip()
+            n_blank_spaces  = len(line) - len(stripped_text)
+            decrator_line = " " * n_blank_spaces + '@critic_wrapper'
+            new_lines.append(decrator_line)
+            new_lines.append('\n')
+        elif re.search(r'def\s+_fit_model', line):
+            stripped_text   = line.lstrip()
+            n_blank_spaces  = len(line) - len(stripped_text)
+            decrator_line = " " * n_blank_spaces + '@critic_wrapper'
+            new_lines.append(decrator_line)
+            new_lines.append('\n')
+
+        new_lines.append(line)
+
+    return "".join(new_lines)
+
+def inject_critic_cls(cls):
+    methods = ['_update_sample_points', '_fit_model']
+    for method in methods:
+        original_method = getattr(cls, method, None)
+        if original_method is None or original_method.__name__ == 'injected_wrapper':
+            continue
+        decorated_method = critic_wrapper(original_method)
+        setattr(cls, method, decorated_method)
+
+def inject_critic_func(cls_instance, init_kwargs, call_kwargs) -> any:
+    critic = None
+    if not hasattr(cls_instance, "_injected_critic"):
+        setattr(cls_instance, "_injected_critic", None)
+    if cls_instance._injected_critic is None:
+        dim = init_kwargs.get("dim", 1)
+        func = call_kwargs.get("func", None)
+        bounds = func.bounds if func is not None else None
+        critic = AlgorithmCritic(dim=dim, bounds=bounds)
+        critic.update_test_y(func)
+        critic.convergae_result.init_grid(bounds=bounds, dim=dim, budget=func.budget)
+
+        cls_instance._injected_critic = critic
+
+    return critic
+
+def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None, inject_critic=False) -> tuple[any, str, str, any]:
     captured_output = io.StringIO()
     res = None
     err = None
@@ -70,9 +126,15 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None)
     if call_kwargs is None:
         call_kwargs = {}
 
+    critic = None
     if cls is not None:
         # helper for debugging
-        cls_instance = cls(**init_kwargs)
+        if inject_critic:
+            inject_critic_cls(cls)
+            cls_instance = cls(**init_kwargs)
+            critic = inject_critic_func(cls_instance, init_kwargs, call_kwargs)
+        else:
+            cls_instance = cls(**init_kwargs)
         should_capture_output = call_kwargs.pop("capture_output", True) 
         if should_capture_output:
             with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
@@ -80,6 +142,8 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None)
         else:
             res = cls_instance(**call_kwargs)
     else:
+        if inject_critic:
+            code = __inject_critic_code(code)
         try:
             namespace: dict[str, Any] = {}
             track_exec(code, cls_name, namespace)
@@ -90,25 +154,28 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None)
                 with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
                     bo_cls = namespace[cls_name]
                     bo = bo_cls(**init_kwargs)
+                    if inject_critic:
+                        critic = inject_critic_func(bo, init_kwargs, call_kwargs)
                     res = bo(**call_kwargs)
         except Exception as e:
             formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
             err = e.__class__(formatted_traceback)
 
-    return res, captured_output.getvalue(), err
+    return res, captured_output.getvalue(), err, critic
 
-def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:float=None, cls=None) -> tuple[any, str, str]:
+def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:float=None, cls=None, inject_critic=False) -> tuple[any, str, str]:
+    params = {
+            "code": code,
+            "cls_name": cls_name,
+            "cls": cls,
+            "init_kwargs": init_kwargs,
+            "call_kwargs": call_kwargs,
+            "inject_critic": inject_critic
+    }
     if time_out is None:
-        return __default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs)
+        return __default_exec(**params)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            params = {
-                "code": code,
-                "cls_name": cls_name,
-                "cls": cls,
-                "init_kwargs": init_kwargs,
-                "call_kwargs": call_kwargs
-            }
             future = executor.submit(__default_exec, **params)
             done, not_done = concurrent.futures.wait([future], timeout=time_out)
             if done:
@@ -116,4 +183,4 @@ def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:fl
             if not_done:
                 err = TimeoutError("Evaluation timed out")
                 future.cancel()
-                return None, None, err
+                return None, None, err, None

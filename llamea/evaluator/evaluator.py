@@ -7,6 +7,7 @@ class AbstractEvaluator(ABC):
     def __init__(self):
         self.return_checker:Callable[[tuple], str] = lambda x: ""
         self.ignore_over_budget = False
+        self.inject_critic = False
 
     @abstractmethod
     def problem_prompt(self) -> str:

@@ -230,27 +230,34 @@ class <AlgorithmName>:
 
         # Do not add any other arguments without a default value
 
-    def _sample_points(self, n_points) -> np.ndarray:
+    def _sample_points(self, n_points):
         # sample points
         # return array of shape (n_points, n_dims)
     
     def _fit_model(self, X, y):
         # Fit and tune surrogate model 
         # return the model
+        # Do not change the function signature
 
-    def _acquisition_function(self, X) -> np.ndarray:
+    def _acquisition_function(self, X):
         # Implement acquisition function 
         # calculate the acquisition function value for each point in X
         # return array of shape (n_points, 1)
 
-    def _select_next_points(self, batch_size) -> np.ndarray:
-        # Implement the strategy to select the next points to evaluate
+    def _select_next_points(self, batch_size):
+        # Select the next points to evaluate
+        # Using a selection strategy to optimize the acquisition function is optional
+        # The options of the selection strategy can be None, the methods in scipy.optimize.minimize or any other strategies.
+        # show me your options and justify the final decision in the comment.
         # return array of shape (batch_size, n_dims)
+    
+    def _update_sample_points(self, new_X, new_y):
+        # Update the sample points
+        # Do not change the function signature
     
     def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
         # Main minimize optimization loop
         # func: takes array of shape (n_dims,) and returns np.float64.
-        # Do not change the function signature
         # Return a tuple (best_y, best_x)
         
         n_initial_points = <your_strategy>

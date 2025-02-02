@@ -64,6 +64,7 @@ class TurboM(Turbo1):
         min_cuda=1024,
         device="cpu",
         dtype="float64",
+        critic=None,
     ):
         self.n_trust_regions = n_trust_regions
         super().__init__(
@@ -80,6 +81,7 @@ class TurboM(Turbo1):
             min_cuda=min_cuda,
             device=device,
             dtype=dtype,
+            critic=critic,
         )
 
         self.succtol = 3
@@ -159,6 +161,9 @@ class TurboM(Turbo1):
                 print(f"TR-{i} starting from: {fbest:.4}")
                 sys.stdout.flush()
 
+        if self.critic is not None:
+            self.critic.update_after_eval(None, None, self.X, self.fX)
+
         # Thompson sample to get next suggestions
         while self.n_evals < self.max_evals:
 
@@ -206,6 +211,9 @@ class TurboM(Turbo1):
                         sys.stdout.flush()
                     self._adjust_length(fX_i, i)
 
+            if self.critic is not None:
+                self.critic.update_after_eval(self.X, self.fX, X_next, fX_next)
+
             # Update budget and append data
             self.n_evals += self.batch_size
             self.X = np.vstack((self.X, deepcopy(X_next)))
@@ -239,6 +247,9 @@ class TurboM(Turbo1):
                         n_evals, fbest = self.n_evals, fX_init.min()
                         print(f"{n_evals}) TR-{i} is restarting from: : {fbest:.4}")
                         sys.stdout.flush()
+
+                    if self.critic is not None:
+                        self.critic.update_after_eval(self.X, self.fX, X_init, fX_init)
 
                     # Append data to local history
                     self.X = np.vstack((self.X, X_init))
