@@ -6,7 +6,10 @@ import pickle
 import os
 from matplotlib import pyplot as plt
 import numpy as np
+from scipy.signal import savgol_filter 
+from scipy.ndimage import gaussian_filter1d  
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 from .population.population import Population, desc_similarity
 from .individual import Individual
 
@@ -247,20 +250,56 @@ class IndividualLogger:
 
 # Plotting
 
-def plot_result(y:np.ndarray, x:np.ndarray,
+# Moving Average Smoothing
+def moving_average(data, window_size):
+    window = np.ones(window_size) / window_size
+    if len(data.shape) == 1:
+        return np.convolve(data, window, mode='same')
+    else:
+        return np.array([np.convolve(data[i], window, mode='same') for i in range(data.shape[0])])
+
+
+# Savitzky-Golay Filter (preserves peaks)
+def savgol_smoothing(data, window_size, polyorder):
+    """
+    window_size: The length of the filter window. Must be odd.
+    polyorder: The order of the polynomial used to fit the samples. Must be less than window_size.
+    """
+    try:
+        return savgol_filter(data, window_size, polyorder)
+    except ValueError as e:
+        print(f"Savitzky-Golay error: {e}.  Ensure window_size is odd and larger than polyorder.")
+        return data  # Return original if error
+
+
+# Gaussian Smoothing (Good for general smoothing)
+def gaussian_smoothing(data, sigma):
+    """
+    sigma: The standard deviation of the Gaussian kernel.  Larger sigma = more smoothing.
+    """
+    return gaussian_filter1d(data, sigma)
+
+
+def plot_result(y:list[np.ndarray], x:list[np.ndarray],
 
                 labels:list[list[str]],
                 label_fontsize:int = 7,
 
+                filling:list[np.ndarray]=None, 
+                linewidth:float = 1.0,
+
+                colors:list[list]=None,
+                
+                y_scales:list[tuple[str, dict]]=None,
+
+                x_dot:list[np.ndarray]=None,
+
                 x_labels:list[str]=None, y_labels:list[str]=None, 
-                ignore_y = False,
 
                 sub_titles:list[str]=None,
                 sub_title_fontsize:int = 10,
 
                 baselines:np.ndarray=None, baseline_labels:list[list[str]]=None, 
-
-                y_lim_bottom:float = None, y_lim_top:float = None,
 
                 title:str = None,
                 title_fontsize:int = 12, 
@@ -271,28 +310,23 @@ def plot_result(y:np.ndarray, x:np.ndarray,
                 show:bool = True):
     
     # y.shape = (n_plots, n_lines, n_points)
-    if len(labels) != y.shape[0]:
+    if len(labels) != len(y):
         logging.warning("PLOT:Number of labels does not match the number of plots.")
     
-    if x_labels is not None and len(x_labels) != y.shape[0]:
+    if x_labels is not None and len(x_labels) != len(y):
         logging.warning("PLOT:Number of x_labels does not match the number of plots.")
     
-    if y_labels is not None and len(y_labels) != y.shape[0]:
+    if y_labels is not None and len(y_labels) != len(y):
         logging.warning("PLOT:Number of y_labels does not match the number of plots.")
 
-    if sub_titles is not None and len(sub_titles) != y.shape[0]:
+    if sub_titles is not None and len(sub_titles) != len(y):
         logging.warning("PLOT:Number of sub_titles does not match the number of plots.")
 
-    # baselines.shape = (n_plots, n_lines, 1)
-    if baselines is not None:
-        if len(baselines.shape) < 3:
-            logging.warning("PLOT:Baselines should have 3 dimensions.")
-            baselines = None
-            baseline_labels = None
-
-    
-    n_plots = y.shape[0]
-    n_rows = n_plots // n_cols
+    n_plots = len(y)
+    n_cols = min(n_cols, n_plots)
+    n_rows = n_plots // n_cols 
+    if n_plots % n_cols != 0:
+        n_rows += 1
 
     axs_ids = []
     for row in range(n_rows):
@@ -305,25 +339,48 @@ def plot_result(y:np.ndarray, x:np.ndarray,
         row = i // n_cols
         col = i % n_cols
         ax = axs[i]
+
+        _x = x[i]
+        _y = y[i]
         ax.ticklabel_format(axis='y', style='sci', scilimits=(-3,3))
-        if y_lim_bottom is not None or y_lim_top is not None:
-            offset = (y[i,:, :].max() - y[i, :, :].min()) * 0.1
-            _y_lim_bottom = y_lim_bottom if y_lim_bottom is not None else y[i, :, :].min()
-            _y_lim_top = y_lim_top if y_lim_top is not None else y[i, :, :].max()
-            ax.set_ylim(bottom=_y_lim_bottom - offset, top=_y_lim_top + offset)
+
+        if y_scales is not None and len(y_scales) > i and y_scales[i] is not None:
+            scale, scale_kwargs = y_scales[i] 
+            ax.set_yscale(scale, **scale_kwargs)
+
         _labels = labels[i] if len(labels) > i else []
-        for j in range(y.shape[1]):
+        _filling = filling[i] if filling is not None else None
+        _x_dot = x_dot[i] if x_dot is not None else None
+        _colors = colors[i] if colors is not None else None
+        for j in range(_y.shape[0]):
             label = _labels[j] if len(_labels) > j else f"{j}"
-            if not ignore_y:
-                ax.plot(x[i, j,:], y[i, j,:], label=label)
-        if baselines is not None:
+            _color = _colors[j] if _colors is not None and len(_colors) > j else None
+            ax.plot(_x, _y[j,:], label=label, linewidth=linewidth, color=_color)
+
+            if _filling is not None:
+                upper, lower = _filling[j]
+                ax.fill_between(_x, lower, upper, alpha=0.3, color=_color)
+
+            if _x_dot is not None and len(_x_dot) > j:
+                _dot_x = _x_dot[j]
+                _dot_y = _y[j][_dot_x]
+                # if _dot_y is nan, look forward
+                _step = 0
+                _len = min(10, len(_y[j]) - _dot_x)
+                while _step < _len and np.isnan(_dot_y):
+                    _dot_y = _y[j][_dot_x + _step]
+                    _step += 1
+                # get the color from the line
+                # color = ax.get_lines()[-1].get_color()
+                _dot_x = _dot_x.astype(np.float64) + np.random.uniform(-0.2, 0.2, len(_dot_x))
+                ax.scatter(_dot_x, _dot_y, facecolors='none', edgecolors=_color)
+            
+        _baseline = baselines[i] if baselines is not None else None
+        if _baseline is not None:
             _bl_labels = baseline_labels[i] if len(baseline_labels) > i else []
-            for j in range(baselines.shape[1]):
-                bl_label = _bl_labels[j] if len(_bl_labels) > j else f"bl_{j}"
-                bl_x = x[i, 0, :]
-                bl_y = baselines[i, j, :]
-                bl_y = np.repeat(bl_y, len(bl_x))
-                ax.plot(bl_x, bl_y, label=f"{bl_label}", linestyle='--')
+            for j, base in enumerate(_baseline):
+                label = _bl_labels[j] if len(_bl_labels) > j else f"{j}"
+                ax.axhline(y=base, label=label, linestyle="--", color="black", linewidth=linewidth, alpha=0.6)
 
         ax.legend(fontsize=label_fontsize)
         ax.grid(True)
@@ -350,7 +407,70 @@ def plot_result(y:np.ndarray, x:np.ndarray,
     fig.tight_layout()
 
     if show:
-        plt.show(block=True)
+        plt.show(block=False)
+
+def _plot_get_element_from_list(data, index, default=None):
+    if isinstance(data, list) and len(data) > index:
+        return data[index]
+    return default
+
+def plot_box_violin(
+    data:list[np.ndarray],
+    labels: list[list[str]], 
+    long_labels: list[str] = None,
+    sub_titles: list[str] = None,
+    x_labels: list[str] = None,
+    y_labels: list[str] = None,
+    title = "", 
+    plot_type:str = "violin",
+    n_cols:int = 1, figsize:tuple[int,int] = (10, 6), 
+    show:bool = True,
+    filename=None):
+
+    if len(labels) != len(data):
+        logging.warning("PLOT:Number of labels does not match the number of plots.")
+    if long_labels is not None and len(long_labels) != len(data):
+        logging.warning("PLOT:Number of long_labels does not match the number of plots.")
+
+    n_plots = len(data)
+    n_cols = min(n_cols, n_plots)
+    n_rows = n_plots // n_cols
+    if n_plots % n_cols != 0:
+        n_rows += 1
+
+    axs_ids = []
+    for row in range(n_rows):
+        row_ids = []
+        for col in range(n_cols):
+            row_ids.append(row * n_cols + col)
+        axs_ids.append(row_ids)
+    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize)
+
+    for i in range(n_plots):
+        row = i // n_cols
+        col = i % n_cols
+        ax = axs[i]
+
+        sub_title = sub_titles[i] if sub_titles is not None else ""
+        if plot_type == "violin":
+            ax.violinplot(data[i], showmeans=False, showmedians=True)
+        elif plot_type == "box":
+            ax.boxplot(data[i])
+        ax.set_title(sub_title)
+        ax.yaxis.grid(True)
+        _labels = _plot_get_element_from_list(labels, i, None) 
+        if _labels is not None:
+            ax.set_xticks([y + 1 for y in range(len(data[i]))], labels=_labels)
+        _x_labels = _plot_get_element_from_list(x_labels, i, "")
+        ax.set_xlabel(_x_labels)
+        _y_labels = _plot_get_element_from_list(y_labels, i, "")
+        ax.set_ylabel(_y_labels)
+    
+    fig.suptitle(title)
+    if filename:
+        plt.savefig(filename, dpi=300)
+    if show:
+        plt.show(block=False)
         
 
 from .evaluator.evaluator_result import EvaluatorResult
@@ -626,3 +746,414 @@ def plot_results(results:list[tuple[str,list[EvaluatorResult]|Population]],
                 label_fontsize=6,
                 # caption=caption,
                 **kwargs)
+
+def plot_algo_results(results:list[EvaluatorResult], **kwargs):
+    
+    def dynamical_access(obj, attr_path):
+        attrs = attr_path.split(".")
+        target = obj
+        for attr in attrs:
+            target = getattr(target, attr, None)
+            if target is None:
+                break
+        return target
+            
+    # dynamic access from EvaluatorBasicResult. None means it should be handled separately
+    column_name_map = {
+        'algorithm' : None,
+        'problem_id' : None,
+        'instance_id' : None,
+        'exec_id' : None,
+        'n_init' : 'n_initial_points',
+        'acq_exp_threshold' : 'search_result.acq_exp_threshold',
+
+        'log_y_aoc' : 'log_y_aoc',
+        'y_aoc' : 'y_aoc',
+        'y' : 'y_hist',
+        
+        'loss' : None,
+        'best_loss' : None,
+        
+        'r2' : 'r2_list',
+        'r2_on_train' : 'r2_list_on_train',
+        'uncertainty' : 'uncertainty_list',
+        'uncertainty_on_train' : 'uncertainty_list_on_train',
+        
+        'grid_coverage' : 'search_result.coverage_grid_list',   
+        'acq_grid_coverage' : 'search_result.iter_coverage_grid_list',
+        
+        'dbscan_circle_coverage' : 'search_result.coverage_dbscan_circle_list',
+        'acq_dbscan_circle_coverage' : 'search_result.iter_coverage_dbscan_circle_list',
+        
+        'dbscan_rect_coverage' : 'search_result.coverage_dbscan_rect_list',
+        'acq_dbscan_rect_coverage' : 'search_result.iter_coverage_dbscan_rect_list',
+        
+        'online_rect_coverage' : 'search_result.coverage_online_rect_list',
+        'acq_online_rect_coverage' : 'search_result.iter_coverage_online_rect_list',
+        
+        'online_circle_coverage' : 'search_result.coverage_online_circle_list',
+        'acq_online_circle_coverage' : 'search_result.iter_coverage_online_circle_list',
+        
+        'exploitation_rate' : 'search_result.k_distance_exploitation_list',
+        'acq_exploitation_rate' : 'search_result.iter_k_distance_exploitation_list',
+        
+        'acq_exploitation_score' : 'search_result.acq_exploitation_scores',
+        'acq_exploration_score' : 'search_result.acq_exploration_scores',
+        
+        'acq_exploitation_surprise' : 'search_result.acq_exploitation_surprise',
+        'acq_exploration_surprise' : 'search_result.acq_exploration_surprise',
+
+        'acq_exploitation_improvement' : 'search_result.acq_exploitation_improvement',
+        'acq_exploration_improvement' : 'search_result.acq_exploration_improvement',
+    }
+
+    def _none_to_nan(_target):
+        if isinstance(_target, list):
+            return [np.nan if ele is None else ele for ele in _target] 
+        return np.nan if _target is None else _target
+
+    def res_to_row(res, algo:str):
+            res_id = res.id
+            res_split = res_id.split("-")
+            problem_id = int(res_split[0])
+            instance_id = int(res_split[1])
+            repeat_id = int(res_split[2])
+            loss = res.y_hist - res.optimal_value
+            row = {}
+            for column_name, column_path in column_name_map.items():
+                if column_path is None:
+                    if column_name == 'algorithm':
+                        row[column_name] = algo
+                    elif column_name == 'problem_id':
+                        row[column_name] = problem_id
+                    elif column_name == 'instance_id':
+                        row[column_name] = instance_id
+                    elif column_name == 'exec_id':
+                        row[column_name] = repeat_id
+                    elif column_name == 'loss':
+                        row[column_name] = loss
+                    elif column_name == 'best_loss':
+                        row[column_name] = np.minimum.accumulate(loss)
+                else:
+                    value = dynamical_access(res, column_path)
+                    non_none_value = _none_to_nan(value)
+                    row[column_name] = non_none_value
+            return row
+
+    res_df = pd.DataFrame(columns=column_name_map.keys())
+    for result in results:
+        algo = result.name.removeprefix("BL")
+        for res in result.result:
+            row = res_to_row(res, algo)
+            res_df.loc[len(res_df)] = row
+
+    # hanle aoc
+    def _plot_aoc():
+        problem_id_list = res_df['problem_id'].unique()
+        aoc_df = res_df.groupby(['algorithm','problem_id'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
+        #(problem, data)
+        aoc_plot_data = []
+        log_plot_data = []
+        labels = []
+        short_labels = []
+        sub_titles = []
+        for problem_id in problem_id_list:
+            _temp_df = aoc_df[aoc_df['problem_id'] == problem_id].agg(list)
+            aoc_plot_data.append(_temp_df['y_aoc'].to_list())
+            log_plot_data.append(_temp_df['log_y_aoc'].to_list())
+            sub_titles.append(f"F{problem_id}")
+
+            _labels = _temp_df['algorithm'].to_list()
+            labels.append(_labels)
+            short_labels.append([label[:10] for label in _labels])
+
+        labels = short_labels
+
+        # plot aoc
+        plot_box_violin(data=aoc_plot_data, 
+                        labels=labels, 
+                        sub_titles=sub_titles, 
+                        title="AOC",
+                        plot_type="violin", 
+                        n_cols=4,
+                        figsize=(14, 8),
+                        **kwargs)
+
+        # # plot log aoc
+        # plot_box_violin(data=log_plot_data,
+        #                 labels=labels,
+        #                 sub_titles=sub_titles,
+        #                 title="Log AOC",
+        #                 plot_type="violin",
+        #                 n_cols=2,
+        #                 **kwargs) 
+    
+    _plot_aoc()
+
+    def mean_std_agg(agg_series):
+        if is_numeric_dtype(agg_series.dtype):
+            mean = np.nanmean(agg_series)
+            std = np.nanstd(agg_series)
+            return (mean, std)
+        else:  
+            agg_list = agg_series.to_list()
+            min_len = min([len(ele) for ele in agg_list])
+            # clip the list to the minimum length
+            cliped_list = [ele[:min_len] for ele in agg_list]
+            mean_list = np.nanmean(cliped_list, axis=0)
+            std_list = np.nanstd(cliped_list, axis=0)
+            return (mean_list, std_list)
+
+    def _min_accumulate(_series):
+        if isinstance(_series, tuple):
+            mean, _ = _series
+            _mean = np.minimum.accumulate(mean)
+            _std = np.full_like(_mean, 0)
+            return (_mean, _std)
+        return np.minimum.accumulate(_series)
+
+    def fill_nan_with_left(arr):
+        filled_arr = arr.copy()
+        last_valid_index = 0 
+        for i in range(len(filled_arr)):
+            index = len(arr) - i - 1
+            val = filled_arr[index]
+            if np.isnan(val):
+                pass
+            else:
+                last_valid_index = index
+                break
+                
+        last_valid = None
+        for i, val in enumerate(filled_arr):
+            if np.isnan(val):
+                if i<last_valid_index and last_valid is not None:
+                    filled_arr[i] = last_valid
+                else:
+                    filled_arr[i] = np.nan
+            else:
+                last_valid = val
+        return filled_arr
+
+    
+
+    # handle y
+    data_col_map = {
+        'n_init': '',
+        'acq_exp_threshold': '',
+
+        'loss': 'Loss',
+        'best_loss': 'Best Loss',
+
+        'r2': 'R2 on test',
+        'r2_on_train' : 'R2 on train',
+        'uncertainty' : 'Uncertainty on test',
+        'uncertainty_on_train' : 'Uncertainty on train',
+
+        'grid_coverage' : 'Grid Coverage',
+
+        # 'dbscan_circle_coverage': 'DBSCAN Circle Coverage',
+        # 'dbscan_rect_coverage': 'DBSCAN Rect Coverage',
+
+        'online_rect_coverage': 'Online Cluster Rect Coverage',
+        # 'online_circle_coverage': 'Online Circle Coverage',
+
+        'acq_grid_coverage' : 'Grid Coverage(Acq)',
+
+        # 'acq_dbscan_circle_coverage': 'DBSCAN Circle Coverage(Acq)',
+        # 'acq_dbscan_rect_coverage': 'DBSCAN Rect Coverage(Acq)',
+
+        'acq_online_rect_coverage': 'Online Cluster Rect Coverage(Acq)',
+        # 'acq_online_circle_coverage': 'Online Circle Coverage(Acq)',
+
+        'exploitation_rate': 'Exploitation Rate',
+        'acq_exploitation_rate': 'Exploitation Rate(Acq)',
+
+        'acq_exploitation_improvement': 'Exploitation Improvement(Acq)',
+        'acq_exploitation_score': 'Exploitation Score(Acq)',
+        'acq_exploitation_surprise': 'Exploitation Surprise(Acq)',
+
+        'acq_exploration_improvement': 'Exploration Improvement(Acq)',
+        'acq_exploration_score': 'Exploration Score(Acq)',
+        'acq_exploration_surprise': 'Exploration Surprise(Acq)',
+    }
+    data_cols = list(data_col_map.keys())
+    
+    # if 'loss' in data_cols:
+    #     # apply loss to min.accumulate, then create new column
+    #     # y_df['best_loss'] = y_df['loss'].apply(_min_accumulate)
+    #     res_df['best_loss'] = res_df['loss'].apply(np.minimum.accumulate)
+    #     # insert best_loss to the next of loss in data_cols
+    #     loss_index = data_cols.index('loss')
+    #     data_cols.insert(loss_index+1, 'best_loss')
+    #     data_col_map['best_loss'] = 'Best Loss'
+
+    y_df = res_df.groupby(['algorithm', 'problem_id'])[data_cols].agg(mean_std_agg).reset_index()
+
+    problem_ids = y_df['problem_id'].unique()
+    fill_cols = [
+    ]
+
+    def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
+        def _smooth_data(data):
+            if smooth_type == 'savgol':
+                return savgol_smoothing(data, window_size, polyorder)
+            elif smooth_type == 'moving':
+                return moving_average(data, window_size)
+            elif smooth_type == 'gaussian':
+                return gaussian_smoothing(data, sigma)
+        return _smooth_data
+
+    smooth_cols = {
+        # 'exploitation_rate': smooth_factory(smooth_type='moving', window_size=5),
+    }
+
+    def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
+        def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
+            _clip_len = int(data.shape[1] * upper_len_ratio)
+            _upper_bound = _bound
+            if bound_type == 'mean':
+                if inverse:
+                    _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
+                else:
+                    _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
+            elif bound_type == 'median':
+                if inverse:
+                    _upper_bound = np.nanmedian(data[:, _clip_len:])
+                else:
+                    _upper_bound = np.nanmedian(data[:, :_clip_len])
+            elif bound_type == 'fixed' and _bound is not None:
+                _upper_bound = _bound
+
+            _data = np.clip(data, 0, _upper_bound)
+            return _data, _upper_bound
+        return _clip_upper
+
+    clip_cols = {
+        'loss': clip_upper_factory(bound_type='mean'),
+    }
+
+    y_scale_cols = {
+        'loss': ('log', {}),
+        'best_loss': ('log', {}),
+    }
+
+    ignore_cols = [
+        'n_init',
+        'acq_exp_threshold',
+    ]
+
+    for problem_id in problem_ids:
+        plot_data = []
+        x_data = []
+        plot_filling = []
+        labels = []
+        x_dots = []
+        sub_titles = []
+        y_scales = []
+        colors = []
+        baselines = []
+        baseline_labels = []
+        
+        _temp_df = y_df[y_df['problem_id'] == problem_id]
+
+        prop_cycle = plt.rcParams['axes.prop_cycle']
+        _default_colors = prop_cycle.by_key()['color']
+
+        for col in data_cols:
+            if col in ignore_cols:
+                continue
+
+            data = _temp_df[col].to_list()
+            # remove empty data if len(data) == 0 or all nan
+            empty_indexs = [i for i, ele in enumerate(data) if ele[0].size == 0 or np.all(np.isnan(ele[0]))]
+            data = [ele for i, ele in enumerate(data) if i not in empty_indexs]
+
+            if len(data) == 0:
+                continue
+            
+            # fill short data and replace nan with the left
+            max_len = max([len(ele[0]) for ele in data])
+            for i, ele in enumerate(data):
+                if len(ele[0]) < max_len:
+                    fill_len = max_len - len(ele[0])
+                    data[i] = (np.append(ele[0], [np.nan] * fill_len), np.append(ele[1], [np.nan] * fill_len))
+                data[i] = (fill_nan_with_left(data[i][0]), fill_nan_with_left(data[i][1]))
+
+            mean_array = np.array([ele[0] for ele in data])
+            std_array = np.array([ele[1] for ele in data])
+
+            # clip if needed
+            if col in clip_cols:
+                mean_array, _upper_bound = clip_cols[col](mean_array)
+                std_array = np.where(mean_array == _upper_bound, 0, std_array)
+
+            # smooth if needed
+            if col in smooth_cols:
+                mean_array = smooth_cols[col](mean_array)
+            
+            plot_data.append(mean_array)
+            x_data.append(np.arange(mean_array.shape[1]))
+            
+            # fill the area between mean - std and mean + std
+            if col not in fill_cols:
+                upper_bound = mean_array + std_array
+                lower_bound = mean_array - std_array
+                plot_filling.append(list(zip(lower_bound, upper_bound)))
+            else:
+                plot_filling.append(None)
+
+            if 'exploitation_rate' in col:
+                exp_threshold = _temp_df['acq_exp_threshold'].to_list()
+                mean_exp = [ele[0] for ele in exp_threshold]
+                _bl = np.nanmean(mean_exp)
+                baselines.append([_bl])
+                baseline_labels.append(["Threshold"])
+            else:
+                baselines.append(None)
+                baseline_labels.append(None)
+
+            # handle n_init
+            n_init_data = _temp_df['n_init'].to_list()
+            _x_dots = []
+            for n_init in n_init_data:
+                if n_init[0] > 0:
+                    _x_dots.append(np.array([n_init[0]], dtype=int))
+                else:
+                    _x_dots.append(np.array([], dtype=int))
+            # remove empty data
+            _x_dots = [ele for i, ele in enumerate(_x_dots) if i not in empty_indexs]
+            x_dots.append(_x_dots)
+
+            _labels = _temp_df['algorithm'].to_list()
+            _colors = _default_colors[:len(_labels)]
+            _labels = [ele for i, ele in enumerate(_labels) if i not in empty_indexs]
+            _labels = [label[:10] for label in _labels]
+            _colors = [color for i, color in enumerate(_colors) if i not in empty_indexs]
+            labels.append(_labels)
+            colors.append(_colors)
+
+            sub_titles.append(data_col_map.get(col, col))
+
+            if col in y_scale_cols:
+                y_scales.append(y_scale_cols[col])
+            else:
+                y_scales.append(None)
+
+        plot_result(
+            y=plot_data, x=x_data, 
+            y_scales=y_scales,
+            baselines=baselines,
+            baseline_labels=baseline_labels,
+            colors=colors,
+            labels=labels, 
+            label_fontsize=6,
+            linewidth=1.0,
+            filling=plot_filling,
+            x_dot=x_dots,
+            n_cols=5,
+            sub_titles=sub_titles,
+            title=f"F{problem_id}",
+            figsize=(15, 9),
+            **kwargs
+        ) 

@@ -227,13 +227,15 @@ class <AlgorithmName>:
         # X has shape (n_points, n_dims), y has shape (n_points, 1)
         self.X: np.ndarray = None
         self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = <your_strategy>
 
         # Do not add any other arguments without a default value
 
     def _sample_points(self, n_points):
         # sample points
         # return array of shape (n_points, n_dims)
-    
+
     def _fit_model(self, X, y):
         # Fit and tune surrogate model 
         # return the model
@@ -252,7 +254,7 @@ class <AlgorithmName>:
         # return array of shape (batch_size, n_dims)
     
     def _update_sample_points(self, new_X, new_y):
-        # Update the sample points
+        # Update self.X and self.y
         # Do not change the function signature
     
     def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
@@ -260,12 +262,13 @@ class <AlgorithmName>:
         # func: takes array of shape (n_dims,) and returns np.float64.
         # Return a tuple (best_y, best_x)
         
-        n_initial_points = <your_strategy>
-        rest_of_budget = budget - n_initial_points
-        while rest_of_budget > 0:
-           # Optimization
-           
-           rest_of_budget -= <the number of func being called in this iteration>
+        self.n_evals += self.n_init
+        self._update_sample_points()
+        while self.n_evals < budget:
+            # Optimization
+
+            self.n_evals += <the number of func being called in this iteration>
+            self._update_sample_points()
         return best_y, best_x
 
     # Code Implementation only contain the algorithm class. No usage examples"

@@ -108,9 +108,9 @@ def inject_critic_func(cls_instance, init_kwargs, call_kwargs) -> any:
         dim = init_kwargs.get("dim", 1)
         func = call_kwargs.get("func", None)
         bounds = func.bounds if func is not None else None
-        critic = AlgorithmCritic(dim=dim, bounds=bounds)
+        critic = AlgorithmCritic(dim=dim, bounds=bounds, optimal_value=func.optimal_value, critic_y_range=400)
         critic.update_test_y(func)
-        critic.convergae_result.init_grid(bounds=bounds, dim=dim, budget=func.budget)
+        critic.search_result.init_grid(bounds=bounds, dim=dim, budget=func.budget)
 
         cls_instance._injected_critic = critic
 

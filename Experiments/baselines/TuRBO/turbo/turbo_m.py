@@ -162,7 +162,7 @@ class TurboM(Turbo1):
                 sys.stdout.flush()
 
         if self.critic is not None:
-            self.critic.update_after_eval(None, None, self.X, self.fX)
+            self.critic.update_after_eval(None, None, self.X, self.fX, self.n_evals)
 
         # Thompson sample to get next suggestions
         while self.n_evals < self.max_evals:
@@ -188,6 +188,9 @@ class TurboM(Turbo1):
                     X, fX, length=self.length[i], n_training_steps=n_training_steps, hypers=self.hypers[i]
                 )
 
+            if self.critic is not None:
+                self.critic.update_after_model_fit_with_temp(self.n_evals)
+
             # Select the next candidates
             X_next, idx_next = self._select_candidates(X_cand, y_cand)
             assert X_next.min() >= 0.0 and X_next.max() <= 1.0
@@ -212,7 +215,7 @@ class TurboM(Turbo1):
                     self._adjust_length(fX_i, i)
 
             if self.critic is not None:
-                self.critic.update_after_eval(self.X, self.fX, X_next, fX_next)
+                self.critic.update_after_eval(self.X, self.fX, X_next, fX_next, self.n_evals)
 
             # Update budget and append data
             self.n_evals += self.batch_size
@@ -249,7 +252,7 @@ class TurboM(Turbo1):
                         sys.stdout.flush()
 
                     if self.critic is not None:
-                        self.critic.update_after_eval(self.X, self.fX, X_init, fX_init)
+                        self.critic.update_after_eval(self.X, self.fX, X_init, fX_init, self.n_evals)
 
                     # Append data to local history
                     self.X = np.vstack((self.X, X_init))

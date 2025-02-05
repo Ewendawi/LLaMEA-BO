@@ -22,12 +22,16 @@ class EnsembleLocalSearchBOv1:
         self.best_y = float('inf')
         self.best_x = None
         self.local_search_radius = 0.5
-        self.func_eval_count = 0
+        self.n_evals = 0
+        self.n_init = 0
 
     def _sample_points(self, n_points: int) -> np.ndarray:
         sampler = qmc.LatinHypercube(d=self.dim)
         sample = sampler.random(n_points)
         return qmc.scale(sample, self.bounds[0], self.bounds[1])
+    
+    def _get_model(self):
+        return self.models
 
     def _fit_model(self, X: np.ndarray, y: np.ndarray):
         self.scaler_X.fit(X)
@@ -72,9 +76,9 @@ class EnsembleLocalSearchBOv1:
         bounds = Bounds(self.bounds[0], self.bounds[1])
         
         def obj_func(x):
-           if self.func_eval_count >= self.budget:
+           if self.n_evals >= self.budget:
              raise Exception("Overbudget")
-           self.func_eval_count += 1
+           self.n_evals += 1
            return func(x)
 
         res = minimize(obj_func, x_start, method='L-BFGS-B', bounds = bounds, options={'maxiter': 10})
@@ -97,19 +101,29 @@ class EnsembleLocalSearchBOv1:
                 acq_values[best_idx] = -np.inf
             return candidates[selected_indices]
 
+    def _update_sample_points(self, new_X: np.ndarray, new_y: np.ndarray):
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.concatenate((self.X, new_X), axis=0)
+            self.y = np.concatenate((self.y, new_y), axis=0)
+
     def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:
         n_initial_points = min(2 * self.dim, self.budget // 2)
-        self.X = self._sample_points(n_initial_points)
-        self.y = np.array([func(x) for x in self.X]).reshape(-1, 1)
-        self.func_eval_count += n_initial_points
+        X = self._sample_points(n_initial_points)
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += n_initial_points
+        self.n_init = n_initial_points
+        self._update_sample_points(X, y)
         
         for i, y_val in enumerate(self.y):
             if y_val < self.best_y:
                 self.best_y = y_val
                 self.best_x = self.X[i]
                 
-        rest_of_budget = self.budget - n_initial_points
-        while rest_of_budget > 0:
+        while self.n_evals < self.budget:
+            rest_of_budget = self.budget - self.n_evals 
             self._fit_model(self.X, self.y)
             
             if self.X.shape[0] < 10:
@@ -143,10 +157,8 @@ class EnsembleLocalSearchBOv1:
                   break
                 
             next_y = np.array(next_y).reshape(-1,1)
-            self.X = np.concatenate((self.X, next_points), axis=0)
-            self.y = np.concatenate((self.y, next_y), axis=0)
+            self._update_sample_points(next_points, next_y)
 
-            rest_of_budget -= batch_size
-            if self.func_eval_count >= self.budget:
+            if self.n_evals >= self.budget:
               break
         return self.best_y, self.best_x

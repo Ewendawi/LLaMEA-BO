@@ -1,41 +1,31 @@
 from llamea.evaluator.ioh_evaluator import IOHEvaluator
 from llamea.individual import Individual
-
-# from Experiments.test_cands.AdvancedDropWaveBO import AdvancedDropWaveBO
-# r = RandomBoTorchTestEvaluator.evaluate_from_cls(AdvancedDropWaveBO)
+from llamea.utils import plot_results, plot_algo_results
 
 from Experiments.test_cands.DeepEnsembleQMCBO import DeepEnsembleQMCBO
-# r = RandomBoTorchTestEvaluator.evaluate_from_cls(DeepEnsembleQMCBO)
-# r = None
-
-# from Experiments.test_cands.RobustGPBO import RobustGPBO
-# r = RandomBoTorchTestEvaluator.evaluate_from_cls(RobustGPBO)
-
 from Experiments.test_cands.TuRBO import TuRBO
-# r = IOHEvaluator.evaluate_from_cls(TuRBO, budget=200, eval_others=False)
-
 from Experiments.test_cands.AdaptiveBatchTrustRegionBOv2 import AdaptiveBatchTrustRegionBOv2
-# r = IOHEvaluator.evaluate_from_cls(AdaptiveBatchTrustRegionBOv2, budget=200, eval_others=False)
-
 from Experiments.test_cands.GPHybridAdaptiveBatchBOv2 import GPHybridAdaptiveBatchBOv2
-# r = IOHEvaluator.evaluate_from_cls(GPHybridAdaptiveBatchBOv2, budget=100, eval_others=False)
-
-from Experiments.baselines.bo_baseline import BLRandomSearch, BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO
-# problems = [7]
-# r = IOHEvaluator.evaluate_from_cls(BLTuRBO1, budget=100, eval_others=False, problems=problems)
-
+from Experiments.baselines.bo_baseline import BLRandomSearch, BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO, BLSKOpt
 from Experiments.test_cands.EnsembleLocalSearchBOv1 import EnsembleLocalSearchBOv1
-# r = IOHEvaluator.evaluate_from_cls(EnsembleLocalSearchBOv1, budget=100, eval_others=False)
-
 from Experiments.test_cands.TrustRegionAdaptiveBOv1 import TrustRegionAdaptiveBOv1
-r = IOHEvaluator.evaluate_from_cls(TrustRegionAdaptiveBOv1, budget=100, eval_others=False, dim=5)
-
-
 from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
-# r = IOHEvaluator.evaluate_from_cls(EnsembleDeepKernelAdaptiveTSLocalSearchARDv1, budget=100, eval_others=False)
+problems = [7]
+budget = 100
+repeat = 2
 
-print(r[0])
-# for _r in r[1]:
-#     print(_r)
+cls_list = [
+    BLRandomSearch,
+    BLRBFKernelVanillaBO, 
+    BLTuRBO1, 
+    # BLTuRBOM,
+    # EnsembleLocalSearchBOv1, 
+    # BLSKOpt,
+    TrustRegionAdaptiveBOv1,
+    # EnsembleDeepKernelAdaptiveTSLocalSearchARDv1,
+]
+
+res = IOHEvaluator.evaluate_from_cls(cls_list, budget=budget, problems=problems, repeat=repeat)
+plot_algo_results(results=res)
 
 pass

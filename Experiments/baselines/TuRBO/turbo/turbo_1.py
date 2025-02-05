@@ -213,7 +213,7 @@ class Turbo1:
         # We may have to move the GP to a new device
         gp = gp.to(dtype=dtype, device=device)
         if self.critic is not None:
-            self.critic.update_after_model_fit(gp, X)
+            self.critic.update_after_model_fit_temp(gp, X, fX)
 
         # We use Lanczos for sampling if we have enough data
         with torch.no_grad(), gpytorch.settings.max_cholesky_size(self.max_cholesky_size):
@@ -260,7 +260,7 @@ class Turbo1:
             self._fX = deepcopy(fX_init)
 
             if self.critic is not None:
-                self.critic.update_after_eval(None, None, X_init, fX_init)
+                self.critic.update_after_eval(None, None, X_init, fX_init, self.n_evals)
 
             # Append data to the global history
             self.X = np.vstack((self.X, deepcopy(X_init)))
@@ -285,6 +285,9 @@ class Turbo1:
                 )
                 X_next = self._select_candidates(X_cand, y_cand)
 
+                if self.critic is not None:
+                    self.critic.update_after_model_fit_with_temp(self.n_evals)
+
                 # Undo the warping
                 X_next = from_unit_cube(X_next, self.lb, self.ub)
 
@@ -305,7 +308,7 @@ class Turbo1:
                     sys.stdout.flush()
 
                 if self.critic is not None:
-                    self.critic.update_after_eval(self.X, self.fX, X_next, fX_next)
+                    self.critic.update_after_eval(self.X, self.fX, X_next, fX_next, self.n_evals)
 
                 # Append data to the global history
                 self.X = np.vstack((self.X, deepcopy(X_next)))

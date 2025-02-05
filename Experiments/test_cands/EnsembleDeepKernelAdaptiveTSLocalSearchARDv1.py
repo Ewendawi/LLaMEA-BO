@@ -12,6 +12,7 @@ class EnsembleDeepKernelAdaptiveTSLocalSearchARDv1:
         self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
         self.X: np.ndarray = None
         self.y: np.ndarray = None
+        self.n_init = 0
         self.device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
         self.initial_points_multiplier = 5
@@ -23,7 +24,7 @@ class EnsembleDeepKernelAdaptiveTSLocalSearchARDv1:
         self.feature_dim = 32
         self.best_y = float('inf')
         self.previous_best_y = float('inf')
-        self.func_evals = 0
+        self.n_evals = 0
         self.models = []
         self.likelihoods = []
         self.num_ensemble = 3  
@@ -124,9 +125,9 @@ class EnsembleDeepKernelAdaptiveTSLocalSearchARDv1:
     def _local_search(self, func, x0):
         
         def obj_func(x):
-            if self.func_evals >= self.budget:
+            if self.n_evals >= self.budget:
               raise Exception("Budget Exceeded")
-            self.func_evals += 1
+            self.n_evals += 1
             return func(x)
         
         bounds = [(self.bounds[0][i], self.bounds[1][i]) for i in range(self.dim)]
@@ -159,40 +160,48 @@ class EnsembleDeepKernelAdaptiveTSLocalSearchARDv1:
         self.exploration_weight = max(0.1, min(0.9, self.exploration_weight))
         self.exploitation_weight = max(0.1, min(0.9, self.exploitation_weight))
 
+    def _update_sample_points(self, new_X, new_y):
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.concatenate((self.X, new_X), axis=0)
+            self.y = np.concatenate((self.y, new_y), axis=0)
+
 
     def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:
         n_initial_points = self.dim * self.initial_points_multiplier
-        self.X = self._sample_points(n_initial_points)
-        self.y = np.array([func(x) for x in self.X]).reshape(-1, 1)
-        self.func_evals += n_initial_points
-        
+        X = self._sample_points(n_initial_points)
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += n_initial_points
+        self.n_init = n_initial_points
+        self._update_sample_points(X, y)
+
         best_idx = np.argmin(self.y)
         self.best_y = self.y[best_idx].item()
         best_x = self.X[best_idx]
         self.previous_best_y = self.best_y
 
-        rest_of_budget = self.budget - n_initial_points
-        while rest_of_budget > 0:
+        while self.n_evals < self.budget:
             models, likelihoods = self._fit_model(self.X, self.y)
-            
+
+            rest_of_budget = self.budget - n_initial_points
             batch_size = min(self.max_batch_size, self.min_batch_size + int(rest_of_budget / self.budget * (self.max_batch_size - self.min_batch_size)))
             next_points = self._select_next_points(models, likelihoods, self.best_y, batch_size)
-            
+
             next_y = []
             for x in next_points:
-              if self.func_evals >= self.budget:
+              if self.n_evals >= self.budget:
                   break
               next_y.append(func(x))
-              self.func_evals += 1
+              self.n_evals += 1
             next_y = np.array(next_y).reshape(-1,1)
-            
+
             if next_y.size == 0:
                 break
 
+            self._update_sample_points(next_points[:next_y.size], next_y)
 
-            self.X = np.concatenate((self.X, next_points[:next_y.size]), axis=0)
-            self.y = np.concatenate((self.y, next_y), axis=0)
-            
             current_best_idx = np.argmin(self.y)
             if self.y[current_best_idx].item() < self.best_y:
                 self.best_y = self.y[current_best_idx].item()
@@ -208,6 +217,5 @@ class EnsembleDeepKernelAdaptiveTSLocalSearchARDv1:
                   break
             
             self._update_weights()
-            rest_of_budget -= batch_size
-            
+
         return self.best_y, best_x

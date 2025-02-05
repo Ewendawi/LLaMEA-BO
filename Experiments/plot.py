@@ -1,7 +1,10 @@
+import pickle
 from llamea.utils import IndividualLogger
 from llamea.population.es_population import ESPopulation
+from llamea.evaluator.evaluator_result import EvaluatorResult
+from llamea.utils import plot_results, plot_algo_results
 
-def plot():
+def plot_search():
     # file_paths = [
     #     # ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0121222958.pkl", "bo"),
     #     ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0124195614.pkl", "es-1+1"),
@@ -98,6 +101,27 @@ def plot():
 
     # plot_results(results=strategy_list, other_results=None)
 
+def plot_algo():
+    file_paths = [
+        # 'Experiments/algo_eval_res/BLRandomSearch_0204000207.pkl',
+        'Experiments/algo_eval_res/BLRBFKernelVanillaBO_0203233324.pkl',
+        'Experiments/algo_eval_res/BLScaledKernelVanillaBO_0203233605.pkl',
+        # 'Experiments/algo_eval_res/BLSKOpt_0203233116.pkl',
+        # 'Experiments/algo_eval_res/BLTuRBO1_0203233632.pkl',
+        'Experiments/algo_eval_res/BLTuRBOM_0203233722.pkl',
+        # 'Experiments/algo_eval_res/EnsembleDeepKernelAdaptiveTSLocalSearchARDv1_0203233745.pkl',
+        # 'Experiments/algo_eval_res/EnsembleLocalSearchBOv1_0203233730.pkl',
+    ]
+
+    results = []
+    for file_path in file_paths:
+        with open(file_path, "rb") as f:
+            res = pickle.load(f)
+            results.append(res)
+
+    plot_algo_results(results=results)
     
+
 if __name__ == "__main__":
-    plot()
+    # plot_search()
+    plot_algo()

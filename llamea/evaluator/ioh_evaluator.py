@@ -47,8 +47,8 @@ class IOHObjectiveFn:
             self.progress_bar = None
 
     def stateless_call(self, x):
-        y = self.obj_fn(x)
-        self.obj_fn.reset()
+        new_obj_fn = get_problem(self.problem_id, self.instance_id, self.dim)
+        y = new_obj_fn(x)
         return y
 
     @property
@@ -244,23 +244,28 @@ class IOHEvaluator(AbstractEvaluator):
 
         if eval_basic_result.error is None:
             # best_y, best_x = res
-            y_hist = obj_fn.y_hist
-            x_hist = obj_fn.x_hist
-
-            eval_basic_result.y_aoc_from_ioh = obj_fn.aoc
+            y_hist = obj_fn.y_hist if len(obj_fn.y_hist) <= self.budget else obj_fn.y_hist[:self.budget] 
+            x_hist = obj_fn.x_hist if len(obj_fn.x_hist) <= self.budget else obj_fn.x_hist[:self.budget]
 
             eval_basic_result.name = obj_fn.name
             eval_basic_result.bounds = obj_fn.bounds
             eval_basic_result.optimal_value = obj_fn.optimal_value
             eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
             eval_basic_result.x_hist = x_hist
-            eval_basic_result.update_stats()
-            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8, max_y=1e2)
 
             if critic is not None:
+                eval_basic_result.n_initial_points = critic.n_init
                 eval_basic_result.r2_list = critic.r_2_list
+                eval_basic_result.r2_list_on_train = critic.r_2_list_on_train
                 eval_basic_result.uncertainty_list = critic.uncertainty_list
-                eval_basic_result.coverage_result = critic.convergae_result
+                eval_basic_result.uncertainty_list_on_train = critic.uncertainty_list_on_train
+                eval_basic_result.search_result = critic.search_result
+                eval_basic_result.update_coverage()
+                eval_basic_result.fill_short_data(obj_fn.budget)
+
+            eval_basic_result.y_aoc_from_ioh = obj_fn.aoc
+            eval_basic_result.update_stats()
+            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8, max_y=1e2)
 
         return eval_basic_result
 
@@ -347,14 +352,15 @@ class IOHEvaluator(AbstractEvaluator):
         return eval_result
 
     @classmethod
-    def evaluate_from_cls(cls, bo_cls, problems:list[int]=None, dim:int = 5, budget:int = 40, eval_others:bool=False):
-        evaluator = cls(dim=dim, budget=budget, problems=problems)
-        evaluator.ignore_over_budget = True
-        cls_call_kwargs = {
-            "capture_output": False,
-        }
-        res = evaluator.evaluate("code", bo_cls.__name__, cls=bo_cls, cls_call_kwargs=cls_call_kwargs)
-        other_results = None
-        if eval_others:
-            other_results = evaluator.evaluate_others()
-        return res, other_results
+    def evaluate_from_cls(cls, bo_cls_list:list, problems:list[int]=None, dim:int = 5, budget:int = 40, repeat:int=1, instances:list[list[int]]=None) -> list[EvaluatorResult]:
+        res_list = []
+        for bo_cls in bo_cls_list:
+            evaluator = cls(dim=dim, budget=budget, problems=problems, repeat=repeat, instances=instances)
+            evaluator.ignore_over_budget = True
+            evaluator.inject_critic = True
+            cls_call_kwargs = {
+                "capture_output": False,
+            }
+            res = evaluator.evaluate("code", bo_cls.__name__, cls=bo_cls, cls_call_kwargs=cls_call_kwargs)
+            res_list.append(res)
+        return res_list

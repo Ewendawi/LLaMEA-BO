@@ -16,7 +16,7 @@ class TrustRegionAdaptiveBOv1:
         self.X: np.ndarray = None
         self.y: np.ndarray = None
         self.gp = None
-        self.initial_points_count = min(20 * self.dim, self.budget // 2)
+        self.n_init = min(20 * self.dim, self.budget // 2)
         self.batch_size = 1
         self.min_batch_size = 1
         self.max_batch_size = 10
@@ -127,9 +127,9 @@ class TrustRegionAdaptiveBOv1:
 
     def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
         
-        initial_X = self._sample_points(self.initial_points_count)
+        initial_X = self._sample_points(self.n_init)
         initial_y = np.array([func(x) for x in initial_X]).reshape(-1, 1)
-        self.n_evals += self.initial_points_count
+        self.n_evals += self.n_init
         
         self._update_sample_points(initial_X, initial_y)
         
