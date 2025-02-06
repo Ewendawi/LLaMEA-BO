@@ -286,7 +286,7 @@ class <AlgorithmName>:
         for i in range(5):
             grouped_aocs.append([])
         for res in eval_res.result:
-            aoc = res.y_aoc_from_ioh
+            aoc = res.log_y_aoc
             aocs.append(aoc)
 
             res_id = res.id

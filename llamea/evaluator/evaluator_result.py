@@ -299,10 +299,10 @@ class EvaluatorSearchResult:
         self.optimal_value = None
         self.acq_exp_threshold = 0.5
         self.acq_exploitation_scores = []
-        self.acq_exploitation_surprise = []
+        self.acq_exploitation_validity = []
         self.acq_exploitation_improvement = []
         self.acq_exploration_scores = []
-        self.acq_exploration_surprise = []
+        self.acq_exploration_validity = []
         self.acq_exploration_improvement = []
         
     
@@ -327,8 +327,8 @@ class EvaluatorSearchResult:
 
         self.acq_exploitation_scores = _fill_nan(self.acq_exploitation_scores, length)
         self.acq_exploration_scores = _fill_nan(self.acq_exploration_scores, length)
-        self.acq_exploitation_surprise = _fill_nan(self.acq_exploitation_surprise, length)
-        self.acq_exploration_surprise = _fill_nan(self.acq_exploration_surprise, length)
+        self.acq_exploitation_validity = _fill_nan(self.acq_exploitation_validity, length)
+        self.acq_exploration_validity = _fill_nan(self.acq_exploration_validity, length)
 
     def init_grid(self, budget, dim, bounds):
         self.soft_n_grid = budget * 2
@@ -583,6 +583,8 @@ class EvaluatorSearchResult:
             score = np.clip(score, -1, 1)
             # scale rate from [acq_exp_threshold, 1] to [0, 1]
             _rate = _scale_linear(exp_rate, self.acq_exp_threshold, 1, 0, 1)
+            _validity_score = _scale_linear(score, -1, 1, 0, 1)
+            validity = _validity_score * _rate
         else:
             improvement = best_fx - _fx
             base = self.y_range
@@ -590,11 +592,10 @@ class EvaluatorSearchResult:
             score = np.clip(score, -1, 1)
             # scale rate from [0, acq_exp_threshold] to [0, 1]
             _rate = _scale_linear(exp_rate, 0, self.acq_exp_threshold, 0, 1)
+            _validity_score = _scale_linear(score, -1, 1, 0, 1)
+            validity = _validity_score * (1-_rate)
 
-        _surprise_score = _scale_linear(score, -1, 1, 0, 1)
-        surprise = _surprise_score * (1-_rate)
-
-        return score, surprise, improvement
+        return score, validity, improvement
         
     def update_next_acq_score(self, fX, next_fX, n_evals):
         if self.y_range is None or self.optimal_value is None:
@@ -613,13 +614,13 @@ class EvaluatorSearchResult:
             if index < len(self.iter_k_distance_exploitation_list):
                 exp_rate = self.iter_k_distance_exploitation_list[index]
             if exp_rate is not None:
-                score, surprise, improvement = self._calculate_acq_score(_fx, best_fx, exp_rate, self.optimal_value)
+                score, validity, improvement = self._calculate_acq_score(_fx, best_fx, exp_rate, self.optimal_value)
                 if exp_rate >= self.acq_exp_threshold:
-                    exploitation_metrics.append((score, surprise, improvement))
+                    exploitation_metrics.append((score, validity, improvement))
                     exploration_metrics.append((np.nan, np.nan, np.nan))
                 else:
                     exploitation_metrics.append((np.nan, np.nan, np.nan))
-                    exploration_metrics.append((score, surprise, improvement))
+                    exploration_metrics.append((score, validity, improvement))
             else:
                 exploitation_metrics.append((np.nan, np.nan, np.nan))
                 exploration_metrics.append((np.nan, np.nan, np.nan))
@@ -627,19 +628,19 @@ class EvaluatorSearchResult:
         n_fill = n_evals - len(self.acq_exploitation_scores) - len(next_fX)
         self.acq_exploitation_scores.extend([np.nan] * n_fill)
         self.acq_exploration_scores.extend([np.nan] * n_fill)
-        self.acq_exploitation_surprise.extend([np.nan] * n_fill)
-        self.acq_exploration_surprise.extend([np.nan] * n_fill)
+        self.acq_exploitation_validity.extend([np.nan] * n_fill)
+        self.acq_exploration_validity.extend([np.nan] * n_fill)
         self.acq_exploitation_improvement.extend([np.nan] * n_fill)
         self.acq_exploration_improvement.extend([np.nan] * n_fill)
 
-        for score, surprise, improvement in exploitation_metrics:
+        for score, validity, improvement in exploitation_metrics:
             self.acq_exploitation_scores.append(score)
-            self.acq_exploitation_surprise.append(surprise)
+            self.acq_exploitation_validity.append(validity)
             self.acq_exploitation_improvement.append(improvement)
         
-        for score, surprise, improvement in exploration_metrics:
+        for score, validity, improvement in exploration_metrics:
             self.acq_exploration_scores.append(score)
-            self.acq_exploration_surprise.append(surprise)
+            self.acq_exploration_validity.append(validity)
             self.acq_exploration_improvement.append(improvement)
 
 

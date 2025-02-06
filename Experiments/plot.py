@@ -1,4 +1,5 @@
 import pickle
+import os
 from llamea.utils import IndividualLogger
 from llamea.population.es_population import ESPopulation
 from llamea.evaluator.evaluator_result import EvaluatorResult
@@ -101,17 +102,27 @@ def plot_search():
 
     # plot_results(results=strategy_list, other_results=None)
 
-def plot_algo():
-    file_paths = [
-        # 'Experiments/algo_eval_res/BLRandomSearch_0204000207.pkl',
-        'Experiments/algo_eval_res/BLRBFKernelVanillaBO_0203233324.pkl',
-        'Experiments/algo_eval_res/BLScaledKernelVanillaBO_0203233605.pkl',
-        # 'Experiments/algo_eval_res/BLSKOpt_0203233116.pkl',
-        # 'Experiments/algo_eval_res/BLTuRBO1_0203233632.pkl',
-        'Experiments/algo_eval_res/BLTuRBOM_0203233722.pkl',
-        # 'Experiments/algo_eval_res/EnsembleDeepKernelAdaptiveTSLocalSearchARDv1_0203233745.pkl',
-        # 'Experiments/algo_eval_res/EnsembleLocalSearchBOv1_0203233730.pkl',
-    ]
+def plot_algo(file_paths=None, dir_path=None):
+    if file_paths is None or len(file_paths) == 0: 
+        if dir_path is None:
+            file_paths = [
+                # 'Experiments/algo_eval_res/BLRandomSearch_0204000207.pkl',
+                'Experiments/algo_eval_res/BLRBFKernelVanillaBO_0203233324.pkl',
+                'Experiments/algo_eval_res/BLScaledKernelVanillaBO_0203233605.pkl',
+                # 'Experiments/algo_eval_res/BLSKOpt_0203233116.pkl',
+                # 'Experiments/algo_eval_res/BLTuRBO1_0203233632.pkl',
+                'Experiments/algo_eval_res/BLTuRBOM_0203233722.pkl',
+                # 'Experiments/algo_eval_res/EnsembleDeepKernelAdaptiveTSLocalSearchARDv1_0203233745.pkl',
+                # 'Experiments/algo_eval_res/EnsembleLocalSearchBOv1_0203233730.pkl',
+            ]
+        else:
+            file_paths = []
+            if not os.path.isdir(dir_path):
+                raise ValueError(f"Invalid directory path: {dir_path}")
+            for file in os.listdir(dir_path):
+                if file.endswith(".pkl"):
+                    file_paths.append(os.path.join(dir_path, file))
+    
 
     results = []
     for file_path in file_paths:
@@ -124,4 +135,13 @@ def plot_algo():
 
 if __name__ == "__main__":
     # plot_search()
-    plot_algo()
+
+    file_paths = [
+        'Experiments/baselines/vanilla_bo_res3.pkl'
+    ] 
+
+    dir_path = 'Experiments/pop_temp/ESPopulation_1+1_0206072505'
+
+    plot_algo(file_paths=file_paths, dir_path=dir_path)
+
+    pass

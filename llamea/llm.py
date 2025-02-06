@@ -92,6 +92,8 @@ LLMS = {
     "gemini-1.5-flash": ('gemini-1.5-flash', GEMINI_API_KEY, GEMINI_BASE_URL, 5),
     "gemini-2.0-flash-exp": ('gemini-2.0-flash-exp', GEMINI_API_KEY, GEMINI_BASE_URL, 10),
     'gemini-exp-1206': ('gemini-exp-1206', GEMINI_API_KEY, GEMINI_BASE_URL, 5),
+    'gemini-2.0-pro' : ('gemini-2.0-pro-exp-02-05', GEMINI_API_KEY, GEMINI_BASE_URL, 5),
+    'gemini-2.0-flash-thinking': ('gemini-2.0-flash-thinking-exp-01-21', GEMINI_API_KEY, GEMINI_BASE_URL, 5),
 
     'deepseek/deepseek-chat': ('deepseek/deepseek-chat', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 2),
     'o_gemini-flash-1.5-8b-exp': ('google/gemini-flash-1.5-8b-exp', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5),

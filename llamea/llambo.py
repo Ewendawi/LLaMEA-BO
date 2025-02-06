@@ -45,9 +45,6 @@ class LLaMBO:
         if session_messages is None:
             return response_handler
 
-        logging.debug("Session Messages:")
-        logging.debug("\n%s\n%s", session_messages[0]["content"], session_messages[1]["content"])
-
         logging.info("Querying the model")
         for i_try in range(retry):
             response = llm.chat(session_messages)
@@ -87,8 +84,6 @@ class LLaMBO:
                     logging.info("replaced 'cuda' with '%s'", gpu_name)
 
         res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name, max_eval_workers=n_eval_workers, timeout=timeout)
-
-        logging.debug("Evaluation Result: %s", res)
 
         response_handler.eval_result = res
 

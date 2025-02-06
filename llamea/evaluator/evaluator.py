@@ -14,10 +14,6 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def is_maximization(self) -> bool:
-        pass
-
-    @abstractmethod
     def problem_name(self) -> str:
         pass
 

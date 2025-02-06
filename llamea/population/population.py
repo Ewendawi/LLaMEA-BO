@@ -97,6 +97,11 @@ class Population(ABC):
             with open(code_path, 'w', encoding='utf-8') as f:
                 f.write(code)
 
+            res = handler.eval_result
+            res_path = f'{self.save_dir}/{generation}-{index}_{name}.pkl'
+            with open(res_path, 'wb') as f:
+                pickle.dump(res, f)
+
             prompt = handler.sys_prompt + '\n\n' + handler.prompt
             prompt_path = f'{self.save_dir}/{generation}-{index}_{name}_prompt.md'
             with open(prompt_path, 'w', encoding='utf-8') as f:

@@ -22,6 +22,7 @@ class IOHObjectiveFn:
         self.exec_id = exec_id
         self.dim = dim
         self.budget = budget
+        self.maximize = False
 
         self.obj_fn = get_problem(problem_id, instance_id, dim)
         self.optimal_value = self.obj_fn.optimum.y
@@ -49,6 +50,8 @@ class IOHObjectiveFn:
     def stateless_call(self, x):
         new_obj_fn = get_problem(self.problem_id, self.instance_id, self.dim)
         y = new_obj_fn(x)
+        if self.maximize:
+            y = -y
         return y
 
     @property
@@ -101,12 +104,15 @@ class IOHObjectiveFn:
                 if progress % interval == 0:
                     msg = f"{self.name}-{self.instance_id}-{self.exec_id}:{progress}/{self.budget} evaluations completed"
                     logging.debug(msg)
+        
+        if self.maximize:
+            y = -y
 
         if isinstance(y, list):
             return np.array(y).reshape(-1,1)
         return y
 
-def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ingore_over_budget:bool=False, inject_critic:bool=False): 
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ingore_over_budget:bool=False, inject_critic:bool=False) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]: 
 
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
     obj_fn.ignore_over_budget = ingore_over_budget
@@ -206,9 +212,6 @@ class IOHEvaluator(AbstractEvaluator):
         problem_name = "bbob_" + "_".join([f"f{problem}" for problem in self.problems])
         self._problem_name = problem_name
 
-    def is_maximization(self) -> bool:
-        return True
-
     def problem_dim(self) -> int:
         return self.dim
 
@@ -288,7 +291,7 @@ class IOHEvaluator(AbstractEvaluator):
                 "ingore_over_budget": self.ignore_over_budget,
                 "inject_critic": self.inject_critic,
                 "cls_init_kwargs": cls_init_kwargs,
-                "cls_call_kwargs": cls_call_kwargs
+                "cls_call_kwargs": cls_call_kwargs,
             }
             new_param.update(param)
             params.append(new_param)

@@ -6,10 +6,12 @@ import torch
 import numpy as np
 from llamea import LLaMBO
 from llamea.llm import LLMmanager, LLMS
-from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator
+from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator
 from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
 from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
+from llamea.utils import plot_results, plot_algo_results
+from llamea.individual import Individual
 
 
 def get_IOHEvaluator_for_evol():
@@ -28,14 +30,25 @@ def get_IOHEvaluator_for_final_eval():
     instances = [[4, 5, 6]] * len(problems)
     repeat = 5
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
+    evaluator.inject_critic = True
+    return evaluator
+
+def get_IOHEvaluator_for_light_evol():
+    budget = 100
+    dim = 5
+    problems = [2, 8, 12, 18, 21]
+    instances = [[1]] * len(problems)
+    repeat = 3
+    evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
+    evaluator.inject_critic = True
     return evaluator
 
 def get_IOHEvaluator_for_test():
     budget = 100
     dim = 5
-    problems = [2, 8]
+    problems = [2]
     instances = [[1]] * len(problems)
-    repeat = 2
+    repeat = 1
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
     evaluator.inject_critic = True
     return evaluator
@@ -45,6 +58,8 @@ def get_bo_prompt_generator():
     prompt_generator.is_bo = True
     return prompt_generator
 
+
+# Evaluate Algorithms
     
 def baseline_algo_eval_param(dim, budget):
     bl_init_params = {
@@ -59,7 +74,8 @@ def baseline_algo_eval_param(dim, budget):
     return bl_init_params
 
 def _run_algrothim_eval_exp(code, cls_name, algo_cls, is_bl=False, **kwargs):
-    evaluator = get_IOHEvaluator_for_final_eval()
+    # evaluator = get_IOHEvaluator_for_final_eval()
+    evaluator = get_IOHEvaluator_for_test()
     logging.info("Start evaluating %s on %s", cls_name, evaluator)
 
     ignore_over_budget = kwargs.pop("ignore_over_budget", False)
@@ -99,19 +115,25 @@ def run_ind_eval_exp(individual, **kwargs):
     _run_algrothim_eval_exp(handler.code, handler.code_name, None, is_bl=False, **kwargs)
 
 def run_all_algo_eval_exp(**kwargs):
-    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO, BLRandomSearch
-    # run_algo_eval_exp(BLRandomSearch, is_bl=True, **kwargs)
-    # run_algo_eval_exp(BLRBFKernelVanillaBO, is_bl=True, **kwargs)
-    # run_algo_eval_exp(BLScaledKernelVanillaBO, is_bl=True, **kwargs) 
-    # run_algo_eval_exp(BLTuRBO1, is_bl=True, ignore_over_budget=True, **kwargs)
-    # run_algo_eval_exp(BLTuRBOM, is_bl=True, ignore_over_budget=True, **kwargs)  
-
-
+    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO, BLRandomSearch, BLSKOpt
     from Experiments.test_cands.EnsembleLocalSearchBOv1 import EnsembleLocalSearchBOv1
     from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
-    # run_algo_eval_exp(EnsembleLocalSearchBOv1, is_bl=False, **kwargs)
+    from Experiments.test_cands.QMCBOv1 import GP_Matern_EI_MSL_SobolBOv1
+
+    run_algo_eval_exp(BLRandomSearch, is_bl=True, **kwargs)
+    run_algo_eval_exp(BLSKOpt, is_bl=True, **kwargs)
+    run_algo_eval_exp(BLRBFKernelVanillaBO, is_bl=True, **kwargs)
+    run_algo_eval_exp(BLScaledKernelVanillaBO, is_bl=True, **kwargs)
+    run_algo_eval_exp(BLTuRBO1, is_bl=True, ignore_over_budget=True, **kwargs)
+    run_algo_eval_exp(BLTuRBOM, is_bl=True, ignore_over_budget=True, **kwargs)
+
+    run_algo_eval_exp(EnsembleLocalSearchBOv1, is_bl=False, **kwargs)
     run_algo_eval_exp(EnsembleDeepKernelAdaptiveTSLocalSearchARDv1, is_bl=False, **kwargs)
 
+    # run_algo_eval_exp(GP_Matern_EI_MSL_SobolBOv1, is_bl=False, **kwargs)
+
+
+# EA Experiments
 def _run_exp(prompt_generator:PromptGenerator, 
             evaluator:AbstractEvaluator, 
             llm:LLMmanager,
@@ -142,6 +164,60 @@ def _run_exp(prompt_generator:PromptGenerator,
 
     population.save()
 
+def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=False, test_eval=False): 
+    code = ""
+    with open(file_path, "r") as f:
+        code = f.read()
+
+    tuner = TunerPromptGenerator()
+    tuner_evaluator = get_IOHEvaluator_for_light_evol()
+    if test_eval:
+        tuner_evaluator = get_IOHEvaluator_for_test()
+
+    params["prompt_generator"] = tuner
+    params["evaluator"] = tuner_evaluator
+
+    if should_eval:
+        cls_init_kwargs = {
+            'dim': 5,
+            'budget': 100,
+        }
+        cls_init_kwargs['dim'] = params.get("dim", 5)
+        cls_init_kwargs['budget'] = params.get("budget", 100)
+        res = tuner_evaluator.evaluate(code=code, cls_name=cls_name, cls=None, cls_init_kwargs=cls_init_kwargs)
+
+        # save res
+        with open(res_path, "wb") as f:
+            pickle.dump(res, f)
+
+    with open(res_path, "rb") as f:
+        res = pickle.load(f)
+
+    logging.info("Results: %s", res) 
+
+    if plot:
+        plot_algo_results([res])
+    
+    population = ESPopulation(n_parent=1, n_parent_per_offspring=1, n_offspring=1)
+    population.name = "1+1"
+    population.debug_save_on_the_fly = True
+
+    ind = Individual()
+    handler = tuner.get_response_handler()
+    handler.eval_result = res
+    handler.code = code
+    handler.code_name = cls_name
+
+    Population.set_handler_to_individual(ind, handler)
+    ind.name = cls_name
+    ind.fitness = res.score
+    population.add_individual(ind, generation=0)
+    population.select_next_generation()
+    
+    _run_exp(
+        population=population,
+        **params
+    )
 
 
 def run_mu_plus_lambda_exp(
@@ -179,7 +255,6 @@ def run_mu_plus_lambda_diversity_exp(
         **kwargs
     )
 
-
 def run_island_exp(
         n_parent:int=2,
         n_offspring:int=1,
@@ -210,20 +285,18 @@ def run_island_exp(
     )
 
 
-
-
-
 def get_llm():
     # MODEL = LLMS["deepseek/deepseek-chat"]
-    MODEL = LLMS["gemini-2.0-flash-exp"]
+    # MODEL = LLMS["gemini-2.0-flash-exp"]
     # MODEL = LLMS["gemini-1.5-flash"]
-    # MODEL = LLMS["gemini-exp-1206"]
+    # MODEL = LLMS["gemini-2.0-pro"]
+    # MODEL = LLMS["gemini-2.0-flash-thinking"]
+    MODEL = LLMS["gemini-exp-1206"]
     # MODEL = LLMS["llama-3.1-70b-versatile"]
     # MODEL = LLMS["llama-3.3-70b-versatile"]
     # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
     # MODEL = LLMS["o_gemini-2.0-flash-exp"]
 
-    
     def mock_res_provider(*args, **kwargs):
         file_list = [
             "Experiments/bbob_test_res/successful_heavy_res.md",
@@ -232,20 +305,28 @@ def get_llm():
             "Experiments/bbob_test_res/fail_excute_res.md",
             "Experiments/bbob_test_res/fail_overbudget_res.md",
         ]
-        file_path = np.random.choice(file_list, size=1, p=[0.0, 0.0, 1.0, 0.0, 0.0])[0]
-        file_path = "Experiments/bbob_test_res/successful_bl.md"
+        file_path = np.random.choice(file_list, size=1, p=[0.0, 1.0, 0.0, 0.0, 0.0])[0]
+        # file_path = "Experiments/bbob_test_res/successful_bl.md"
+        file_path = 'Experiments/pop_temp/ESPopulation_1+1_0206070531/1-2_RobustBOv1.md'
         response = None
-        with open(file_path, "r") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             response = f.read()
         return response
 
     llm = LLMmanager(api_key=MODEL[1], model=MODEL[0], base_url=MODEL[2], max_interval=MODEL[3])
 
-
-    llm.mock_res_provider = mock_res_provider
+    # llm.mock_res_provider = mock_res_provider
 
     return llm
 
+def tune_vanilla_bo(params):
+    file_path = "Experiments/baselines/vanilla_bo.py"
+    cls_name = "VanillaBO"
+    res_path = "Experiments/baselines/vanilla_bo_res3.pkl"
+    should_eval = False
+    plot = False
+    test_eval = False
+    tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval)
 
 if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
@@ -256,9 +337,11 @@ if __name__ == "__main__":
         "time_out_per_eval": None,
 
         "llm": get_llm(),
+
         "prompt_generator": get_bo_prompt_generator(),
+
         "n_generations": 200,
-        "n_population": 10,
+        "n_population": 7,
         "n_query_threads": 0,
         "n_eval_workers": 0,
 
@@ -266,11 +349,12 @@ if __name__ == "__main__":
         "gpu_name": None,
 
         "max_interval": 5,
-
         
-        "evaluator": get_IOHEvaluator_for_evol(),
-        # "evaluator": get_IOHEvaluator_for_test(),
+        # "evaluator": get_IOHEvaluator_for_evol(),
+        "evaluator": get_IOHEvaluator_for_test(),
     }
+
+    tune_vanilla_bo(params)
 
     # run_1_plus_1_exp(**params)
 
@@ -292,4 +376,4 @@ if __name__ == "__main__":
     #     **params)
 
     
-    run_all_algo_eval_exp()
+    # run_all_algo_eval_exp()

@@ -2,3 +2,4 @@ from .abstract_prompt_generator import PromptGenerator, GenerationTask, Response
 from .bo_zero_prompt_generator import BoZeroPromptGenerator, BoZeroResponseHandler
 from .bo_zeroplus_prompt_generator import BoZeroPlusPromptGenerator, BoZeroPlusResponseHandler, ZeroPlusBOPromptSharedboard
 from .bl_prompt_generator import BaselinePromptGenerator, BaselineResponseHandler
+from .bo_tuner_prompt_generator import TunerPromptGenerator, TunerResponseHandler

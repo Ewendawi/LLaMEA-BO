@@ -88,6 +88,7 @@ class AlgorithmCritic:
         self.test_y = func.stateless_call(self.test_x)
 
     def update_after_eval(self, x, y, next_x, next_y, n_evals):
+        # inverse the y to treat the problem as minimization
         if self.maximize:
             y = -y if y is not None else None
             next_y = -next_y if next_y is not None else None
@@ -196,7 +197,8 @@ class AlgorithmCritic:
                 with torch.no_grad(), gpytorch.settings.fast_pred_var():
                     x = torch.tensor(x, dtype=torch.float32)
                     posterior = model.likelihood(model(x))
-                    _uncertainty = posterior.variance.cpu().numpy()
+                    _variance = posterior.variance.cpu().numpy()
+                    _uncertainty = np.sqrt(_variance)
             elif isinstance(model, sklearn.gaussian_process.GaussianProcessRegressor):
                 _, _uncertainty = model.predict(x, return_std=True)
             mean_uncertainty = np.mean(_uncertainty)

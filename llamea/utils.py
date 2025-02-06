@@ -801,8 +801,8 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
         'acq_exploitation_score' : 'search_result.acq_exploitation_scores',
         'acq_exploration_score' : 'search_result.acq_exploration_scores',
         
-        'acq_exploitation_surprise' : 'search_result.acq_exploitation_surprise',
-        'acq_exploration_surprise' : 'search_result.acq_exploration_surprise',
+        'acq_exploitation_validity' : 'search_result.acq_exploitation_validity',
+        'acq_exploration_validity' : 'search_result.acq_exploration_validity',
 
         'acq_exploitation_improvement' : 'search_result.acq_exploitation_improvement',
         'acq_exploration_improvement' : 'search_result.acq_exploration_improvement',
@@ -959,7 +959,7 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
         'online_rect_coverage': 'Online Cluster Rect Coverage',
         # 'online_circle_coverage': 'Online Circle Coverage',
 
-        'acq_grid_coverage' : 'Grid Coverage(Acq)',
+        'acq_grid_coverage' : 'Acq Grid Coverage',
 
         # 'acq_dbscan_circle_coverage': 'DBSCAN Circle Coverage(Acq)',
         # 'acq_dbscan_rect_coverage': 'DBSCAN Rect Coverage(Acq)',
@@ -968,15 +968,15 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
         # 'acq_online_circle_coverage': 'Online Circle Coverage(Acq)',
 
         'exploitation_rate': 'Exploitation Rate',
-        'acq_exploitation_rate': 'Exploitation Rate(Acq)',
+        'acq_exploitation_rate': 'Acq Exploitation Rate(er)',
 
-        'acq_exploitation_improvement': 'Exploitation Improvement(Acq)',
-        'acq_exploitation_score': 'Exploitation Score(Acq)',
-        'acq_exploitation_surprise': 'Exploitation Surprise(Acq)',
+        'acq_exploitation_improvement': 'Exploitation Improvement: $current-best$',
+        'acq_exploitation_score': 'Exploitation Score: $improve/(best-optimum)$',
+        'acq_exploitation_validity': 'Exploitation Validity: $score*er$',
 
-        'acq_exploration_improvement': 'Exploration Improvement(Acq)',
-        'acq_exploration_score': 'Exploration Score(Acq)',
-        'acq_exploration_surprise': 'Exploration Surprise(Acq)',
+        'acq_exploration_improvement': 'Exploration Improvement: $current-best$',
+        'acq_exploration_score': 'Exploration Score: $improve/fixed\_base$',
+        'acq_exploration_validity': 'Exploration Validity: $score*(1-er)$',
     }
     data_cols = list(data_col_map.keys())
     
@@ -1104,7 +1104,7 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
             else:
                 plot_filling.append(None)
 
-            if 'exploitation_rate' in col:
+            if 'acq_exploitation_rate' in col:
                 exp_threshold = _temp_df['acq_exp_threshold'].to_list()
                 mean_exp = [ele[0] for ele in exp_threshold]
                 _bl = np.nanmean(mean_exp)
@@ -1154,6 +1154,7 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
             x_dot=x_dots,
             n_cols=5,
             sub_titles=sub_titles,
+            sub_title_fontsize=9,
             title=f"F{problem_id}",
             figsize=(15, 9),
             **kwargs

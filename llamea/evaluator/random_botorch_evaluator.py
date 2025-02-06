@@ -101,9 +101,6 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         except Exception:
             pass
 
-    def is_maximization(self) -> bool:
-        return False
-
     def problem_dim(self) -> int:
         return self.dim
 

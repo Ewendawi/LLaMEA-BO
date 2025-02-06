@@ -126,15 +126,32 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
     if call_kwargs is None:
         call_kwargs = {}
 
-    critic = None
-    if cls is not None:
-        # helper for debugging
+    def _inject_critic_and_init(cls, init_kwargs, call_kwargs, code=None):
         if inject_critic:
             inject_critic_cls(cls)
             cls_instance = cls(**init_kwargs)
             critic = inject_critic_func(cls_instance, init_kwargs, call_kwargs)
+
+            if code is None:
+                try:
+                    code = inspect.getsource(cls)
+                except:
+                    pass
+            if 'botorch' in code:
+                critic.maximize = True
+                obj_fn = call_kwargs.get("func", None)
+                if obj_fn is not None and hasattr(obj_fn, "maximize"):
+                    obj_fn.maximize = True
         else:
             cls_instance = cls(**init_kwargs)
+            critic = None
+        return cls_instance, critic
+
+    critic = None
+    if cls is not None:
+        # helper for debugging
+        cls_instance, critic = _inject_critic_and_init(cls, init_kwargs, call_kwargs, code)
+
         should_capture_output = call_kwargs.pop("capture_output", True) 
         if should_capture_output:
             with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
@@ -142,8 +159,6 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
         else:
             res = cls_instance(**call_kwargs)
     else:
-        if inject_critic:
-            code = __inject_critic_code(code)
         try:
             namespace: dict[str, Any] = {}
             track_exec(code, cls_name, namespace)
@@ -152,11 +167,9 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
                 err = NameError(f"No '{cls_name}' found in the generated code")
             else:
                 with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
-                    bo_cls = namespace[cls_name]
-                    bo = bo_cls(**init_kwargs)
-                    if inject_critic:
-                        critic = inject_critic_func(bo, init_kwargs, call_kwargs)
-                    res = bo(**call_kwargs)
+                    _cls = namespace[cls_name]
+                    cls_instance, critic = _inject_critic_and_init(_cls, init_kwargs, call_kwargs, code)
+                    res = cls_instance(**call_kwargs)
         except Exception as e:
             formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
             err = e.__class__(formatted_traceback)

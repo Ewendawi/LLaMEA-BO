@@ -16,11 +16,18 @@ class ResponseHandler(ABC):
     """Abstract base class for response handler."""
 
     def __init__(self):
+        self.sys_prompt = ""
+        self.prompt = ""
+        self.raw_response = ""
+        self.llm_model = ""
+
         self.code = ""
         self.code_name = ""
-        self.raw_response = ""
+
+        self.feedback = ""
         self.error = None
         self.error_type = None
+
         self._eval_result:EvaluatorResult = None
 
     @property
