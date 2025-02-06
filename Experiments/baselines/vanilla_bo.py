@@ -1,8 +1,9 @@
 from collections.abc import Callable
 import numpy as np
 import torch
+from scipy.stats import qmc
 from botorch.models import SingleTaskGP
-from botorch.acquisition import qLogNoisyExpectedImprovement 
+from botorch.acquisition import qLogNoisyExpectedImprovement, qLogExpectedImprovement, qUpperConfidenceBound, LogExpectedImprovement 
 from botorch.optim.optimize import optimize_acqf
 from botorch.fit import fit_gpytorch_mll, fit_gpytorch_mll_torch 
 from botorch.sampling import SobolQMCNormalSampler
@@ -15,9 +16,77 @@ from gpytorch.priors import LogNormalPrior, GammaPrior
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
+class VanillaUCB:
+    def __init__(self, 
+                    adaptive_beta: str = 'ei',
+                    initial_ucb_beta: float = 2.0,
+                    min_beta: float = 0.1,
+                    max_beta: float = 2.0,
+                    beta_momentum: float = 0.7,
+                    beta_decay_rate: float = 0.9,
+                    device: str = "cpu",
+                ):
+        self.device = device
+
+        # adaptive_beta: None, ei, linear, exponential
+        self.adaptive_beta = adaptive_beta
+        
+        self.initial_ucb_beta = initial_ucb_beta
+        self.ucb_beta = self.initial_ucb_beta
+        self.min_beta = min_beta
+        self.max_beta = max_beta
+
+        # Initialize moving average of EI/std ratio
+        self.ei_std_ratio_avg = 0.0  
+        self.beta_momentum = beta_momentum
+
+        self.beta_decay_rate = beta_decay_rate
+
+        self._acqf = None
+
+    def update_acqf(self, model, sampler, y_hist, X_hist, n_evals, budget):
+        if self.adaptive_beta == 'ei':
+            # Calculate EI for beta adjustment
+            EI = LogExpectedImprovement(model, best_f=y_hist.max())
+            with torch.no_grad():
+                ei_values = EI(X_hist.unsqueeze(1))  # Add a dimension for batch evaluation
+
+            # Get posterior at current points
+            posterior = model.posterior(X_hist)
+            mean = posterior.mean
+            std = posterior.mvn.stddev
+
+            # Calculate the ratio of EI to uncertainty (std)
+            ei_std_ratio = (ei_values.squeeze() / (std + 1e-9)).clamp(0, 20)  # Clamp to avoid extreme values
+
+            # Update moving average of EI/std ratio with momentum
+            self.ei_std_ratio_avg = self.beta_momentum * self.ei_std_ratio_avg + (1 - self.beta_momentum) * ei_std_ratio.mean().item()
+
+            # Adjust beta based on the EI/std ratio using a sigmoid function
+            sigmoid_scale = (1 - n_evals / budget)  # Scale sigmoid with remaining budget
+            self.ucb_beta = self.min_beta + (2.0 - self.min_beta) * (1 / (1 + np.exp(-self.ei_std_ratio_avg * sigmoid_scale)))
+        elif self.adaptive_beta == "linear": 
+            # linear decay:
+            scale = 1 - n_evals / budget
+            self.ucb_beta = self.initial_ucb_beta - (self.initial_ucb_beta - self.min_beta) * scale
+        elif self.adaptive_beta == "exponential":
+            # exponential decay 
+            self.ucb_beta = self.initial_ucb_beta * (self.beta_decay_rate ** (n_evals / budget))
+        
+        self.ucb_beta = np.clip(self.ucb_beta, self.min_beta, self.max_beta)
+
+        self._acqf = qUpperConfidenceBound(
+            model=model,
+            beta=self.ucb_beta, 
+            sampler=sampler,
+        )
+        return self
+    
+    def __call__(self, x):
+        return self._acqf(x)
 
 class VanillaBO:
-    def __init__(self, budget: int, dim: int, bounds: np.ndarray = None, n_init: int = None, seed: int = None, device: str = "cpu", surrogate_model: str = "RBFKernel"):
+    def __init__(self, budget: int, dim: int, bounds: np.ndarray = None, n_init: int = None, seed: int = None, device: str = "cpu", surrogate_model: str = "RBFKernel", acqf_name: str = "log_ei", init_sampler: str = "lhs"):
         self.budget = budget
         self.dim = dim
         self.bounds = bounds
@@ -25,12 +94,23 @@ class VanillaBO:
             self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
         self.n_init = n_init
         if n_init is None:
-            self.n_init = dim + 1
+            self.n_init = dim * 5
         self.seed = seed
         self.device = device
-        self.surrogate_model = surrogate_model
-        self.X = None  
-        self.y = None  
+        # self.surrogate_model = surrogate_model
+        # self.acqf_name = acqf_name
+        # self.init_sampler = init_sampler
+
+        # fixed hyperparameters.
+        self.surrogate_model = 'RBFKernel'
+        self.acqf_name = 'ucb'
+        self.init_sampler = 'sobol'
+
+        self.X = None 
+        self.y = None 
+        self.n_evals = 0
+
+        self._acqf = None
 
         if seed is not None:
             np.random.seed(seed)
@@ -39,8 +119,27 @@ class VanillaBO:
                 torch.cuda.manual_seed(seed)
 
     def _sample_points(self, n_points: int) -> torch.Tensor:
-        samples = draw_sobol_samples(bounds=torch.tensor(self.bounds, dtype=torch.float64, device=self.device),
-                                     n=n_points, q=1).squeeze(1)
+        if self.init_sampler == "sobol":
+            # samples = draw_sobol_samples(bounds=torch.tensor(self.bounds, dtype=torch.float64, device=self.device), n=n_points, q=1).squeeze(1)
+            sampler = qmc.Sobol(d=self.dim, scramble=True)
+            samples = sampler.random(n_points)
+            samples = qmc.scale(samples, self.bounds[0], self.bounds[1])
+            samples = torch.tensor(samples, dtype=torch.float64, device=self.device)
+            return samples
+        elif self.init_sampler == "lhs":
+            sampler = qmc.LatinHypercube(d=self.dim)
+            sample = sampler.random(n_points)
+            samples = qmc.scale(sample, self.bounds[0], self.bounds[1])
+            samples = torch.tensor(samples, dtype=torch.float64, device=self.device)
+        elif self.init_sampler == "halton":
+            sampler = qmc.Halton(d=self.dim)
+            samples = sampler.random(n_points)
+            samples = qmc.scale(samples, self.bounds[0], self.bounds[1])
+            samples = torch.tensor(samples, dtype=torch.float64, device=self.device) 
+        elif self.init_sampler == "uniform":
+            samples = torch.rand(n_points, self.dim, device=self.device) * (self.bounds[1] - self.bounds[0]) + self.bounds[0]
+        elif self.init_sampler == "normal":
+            samples = torch.randn(n_points, self.dim, device=self.device) * (self.bounds[1] - self.bounds[0]) + self.bounds[0]
         return samples
 
     def _fit_model(self, X: torch.Tensor, y: torch.Tensor) -> SingleTaskGP:
@@ -50,26 +149,26 @@ class VanillaBO:
         # Configure the surrogate model based on the user's choice
         if self.surrogate_model == "RBFKernel":
             likelihood = GaussianLikelihood(
-                noise_prior=LogNormalPrior(0.0, 1.0),
+                noise_prior=LogNormalPrior(-2.0, 0.5),
                 noise_constraint=GreaterThan(1e-4)
             ).to(self.device)
             covar_module = RBFKernel(
                 ard_num_dims=self.dim,
-                lengthscale_prior=LogNormalPrior(0.0, 1.0),
+                lengthscale_prior=LogNormalPrior(1.0, 1.0),
                 lengthscale_constraint=GreaterThan(1e-4)
             ).to(self.device)
             model = SingleTaskGP(train_X, train_y, covar_module=covar_module, 
                                  input_transform=Normalize(self.dim), outcome_transform=Standardize(1),
                                  likelihood=likelihood).to(self.device)
-            model.likelihood.noise_covar.initialize(noise=1e-4)
+            model.likelihood.noise_covar.initialize(noise=1e-3)
 
         elif self.surrogate_model == "ScaleKernel":
             likelihood = GaussianLikelihood(
-                noise_prior=LogNormalPrior(0.0, 1.0),
+                noise_prior=LogNormalPrior(-2.0, 0.5),
                 noise_constraint=GreaterThan(1e-4)
             ).to(self.device)
             base_kernel = RBFKernel(
-                lengthscale_prior=LogNormalPrior(0.0, 1.0),
+                lengthscale_prior=LogNormalPrior(1.0, 1.0),
                 lengthscale_constraint=GreaterThan(1e-4)
             ).to(self.device)
             covar_module = ScaleKernel(
@@ -80,32 +179,66 @@ class VanillaBO:
             model = SingleTaskGP(train_X, train_y, covar_module=covar_module,   
                                  input_transform=Normalize(self.dim), outcome_transform=Standardize(1),
                                  likelihood=likelihood).to(self.device)
-            model.likelihood.noise_covar.initialize(noise=1e-4)
+            model.likelihood.noise_covar.initialize(noise=1e-3)
 
         else:
             raise ValueError(f"Unknown surrogate model: {self.surrogate_model}")
 
         mll = ExactMarginalLogLikelihood(model.likelihood, model).to(self.device)
-        fit_gpytorch_mll_torch(
-            mll,
-            step_limit=100,
-        )
-        # fit_gpytorch_mll(
+        # fit_gpytorch_mll_torch(
         #     mll,
+        #     step_limit=100,
         # )
+        fit_gpytorch_mll(
+            mll,
+        )
         return model
 
     def _select_next_points(self, model, batch_size: int) -> torch.Tensor:
         bounds = torch.tensor(self.bounds, dtype=torch.float64, device=self.device)
+        sampler = SobolQMCNormalSampler(sample_shape=torch.Size([512]), seed=self.seed)
+
+        if self.acqf_name == "log_noisy_ei":
+            acqf_constructor = qLogNoisyExpectedImprovement
+            acqf_kwargs = {
+                "model": model,
+                "X_baseline": torch.unique(self.X.clone(), dim=0),
+                "sampler": sampler,
+                "prune_baseline": True,
+            }
+        elif self.acqf_name == "log_ei":
+            acqf_constructor = qLogExpectedImprovement
+            acqf_kwargs = {
+                "model": model,
+                "best_f": self.y.max(),
+                "sampler": sampler,
+            }
+        elif self.acqf_name == "ucb": 
+            if self._acqf is None:
+                self._acqf = VanillaUCB(adaptive_beta='ei', initial_ucb_beta=2.0, min_beta=0.1, max_beta=2.0, beta_momentum=0.7, beta_decay_rate=0.9, device=self.device)
+            acqf_constructor = self._acqf.update_acqf
+            acqf_kwargs = {
+                "model": model,
+                "sampler": sampler,
+                "y_hist": self.y,
+                "X_hist": self.X,
+                "n_evals": self.n_evals,
+                "budget": self.budget,
+            }
+        else:
+            raise ValueError(f"Unknown acquisition function: {self.acqf_name}")
+
         try:
+            # options include 2 parts 
+            # gen initalizer: gen_batch_initial_conditions(default)
+            # generator: gen_candidates_scipy(default)
+
+            # Dynamic local search range
+            remaining_budget_ratio = max(0.1, 1 - self.n_evals / self.budget)  
+            dynamic_sigma = 0.1 + 0.1 * remaining_budget_ratio
+            
             candidate, _ = optimize_acqf(
-                acq_function=qLogNoisyExpectedImprovement(
-                    model=model,
-                    # X_baseline=self.X.clone(),
-                    X_baseline = torch.unique(self.X.clone(), dim=0),
-                    # sampler=SobolQMCNormalSampler(sample_shape=torch.Size([128])).to(self.device),
-                    prune_baseline=True,
-                ),
+                acq_function=acqf_constructor(**acqf_kwargs),
                 bounds=bounds,
                 q=batch_size,
                 num_restarts=10,
@@ -113,8 +246,9 @@ class VanillaBO:
                 options={
                     "nonnegative": False,
                     "sample_around_best": True,
-                    "sample_around_best_sigma": 0.1,
-                    "maxiter": 20,
+                    "sample_around_best_sigma": 0.2,
+
+                    "maxiter": 100,
                     "batch_limit": 64,
                     # "disp": True, # Verbose output
                 }
@@ -134,27 +268,25 @@ class VanillaBO:
     def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:
         n_initial_points = min(self.n_init, self.budget)
         X = self._sample_points(n_initial_points)
-        y = torch.tensor([func(x) for x in X.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
+        y = torch.tensor([-func(x) for x in X.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
+        self.n_evals = n_initial_points
         self._update_sample_points(X, y)
-
-        rest_of_budget = self.budget - n_initial_points
         best_y = self.y.min()
         best_x = self.X[self.y.argmin()]
 
-        while rest_of_budget > 0:
-            batch_size = min(4, rest_of_budget)
+        while self.n_evals < self.budget:
+            batch_size = min(4, self.budget - self.n_evals)
             model = self._fit_model(self.X, self.y)
 
             # Select the next points to evaluate
             next_points = self._select_next_points(model, batch_size)
-            next_evaluations = torch.tensor([func(x) for x in next_points.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
-
-            self._update_sample_points(next_points, next_evaluations)
+            next_evaluations = torch.tensor([-func(x) for x in next_points.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
 
             if next_evaluations.min() < best_y:
                 best_y = next_evaluations.min()
                 best_x = next_points[next_evaluations.argmin()]
 
-            rest_of_budget -= batch_size
+            self.n_evals += batch_size
+            self._update_sample_points(next_points, next_evaluations)
 
         return best_y.cpu().numpy().item(), best_x.cpu().numpy().flatten()
