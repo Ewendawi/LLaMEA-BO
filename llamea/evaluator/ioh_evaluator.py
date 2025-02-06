@@ -347,7 +347,7 @@ class IOHEvaluator(AbstractEvaluator):
             eval_result.score = np.mean([r.log_y_aoc for r in eval_result.result])
             logging.info("Evaluated %s: %s", cls_name, eval_result.score)
         else:                           
-            eval_result.score = 0.0
+            eval_result.score = 0.00
 
         return eval_result
 

@@ -46,8 +46,13 @@ class ESPopulation(Population):
         if generation >= len(self.generations):
             while len(self.generations) <= generation:
                 self.generations.append([])
+        individual.generation = generation
         self.individuals[individual.id] = individual
         self.generations[generation].append(individual.id)
+
+        if self.debug_save_on_the_fly:
+            self.save_on_the_fly(individual=individual, generation=generation) 
+       
 
     def remove_individual(self, individual):
         if individual.id in self.individuals:

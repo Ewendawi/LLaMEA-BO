@@ -13,7 +13,7 @@ from .population.population import Population, PopulationQueryItem
 from .individual import Individual
 from .llm import LLMmanager
 from .prompt_generators import PromptGenerator, GenerationTask, ResponseHandler
-from .utils import IndividualLogger, NoCodeException 
+from .utils import IndividualLogger, NoCodeException, plot_results, plot_algo_results
 from .evaluator import EvaluatorResult, AbstractEvaluator
 
 class LLaMBO:
@@ -62,14 +62,17 @@ class LLaMBO:
                     logging.error("Retrying: %s/%s", i_try + 1, retry)
                 else:
                     break
+        
+        response_handler.sys_prompt = session_messages[0]["content"]
+        response_handler.prompt = session_messages[1]["content"]
+        response_handler.llm_model = llm.model_name()
 
         if not response_handler.code or not response_handler.code_name:
             err = NoCodeException("ExtractionError: No code extracted from the model.")
             response_handler.error = str(err)
             response_handler.error_type = err.__class__.__name__
 
-        # logging.debug("Response:\n%s\n", response)
-        logging.info("Response:\n%s\n", response)
+        response_handler.raw_response = response
 
         if response_handler.error:
             return response_handler
@@ -119,8 +122,8 @@ class LLaMBO:
         evolved_sharedbroad = prompt_generator.get_prompt_sharedbroad()
 
         last_query_time = 0
-        current_generation = 0
-        current_population = 0
+        current_generation = population.get_current_generation()
+        current_population = population.get_population_size()
         while current_population < n_population and current_generation < n_generation:
             logging.info("""======Start Generation %s with %s Population=======""", current_generation, current_population)
             
@@ -195,7 +198,6 @@ class LLaMBO:
                 ind.solution = handler.code
                 ind.name = handler.code_name
                 ind.parent_id = parent_ids
-                ind.generation = current_generation
                 Population.set_handler_to_individual(ind, handler)
                 if handler.error:
                     ind.error = str(handler.error)
@@ -205,15 +207,8 @@ class LLaMBO:
                     ind.fitness = handler.eval_result.score
                     ind.feedback = prompt_generator.evaluation_feedback_prompt(handler.eval_result, next_other_results)
 
-                ind.add_metadata("problem", evaluator.problem_name())
-                ind.add_metadata('dimension', evaluator.problem_dim())
-                ind.add_metadata("role_setting", role_setting)
-                ind.add_metadata("prompt", prompt)
-                ind.add_metadata("model", llm.model_name())
                 tags = ind.metadata["tags"] if "tags" in ind.metadata else []
                 tags.append(f"gen:{current_generation}")
-                tags.append(f"task:{current_task.name}")
-                tags.append(f"dim:{evaluator.problem_dim()}")
                 ind.add_metadata("tags", tags)
 
                 logging.info(ind.get_summary())

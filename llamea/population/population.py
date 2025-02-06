@@ -26,6 +26,9 @@ class Population(ABC):
         self.get_parent_strategy:Callable[[list[Individual], int, int], list[PopulationQueryItem]] = None 
         self.selection_strategy:Callable[[list[Individual], list[Individual], int], list[Individual]] = None
 
+        self.debug_save_on_the_fly = False
+        self.save_dir = None
+
     @abstractmethod
     def get_population_size(self):
         pass
@@ -74,16 +77,47 @@ class Population(ABC):
             return individual.metadata["res_handler"] if "res_handler" in individual.metadata else None
         return None
 
+    def _safe_file_name(self, name):
+        return name.replace(" ", "").replace(":", "_").replace("/", "_")
+
+    def save_on_the_fly(self, individual: Individual, generation: int):
+        if self.debug_save_on_the_fly:
+            if self.save_dir is None:
+                time_stamp = datetime.now().strftime("%m%d%H%M%S")
+                file_name = self._safe_file_name(self.name)
+                self.save_dir = f'Experiments/pop_temp/{self.__class__.__name__}_{file_name}_{time_stamp}'
+            os.makedirs(self.save_dir, exist_ok=True)
+
+            handler = Population.get_handler_from_individual(individual)
+            code = handler.code
+            name = handler.code_name
+            index = self.get_population_size()
+            fitness = individual.fitness
+            code_path = f'{self.save_dir}/{generation}-{index}_{name}_{fitness:.4f}.py'
+            with open(code_path, 'w', encoding='utf-8') as f:
+                f.write(code)
+
+            prompt = handler.sys_prompt + '\n\n' + handler.prompt
+            prompt_path = f'{self.save_dir}/{generation}-{index}_{name}_prompt.md'
+            with open(prompt_path, 'w', encoding='utf-8') as f:
+                f.write(prompt)
+
+            raw_res = handler.raw_response + f'\n## Feedback\n {individual.feedback}'
+            res_path = f'{self.save_dir}/{generation}-{index}_{name}.md'
+            with open(res_path, 'w', encoding='utf-8') as f:
+                f.write(raw_res)
+
+
     def save(self, filename=None, dirname=None):
         if dirname is None:
-            dirname = "population_logs"
+            dirname = self.save_dir
+        if dirname is None:
+            dirname = "Experiments/pop_temp"
         if not os.path.exists(dirname):
             os.mkdir(dirname)
         if filename is None:
             filename = self.name
-        filename = filename.replace(" ", "")
-        filename = filename.replace(":", "_")
-        filename = filename.replace("/", "_")
+        filename = self._safe_file_name(filename)
         time_stamp = datetime.now().strftime("%m%d%H%M%S")
         filename = os.path.join(dirname, f"{self.__class__.__name__}_{filename}_{time_stamp}.pkl")
         with open(filename, "wb") as f:

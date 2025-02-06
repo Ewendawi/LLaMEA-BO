@@ -198,6 +198,7 @@ class IndividualLogger:
             contents[ind_id] = individual
             handler = Population.get_handler_from_individual(individual)
             individual.metadata["raw_response"] = handler.raw_response
+            individual.metadata["prompt"] = handler.prompt
 
         reader_format["contents"] = contents
 
