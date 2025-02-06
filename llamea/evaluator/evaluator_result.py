@@ -290,7 +290,7 @@ class EvaluatorSearchResult:
 
         # exploitation
         self.top_k = 3
-        self.exploitation_distance_upper_bound = 5.0
+        self.exploitation_distance_upper_bound = 8.0
         self.k_distance_exploitation_list = []
         self.iter_k_distance_exploitation_list = []
 

@@ -236,7 +236,7 @@ class IOHEvaluator(AbstractEvaluator):
 
         if err is not None:
             eval_basic_result.error = str(err)
-            eval_basic_result.error_type = err.__class__.__name__
+            eval_basic_result.error_type = err.error_type
 
         if eval_basic_result.error is None and self.return_checker is not None:
             # check the return value
@@ -276,7 +276,7 @@ class IOHEvaluator(AbstractEvaluator):
         """Evaluate an individual."""
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
-        if code is None:
+        if code is None and cls is None:
             eval_result.error = "No code generated"
             eval_result.error_type = "NoCodeGenerated"
             return eval_result
@@ -364,6 +364,6 @@ class IOHEvaluator(AbstractEvaluator):
             cls_call_kwargs = {
                 "capture_output": False,
             }
-            res = evaluator.evaluate("code", bo_cls.__name__, cls=bo_cls, cls_call_kwargs=cls_call_kwargs)
+            res = evaluator.evaluate(None, bo_cls.__name__, cls=bo_cls, cls_call_kwargs=cls_call_kwargs)
             res_list.append(res)
         return res_list

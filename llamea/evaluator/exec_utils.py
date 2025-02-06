@@ -6,7 +6,22 @@ import sys
 import traceback
 import re
 import inspect
-from .injected_critic import AlgorithmCritic, critic_wrapper
+from .injected_critic import AlgorithmCritic, critic_wrapper, set_inject_maximize, get_inject_maximize
+
+class TrackExecExceptionWrapper:
+    def __init__(self, error, _traceback):
+        self.error = error
+        self.traceback = _traceback
+
+    @property
+    def error_type(self):
+        return type(self.error).__name__
+
+    def __str__(self):
+        if self.traceback is None:
+            return str(self.error)
+        return self.traceback
+
 
 def track_exec(code_string, name, _globals=None, _locals=None):
     compiled_code = compile(code_string, f'<{name}>', 'exec')
@@ -137,7 +152,12 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
                     code = inspect.getsource(cls)
                 except:
                     pass
-            if 'botorch' in code:
+
+            is_maximize = get_inject_maximize(cls_instance)
+            if not is_maximize and 'botorch' in code:
+                is_maximize = True
+            
+            if is_maximize:
                 critic.maximize = True
                 obj_fn = call_kwargs.get("func", None)
                 if obj_fn is not None and hasattr(obj_fn, "maximize"):
@@ -172,11 +192,11 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
                     res = cls_instance(**call_kwargs)
         except Exception as e:
             formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
-            err = e.__class__(formatted_traceback)
+            err = TrackExecExceptionWrapper(e, formatted_traceback)
 
     return res, captured_output.getvalue(), err, critic
 
-def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:float=None, cls=None, inject_critic=False) -> tuple[any, str, str]:
+def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:float=None, cls=None, inject_critic=False):
     params = {
             "code": code,
             "cls_name": cls_name,
@@ -194,6 +214,7 @@ def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:fl
             if done:
                 return future.result()
             if not_done:
-                err = TimeoutError("Evaluation timed out")
+                _err = TimeoutError("Evaluation timed out")
+                err = TrackExecExceptionWrapper(_err, None)
                 future.cancel()
                 return None, None, err, None

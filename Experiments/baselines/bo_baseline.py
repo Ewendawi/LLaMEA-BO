@@ -169,18 +169,9 @@ class BLRBFKernelVanillaBO(VanillaBO):
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
         super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device, surrogate_model="RBFKernel")
 
-    def __call__(self, func):
-        if hasattr(self, "_injected_critic"):
-            self._injected_critic.maximize = True
-        return super().__call__(func)
 
 class BLScaledKernelVanillaBO(VanillaBO):
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
         super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device, surrogate_model="ScaleKernel")
-
-    def __call__(self, func):
-        if hasattr(self, "_injected_critic"):
-            self._injected_critic.maximize = True
-        return super().__call__(func)
 
         

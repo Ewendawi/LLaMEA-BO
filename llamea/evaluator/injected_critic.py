@@ -53,6 +53,23 @@ def critic_wrapper(func):
         return res
     return injected_wrapper
 
+def set_inject_maximize(cls_instance, maximize):
+    if cls_instance is None:
+        return
+    if hasattr(cls_instance, "_inject_maximize"):
+        cls_instance._inject_maximize = maximize
+    else:
+        setattr(cls_instance, "_inject_maximize", maximize)
+
+def get_inject_maximize(cls_instance):
+    if cls_instance is None:
+        return False
+    if hasattr(cls_instance, "_is_maximization"):
+        return cls_instance._is_maximization()
+    if hasattr(cls_instance, "_inject_maximize"):
+        return cls_instance._inject_maximize
+    return False
+
 class AlgorithmCritic:
     # - r2 from surrogate model
     # - uncertainty from surrogate model of the same samples
