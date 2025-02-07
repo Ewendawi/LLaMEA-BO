@@ -164,7 +164,7 @@ The optimization algorithm should handle a wide range of tasks, which is evaluat
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
 {lib_prompt} Do not use any other libraries unless they cannot be replaced by the above libraries. Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
 
-Give an excellent, novel and computationally efficient Bayesian Optimization algorithm to solve this task, give it a concise but comprehensive key-word-style description with the main idea and justify your decision about the algorithm.
+Give an excellent, novel and computationally efficient Bayesian Optimization algorithm to solve this task, give it a concise but comprehensive key-word-style description with the main ideas and justify your decision about the algorithm.
 """
         return task_prompt
     
@@ -257,8 +257,7 @@ class <AlgorithmName>:
     def _select_next_points(self, batch_size):
         # Select the next points to evaluate
         # Using a selection strategy to optimize the acquisition function is optional
-        # The options of the selection strategy can be None, the methods from scipy.optimize.minimize or any other useful strategies.
-        # show me your options and justify the final decision in the comment.
+        # The options of the selection strategy can be Nothing, the methods from scipy.optimize.minimize or any other useful strategies.
         # return array of shape (batch_size, n_dims)
 
     def _evaluate_points(self, func, X):
@@ -350,13 +349,16 @@ class <AlgorithmName>:
 
         multi_weak_aocs = [content["y_aoc"] for content in grouped_aocs[4]]
         multi_weak_auc = np.mean(multi_weak_aocs) if len(multi_weak_aocs) > 0 else 0
+
+        execution_time = eval_res.total_execution_time
+        time_prompt = f"took {execution_time:0.2f} seconds to run."
             
         main_aoc_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.4f} with standard deviation {auc_std:0.4f}.
 """
         detailed_aoc_prompt = f"""
 The mean AOCC score of the algorithm {algorithm_name} on Separable functions was {separated_auc:.04f}, on functions with low or moderate conditioning {low_mod_auc:.04f}, on functions with high conditioning and unimodal {high_uni_auc:.04f}, on Multi-modal functions with adequate global structure {multi_adequate_auc:.04f}, and on Multi-modal functions with weak global structure {multi_weak_auc:.04f}
 """
-        final_feedback_prompt = f"{main_aoc_prompt}"
+        final_feedback_prompt = f"{main_aoc_prompt}\n{time_prompt}"
         return final_feedback_prompt
 
     

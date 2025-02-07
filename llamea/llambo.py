@@ -214,7 +214,7 @@ class LLaMBO:
 
             best_ind = population.get_best_individual(maximize=True)
             if best_ind is not None:
-                logging.info("Best Individual: %s(%s)\n%s", best_ind.name, best_ind.fitness, best_ind.description)
+                logging.info("Best Individual: %s(%.4f)\n%s", best_ind.name, best_ind.fitness, best_ind.description)
 
             current_generation = population.get_current_generation()
             current_population = population.get_population_size()

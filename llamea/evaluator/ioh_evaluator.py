@@ -168,12 +168,18 @@ class IOHEvaluator(AbstractEvaluator):
             self.problems = problems
         else:
             # https://numbbo.github.io/coco/testsuites/bbob
-            # separable_problems = list(range(1, 6))
+            separable_problems = list(range(1, 6))
             low_conditioning_problems = list(range(6, 10))
             high_conditioning_problems = list(range(10, 15))
             adequate_structure_problems = list(range(15, 20))
             weak_structure_problems = list(range(20, 25))
-            group_problems = [low_conditioning_problems, high_conditioning_problems, adequate_structure_problems, weak_structure_problems]
+            group_problems = [
+                separable_problems,
+                low_conditioning_problems, 
+                high_conditioning_problems, 
+                adequate_structure_problems, 
+                weak_structure_problems
+            ]
 
             selected_problems = [random.choice(group) for group in group_problems]
             self.problems = random.sample(selected_problems, 1)
@@ -348,9 +354,11 @@ class IOHEvaluator(AbstractEvaluator):
 
         if eval_result.error is None:
             eval_result.score = np.mean([r.log_y_aoc for r in eval_result.result])
-            logging.info("Evaluated %s: %s", cls_name, eval_result.score)
+            eval_result.total_execution_time = np.sum([r.execution_time for r in eval_result.result])
+            logging.info("Evaluated %s: %.4f in %.4fs", cls_name, eval_result.score, eval_result.total_execution_time)
         else:                           
-            eval_result.score = 0.00
+            eval_result.score = 0.0
+            eval_result.total_execution_time = 0.0
 
         return eval_result
 
