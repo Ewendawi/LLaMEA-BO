@@ -148,9 +148,10 @@ def _run_exp(prompt_generator:PromptGenerator,
             ):
     llambo = LLaMBO()
 
-    population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
-    if torch.cuda.is_available():
-        population.name += "_gpu"
+    if len(population.name) < 10:
+        population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
+        if torch.cuda.is_available():
+            population.name += "_gpu"
 
     llambo.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,
@@ -164,7 +165,7 @@ def _run_exp(prompt_generator:PromptGenerator,
 
     population.save()
 
-def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=False, test_eval=False): 
+def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=False, test_eval=False, pop_path=None): 
     code = ""
     with open(file_path, "r") as f:
         code = f.read()
@@ -198,21 +199,24 @@ def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=Fal
     if plot:
         plot_algo_results([res])
     
-    population = ESPopulation(n_parent=1, n_parent_per_offspring=1, n_offspring=1)
-    population.name = "1+1"
-    population.debug_save_on_the_fly = True
+    if pop_path is not None and os.path.exists(pop_path):
+        population = Population.load(pop_path) 
+    else:
+        population = ESPopulation(n_parent=1, n_parent_per_offspring=1, n_offspring=1)
+        population.name = "1+1"
+        population.debug_save_on_the_fly = True
 
-    ind = Individual()
-    handler = tuner.get_response_handler()
-    handler.eval_result = res
-    handler.code = code
-    handler.code_name = cls_name
+        ind = Individual()
+        handler = tuner.get_response_handler()
+        handler.eval_result = res
+        handler.code = code
+        handler.code_name = cls_name
 
-    Population.set_handler_to_individual(ind, handler)
-    ind.name = cls_name
-    ind.fitness = res.score
-    population.add_individual(ind, generation=0)
-    population.select_next_generation()
+        Population.set_handler_to_individual(ind, handler)
+        ind.name = cls_name
+        ind.fitness = res.score
+        population.add_individual(ind, generation=0)
+        population.select_next_generation()
     
     _run_exp(
         population=population,
@@ -322,11 +326,12 @@ def get_llm():
 def tune_vanilla_bo(params):
     file_path = "Experiments/baselines/vanilla_bo.py"
     cls_name = "VanillaBO"
-    res_path = "Experiments/baselines/vanilla_bo_res3.pkl"
+    res_path = "Experiments/baselines/vanilla_bo_res.pkl"
+    pop_path = None
     should_eval = False
     plot = False
     test_eval = False
-    tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval)
+    tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
 
 if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)

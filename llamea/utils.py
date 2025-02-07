@@ -895,7 +895,7 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
         if is_numeric_dtype(agg_series.dtype):
             mean = np.nanmean(agg_series)
             std = np.nanstd(agg_series)
-            return (mean, std)
+            return [mean, std]
         else:  
             agg_list = agg_series.to_list()
             min_len = min([len(ele) for ele in agg_list])
@@ -903,7 +903,7 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
             cliped_list = [ele[:min_len] for ele in agg_list]
             mean_list = np.nanmean(cliped_list, axis=0)
             std_list = np.nanstd(cliped_list, axis=0)
-            return (mean_list, std_list)
+            return [mean_list, std_list]
 
     def _min_accumulate(_series):
         if isinstance(_series, tuple):
@@ -990,10 +990,10 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
     #     data_col_map['best_loss'] = 'Best Loss'
 
     y_df = res_df.groupby(['algorithm', 'problem_id'])[data_cols].agg(mean_std_agg).reset_index()
+    y_df[data_cols].applymap(lambda x: x[0] if isinstance(x, list) else x)
 
     problem_ids = y_df['problem_id'].unique()
-    fill_cols = [
-    ]
+
 
     def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
         def _smooth_data(data):
@@ -1039,6 +1039,11 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
         'best_loss': ('log', {}),
     }
 
+    non_fill_cols = [
+        'loss',
+        'best_loss',
+    ]
+
     ignore_cols = [
         'n_init',
         'acq_exp_threshold',
@@ -1076,11 +1081,16 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
             # fill short data and replace nan with the left
             max_len = max([len(ele[0]) for ele in data])
             for i, ele in enumerate(data):
-                if len(ele[0]) < max_len:
-                    fill_len = max_len - len(ele[0])
-                    data[i] = (np.append(ele[0], [np.nan] * fill_len), np.append(ele[1], [np.nan] * fill_len))
-                data[i] = (fill_nan_with_left(data[i][0]), fill_nan_with_left(data[i][1]))
-
+                _content = []
+                for _sub_ele in ele:
+                    _new_sub_ele = _sub_ele
+                    if len(_new_sub_ele) < max_len:
+                        fill_len = max_len - len(_new_sub_ele)
+                        _new_sub_ele = np.append(_new_sub_ele, [np.nan] * fill_len)
+                    _new_sub_ele = fill_nan_with_left(_new_sub_ele)
+                    _content.append(_new_sub_ele)
+                data[i] = _content
+                    
             mean_array = np.array([ele[0] for ele in data])
             std_array = np.array([ele[1] for ele in data])
 
@@ -1097,8 +1107,8 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
             x_data.append(np.arange(mean_array.shape[1]))
             
             # fill the area between mean - std and mean + std
-            if col not in fill_cols:
-                upper_bound = mean_array + std_array
+            if col not in non_fill_cols:
+                upper_bound = mean_array + std_array 
                 lower_bound = mean_array - std_array
                 plot_filling.append(list(zip(lower_bound, upper_bound)))
             else:

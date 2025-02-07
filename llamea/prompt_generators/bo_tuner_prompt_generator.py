@@ -83,15 +83,15 @@ class TunerPromptGenerator(PromptGenerator):
         pre_solution_prompt += "\n"
 
         other_solutions_prompt = ""
-        all_individuals = population.all_individuals()
-        for ind in all_individuals:
+        _all_individuals = population.all_individuals()
+        for ind in _all_individuals:
             handler = Population.get_handler_from_individual(ind)
+            if handler.error is not None:
+                continue
+
             ignored = False
             for cand in candidates:
                 if cand.code_name == handler.code_name and cand.reason == handler.reason:
-                    ignored = True
-                    break
-                if cand.error is not None:
                     ignored = True
                     break
             if ignored:
@@ -135,11 +135,11 @@ The optimization algorithm should handle a wide range of tasks, which is evaluat
 Your task is to Improve the given algorithm's performance on BBOB test suite and maintain or lower its computational cost
 1 Analyze the provided Bayesian Optimization algorithm and its feedback.
 2 What additional information would you like to have to improve the algorithm? 
-- The ones can be easy to express in text as a prompt.
+- Only propose the information that can be easily expressed in text as the prompt.
 3 Identify the potential improvements 
-- add or adjust the hyperparameters
-- apply new components or techs to the algorithm 
-- The structure of the code should be kept as much as possible. The big change is not encouraged.
+- modify the existing components
+- or apply new components 
+- The structure of the code should be kept as much as possible. Be cautious about the big changes.
 4 Justify your changes.
 5 Describe the algorithm on one line.
 
@@ -165,6 +165,11 @@ Give the response in the format:
     def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
         if eval_res is None or len(eval_res.result) == 0:
             return ""
+
+        def _mean_ground_content(key:str, ground:int, ground_dic) -> float:
+            _ground = ground_dic[ground]
+            _contents = [content[key] for content in _ground]
+            return np.mean(_contents) if len(_contents) > 0 else 0
 
         algorithm_name = eval_res.name
         aocs = []
@@ -201,7 +206,8 @@ Give the response in the format:
                 "problem_id": problem_id,
                 "instance_id": instance_id,
                 "repeat_id": repeat_id,
-                "y_aoc": aoc
+                "y_aoc": aoc,
+                'exploitation': _mean_exploitation,
             }
             grouped_aocs[group_idx].append(content)
 
@@ -211,32 +217,30 @@ Give the response in the format:
         exploitations_mean = np.mean(exploitations)
         exploitations_std = np.std(exploitations)
 
-        separated_aocs = [content["y_aoc"] for content in grouped_aocs[0]]
-        separated_auc = np.mean(separated_aocs) if len(separated_aocs) > 0 else 0
-        
-        low_mod_aocs = [content["y_aoc"] for content in grouped_aocs[1]]
-        low_mod_auc = np.mean(low_mod_aocs) if len(low_mod_aocs) > 0 else 0
+        separated_auc = _mean_ground_content("y_aoc", 0, grouped_aocs)
+        low_mod_auc = _mean_ground_content("y_aoc", 1, grouped_aocs)
+        high_uni_auc = _mean_ground_content("y_aoc", 2, grouped_aocs)
+        multi_adequate_auc = _mean_ground_content("y_aoc", 3, grouped_aocs)
+        multi_weak_auc = _mean_ground_content("y_aoc", 4, grouped_aocs)
 
-        high_uni_aocs = [content["y_aoc"] for content in grouped_aocs[2]]
-        high_uni_auc = np.mean(high_uni_aocs) if len(high_uni_aocs) > 0 else 0
+        separated_exploitation = _mean_ground_content("exploitation", 0, grouped_aocs)
+        low_mod_exploitation = _mean_ground_content("exploitation", 1, grouped_aocs)
+        high_uni_exploitation = _mean_ground_content("exploitation", 2, grouped_aocs)
+        multi_adequate_exploitation = _mean_ground_content("exploitation", 3, grouped_aocs)
+        multi_weak_exploitation = _mean_ground_content("exploitation", 4, grouped_aocs)
 
-        multi_adequate_aocs = [content["y_aoc"] for content in grouped_aocs[3]]
-        multi_adequate_auc = np.mean(multi_adequate_aocs) if len(multi_adequate_aocs) > 0 else 0
-
-        multi_weak_aocs = [content["y_aoc"] for content in grouped_aocs[4]]
-        multi_weak_auc = np.mean(multi_weak_aocs) if len(multi_weak_aocs) > 0 else 0
 
         detailed_feedback = f"""
-on Separable functions was {separated_auc:.04f}, 
-on functions with low or moderate conditioning {low_mod_auc:.04f} 
-on functions with high conditioning and unimodal {high_uni_auc:.04f} 
-on Multi-modal functions with adequate global structure {multi_adequate_auc:.04f} 
-on Multi-modal functions with weak global structure {multi_weak_auc:.04f}
+on Separable functions {separated_auc:.04f} of AOC, {separated_exploitation:.04f} of exploitation
+on functions with low or moderate conditioning {low_mod_auc:.04f} of AOC, {low_mod_exploitation:.04f} of exploitation
+on functions with high conditioning and unimodal {high_uni_auc:.04f} of AOC, {high_uni_exploitation:.04f} of exploitation
+on Multi-modal functions with adequate global structure {multi_adequate_auc:.04f} of AOC, {multi_adequate_exploitation:.04f} of exploitation
+on Multi-modal functions with weak global structure {multi_weak_auc:.04f} of AOC, {multi_weak_exploitation:.04f} of exploitation
 """
+        exploitation_prompt = f"""The average exploitation score (1.0 mean most exploitative, 0.0 mean most explorative) is {exploitations_mean:0.4f} with standard deviation {exploitations_std:0.4f}."""
 
-        final_feedback_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.4f} with standard deviation {auc_std:0.4f}. {detailed_feedback}
+        final_feedback_prompt = f"""The algorithm {algorithm_name} got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {auc_mean:0.4f} with standard deviation {auc_std:0.4f}\n{exploitation_prompt}\n{detailed_feedback}
 """
-# The average exploitation score (1.0 mean most exploitative, 0.0 mean most explorative) is {exploitations_mean:0.2f} with standard deviation {exploitations_std:0.2f}.
         return final_feedback_prompt
 
 

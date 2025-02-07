@@ -18,7 +18,7 @@ from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
 class VanillaUCB:
-    def __init__(self, 
+    def __init__(self,
                     adaptive_beta: str = 'ei',
                     initial_ucb_beta: float = 2.0,
                     min_beta: float = 0.1,
@@ -37,7 +37,7 @@ class VanillaUCB:
         self.min_beta = min_beta
         self.max_beta = max_beta
 
-        self.ei_std_ratio_avg = 0.0  
+        self.ei_std_ratio_avg = 0.0
         self.beta_momentum = beta_momentum
 
         self.beta_decay_rate = beta_decay_rate
@@ -49,7 +49,7 @@ class VanillaUCB:
             # Calculate EI for beta adjustment
             EI = LogExpectedImprovement(model, best_f=y_hist.max())
             with torch.no_grad():
-                ei_values = EI(X_hist.unsqueeze(1))  
+                ei_values = EI(X_hist.unsqueeze(1))
 
             # Get posterior at current points
             posterior = model.posterior(X_hist)
@@ -57,27 +57,27 @@ class VanillaUCB:
             std = torch.sqrt(variance)
 
             # Calculate the ratio of EI to uncertainty (std)
-            ei_std_ratio = (ei_values.squeeze() / (std + 1e-9)).clamp(0, 20)  
+            ei_std_ratio = (ei_values.squeeze() / (std + 1e-9)).clamp(0, 20)
 
             # Update moving average of EI/std ratio with momentum
             self.ei_std_ratio_avg = self.beta_momentum * self.ei_std_ratio_avg + (1 - self.beta_momentum) * ei_std_ratio.mean().item()
 
             # Adjust beta based on the EI/std ratio using a sigmoid function
-            sigmoid_scale = (1 - n_evals / budget)  
+            sigmoid_scale = (1 - n_evals / budget)
             self.ucb_beta = self.min_beta + (self.max_beta - self.min_beta) * (1 / (1 + np.exp(-self.ei_std_ratio_avg * sigmoid_scale)))
-        elif self.adaptive_beta == "linear": 
+        elif self.adaptive_beta == "linear":
             # linear decay:
             scale = 1 - n_evals / budget
             self.ucb_beta = self.initial_ucb_beta - (self.initial_ucb_beta - self.min_beta) * scale
         elif self.adaptive_beta == "exponential":
-            # exponential decay 
+            # exponential decay
             self.ucb_beta = self.initial_ucb_beta * (self.beta_decay_rate ** (n_evals / budget))
-        
+
         self.ucb_beta = np.clip(self.ucb_beta, self.min_beta, self.max_beta)
 
         self._acqf = qUpperConfidenceBound(
             model=model,
-            beta=self.ucb_beta, 
+            beta=self.ucb_beta,
             sampler=sampler,
         )
         return self
@@ -112,6 +112,9 @@ class VanillaBO:
             torch.manual_seed(seed)
             if "cuda" in self.device:
                 torch.cuda.manual_seed(seed)
+
+    def _is_maximization(self) -> bool:
+        return True
 
     def _sample_points(self, n_points: int) -> torch.Tensor:
         if self.init_sampler == "sobol":
@@ -197,7 +200,7 @@ class VanillaBO:
             acqf_constructor = qLogNoisyExpectedImprovement
             acqf_kwargs = {
                 "model": model,
-                "X_baseline": torch.unique(self.X.clone(), dim=0),
+                "X_baseline": self.X.clone(),
                 "sampler": sampler,
                 "prune_baseline": True,
             }
@@ -208,7 +211,7 @@ class VanillaBO:
                 "best_f": self.y.max(),
                 "sampler": sampler,
             }
-        elif self.acqf_name == "ucb": 
+        elif self.acqf_name == "ucb":
             if self._acqf is None:
                 self._acqf = VanillaUCB(adaptive_beta='ei', initial_ucb_beta=2.0, min_beta=0.1, max_beta=2.0, beta_momentum=0.7, beta_decay_rate=0.9, device=self.device)
             acqf_constructor = self._acqf.update_acqf
