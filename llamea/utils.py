@@ -648,15 +648,8 @@ def plot_results(results:list[tuple[str,list[EvaluatorResult]|Population]],
                         continue
 
                     handler = Population.get_handler_from_individual(gen_inds[0])
-                    if handler.eval_result.similarity is not None:
-                        sim_list = [Population.get_handler_from_individual(ind).eval_result.similarity for ind in gen_inds]
-                        instance_sim.append(np.mean(sim_list))
-                    elif hasattr(handler.eval_result, "simiarity") and handler.eval_result.simiarity is not None:
-                        sim_list = [Population.get_handler_from_individual(ind).eval_result.simiarity for ind in gen_inds]
-                        instance_sim.append(np.mean(sim_list))
-                    else:
-                        mean_sim, _ = desc_similarity(gen_inds)
-                        instance_sim.append(np.mean(mean_sim))
+                    mean_sim, _ = desc_similarity(gen_inds)
+                    instance_sim.append(np.mean(mean_sim))
                 if len(instance_sim) > 0:
                     group_sim.append(instance_sim)
             if len(group_sim) == 0:

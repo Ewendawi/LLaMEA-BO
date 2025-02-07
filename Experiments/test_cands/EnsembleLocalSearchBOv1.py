@@ -101,7 +101,7 @@ class EnsembleLocalSearchBOv1:
                 acq_values[best_idx] = -np.inf
             return candidates[selected_indices]
 
-    def _update_sample_points(self, new_X: np.ndarray, new_y: np.ndarray):
+    def _update_eval_points(self, new_X: np.ndarray, new_y: np.ndarray):
         if self.X is None:
             self.X = new_X
             self.y = new_y
@@ -115,7 +115,7 @@ class EnsembleLocalSearchBOv1:
         y = np.array([func(x) for x in X]).reshape(-1, 1)
         self.n_evals += n_initial_points
         self.n_init = n_initial_points
-        self._update_sample_points(X, y)
+        self._update_eval_points(X, y)
         
         for i, y_val in enumerate(self.y):
             if y_val < self.best_y:
@@ -157,7 +157,7 @@ class EnsembleLocalSearchBOv1:
                   break
                 
             next_y = np.array(next_y).reshape(-1,1)
-            self._update_sample_points(next_points, next_y)
+            self._update_eval_points(next_points, next_y)
 
             if self.n_evals >= self.budget:
               break

@@ -160,7 +160,7 @@ class EnsembleDeepKernelAdaptiveTSLocalSearchARDv1:
         self.exploration_weight = max(0.1, min(0.9, self.exploration_weight))
         self.exploitation_weight = max(0.1, min(0.9, self.exploitation_weight))
 
-    def _update_sample_points(self, new_X, new_y):
+    def _update_eval_points(self, new_X, new_y):
         if self.X is None:
             self.X = new_X
             self.y = new_y
@@ -175,7 +175,7 @@ class EnsembleDeepKernelAdaptiveTSLocalSearchARDv1:
         y = np.array([func(x) for x in X]).reshape(-1, 1)
         self.n_evals += n_initial_points
         self.n_init = n_initial_points
-        self._update_sample_points(X, y)
+        self._update_eval_points(X, y)
 
         best_idx = np.argmin(self.y)
         self.best_y = self.y[best_idx].item()
@@ -200,7 +200,7 @@ class EnsembleDeepKernelAdaptiveTSLocalSearchARDv1:
             if next_y.size == 0:
                 break
 
-            self._update_sample_points(next_points[:next_y.size], next_y)
+            self._update_eval_points(next_points[:next_y.size], next_y)
 
             current_best_idx = np.argmin(self.y)
             if self.y[current_best_idx].item() < self.best_y:

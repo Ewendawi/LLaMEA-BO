@@ -89,7 +89,7 @@ def __inject_critic_code(code: str) -> str:
         if re.search(r'^class\s+(\w+)', line):
             new_lines.extend(critic_wrapper_code_lines)
             new_lines.append("\n")
-        elif re.search(r'def\s+_update_sample_points', line):
+        elif re.search(r'def\s+_update_eval_points', line):
             stripped_text   = line.lstrip()
             n_blank_spaces  = len(line) - len(stripped_text)
             decrator_line = " " * n_blank_spaces + '@critic_wrapper'
@@ -107,7 +107,7 @@ def __inject_critic_code(code: str) -> str:
     return "".join(new_lines)
 
 def inject_critic_cls(cls):
-    methods = ['_update_sample_points', '_fit_model']
+    methods = ['_update_eval_points', '_fit_model']
     for method in methods:
         original_method = getattr(cls, method, None)
         if original_method is None or original_method.__name__ == 'injected_wrapper':
@@ -154,7 +154,7 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
                     pass
 
             is_maximize = get_inject_maximize(cls_instance)
-            if not is_maximize and 'botorch' in code:
+            if not is_maximize and code is not None and 'botorch' in code:
                 is_maximize = True
             
             if is_maximize:

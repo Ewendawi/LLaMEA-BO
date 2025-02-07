@@ -102,7 +102,7 @@ class GP_Matern_EI_MSL_SobolBOv1:
 
         return x_next.reshape(1, -1)
 
-    def _update_sample_points(self, new_X, new_y):
+    def _update_eval_points(self, new_X, new_y):
         if self.X is None:
             self.X = new_X
             self.y = new_y
@@ -120,7 +120,7 @@ class GP_Matern_EI_MSL_SobolBOv1:
 
         X = self._sample_points(self.n_initial_points)
         y = np.array([[func(x)] for x in X])
-        self._update_sample_points(X, y)
+        self._update_eval_points(X, y)
 
         self.best_y = np.min(self.y)
         self.best_x = self.X[np.argmin(self.y)]
@@ -136,7 +136,7 @@ class GP_Matern_EI_MSL_SobolBOv1:
                 self.best_y = y_next
                 self.best_x = x_next[0]
 
-            self._update_sample_points(x_next, y_next)
+            self._update_eval_points(x_next, y_next)
             
             rest_of_budget -= 1
         return self.best_y, self.best_x

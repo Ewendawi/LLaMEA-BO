@@ -120,7 +120,7 @@ class LLaMBO:
         current_generation = population.get_current_generation()
         current_population = population.get_population_size()
         while current_population < n_population and current_generation < n_generation:
-            logging.info("""======Start Generation %s with %s Population=======""", current_generation, current_population)
+            logging.info("""======Start Generation %s/%s with %s/%s Population=======""", current_generation, n_generation, current_population, n_population)
             
             query_items = population.get_offspring_queryitems()
             current_query_time = time.time()
@@ -206,12 +206,6 @@ class LLaMBO:
                 tags.append(f"gen:{current_generation}")
                 ind.add_metadata("tags", tags)
 
-                logging.info(ind.get_summary())
-                if ind.error:
-                    logging.info(ind.error)
-                else:
-                    logging.info(ind.feedback)
-
                 population.add_individual(ind, current_generation)
 
             population.select_next_generation()
@@ -220,7 +214,7 @@ class LLaMBO:
 
             best_ind = population.get_best_individual(maximize=True)
             if best_ind is not None:
-                logging.info("Best Individual:\n%s", best_ind.get_summary())
+                logging.info("Best Individual: %s(%s)\n%s", best_ind.name, best_ind.fitness, best_ind.description)
 
             current_generation = population.get_current_generation()
             current_population = population.get_population_size()

@@ -260,7 +260,7 @@ class VanillaBO:
             candidate = self._sample_points(batch_size)
         return candidate.detach()
 
-    def _update_sample_points(self, new_X: torch.Tensor, new_y: torch.Tensor) -> None:
+    def _update_eval_points(self, new_X: torch.Tensor, new_y: torch.Tensor) -> None:
         if self.X is None:
             self.X = new_X
             self.y = new_y
@@ -273,7 +273,7 @@ class VanillaBO:
         X = self._sample_points(n_initial_points)
         y = torch.tensor([func(x) for x in X.cpu().numpy()], dtype=torch.float64, device=self.device).reshape(-1, 1)
         self.n_evals = n_initial_points
-        self._update_sample_points(X, y)
+        self._update_eval_points(X, y)
         best_y = self.y.max()
         best_x = self.X[self.y.argmax()]
 
@@ -290,6 +290,6 @@ class VanillaBO:
                 best_x = next_points[next_evaluations.argmax()]
 
             self.n_evals += batch_size
-            self._update_sample_points(next_points, next_evaluations)
+            self._update_eval_points(next_points, next_evaluations)
 
         return best_y.cpu().numpy().item(), best_x.cpu().numpy().flatten()

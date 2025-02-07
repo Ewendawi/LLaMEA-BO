@@ -18,10 +18,6 @@ class ESPopulation(Population):
         self.n_parent_per_offspring = n_parent_per_offspring
         self.n_offspring = n_offspring
         self.use_elitism = use_elitism
-        self.save_per_generation = None
-        self.save_per_generation_dir = None
-
-        self.update_simliarity_per_generation = True
 
         self.individuals:dict[str, Individual] = {}
         # all individuals per generation
@@ -31,9 +27,6 @@ class ESPopulation(Population):
 
         if not self.use_elitism and self.n_parent > self.n_offspring:
             raise ValueError("n_parent should be less than or equal to n_offspring when not using elitism.")
-
-        if self.n_parent_per_offspring * self.n_offspring > self.n_parent:
-            raise ValueError("n_parent should be greater than or equal to n_parent_per_offspring * n_offspring.")
 
 
     def all_individuals(self):
@@ -99,25 +92,11 @@ class ESPopulation(Population):
             next_pop = [ind.id for ind in ind_next_pop]
             self.selected_generations.append(next_pop)
 
-        if self.update_simliarity_per_generation and self.n_parent > 1:
-            # Update the similarity matrix
-            mean_similarity, _ = desc_similarity([self.individuals[id] for id in next_pop])
-            for i, ind_id in enumerate(next_pop):
-                ind = self.individuals[ind_id]
-                Population.get_handler_from_individual(ind).eval_result.similarity = mean_similarity[i]
-        
         # Save population every n generations
         n_gen = len(self.selected_generations)
         if self.save_per_generation is not None and n_gen % self.save_per_generation == 0:
-            dir_path = self.save_per_generation_dir
-            if dir_path is None:
-                time_stamp = datetime.now().strftime("%m%d%H%M%S")
-                dir_path = f'Experiments/pop_temp/{self.__class__.__name__}_{self.name}_{time_stamp}'
-                self.save_per_generation_dir = dir_path
-            os.makedirs(dir_path, exist_ok=True)
-            file_path = f'{dir_path}/pop_{n_gen}.pkl'
-            with open(file_path, 'wb') as f:
-                pickle.dump(self, f)
+            _suffix = f'checkpoint_{n_gen}'
+            self.save(suffix=_suffix)
 
     def get_current_generation(self):
         return len(self.selected_generations)
@@ -138,17 +117,7 @@ class ESPopulation(Population):
                     query_items.append(query_item)
                 return query_items
 
-        if n_parent is not None:
-            n_parent_per_offspring = n_parent
-        else:
-            if self.n_parent_per_offspring > 1:
-                # decide mutation or crossover
-                if np.random.rand() < self.cross_over_rate:
-                    n_parent_per_offspring = self.n_parent_per_offspring
-                else:
-                    n_parent_per_offspring = 1
-            else:
-                n_parent_per_offspring = self.n_parent_per_offspring
+        n_parent_per_offspring = self.n_parent_per_offspring if n_parent is None else n_parent
 
         last_pop = self.selected_generations[-1]
         last_pop = [self.individuals[id] for id in last_pop if id in self.individuals]
@@ -165,14 +134,25 @@ class ESPopulation(Population):
         parents = []
         idx_last_pop = 0
         for _ in range(self.n_offspring):
-            parent = last_pop[idx_last_pop: idx_last_pop+n_parent_per_offspring]
+            _n_parent = n_parent_per_offspring
+            if n_parent_per_offspring > 1 and np.random.rand() > self.cross_over_rate:
+                _n_parent = 1
+            parent = last_pop[idx_last_pop: idx_last_pop+_n_parent]
             parents.append(parent)
-            idx_last_pop += n_parent_per_offspring
+            idx_last_pop += _n_parent
 
         query_items = []
+        mutation_count = 0
+        crossover_count = 0
         for parent in parents:
+            if len(parent) == 1:
+                mutation_count += 1
+            else:
+                crossover_count += 1
             query_item = PopulationQueryItem(qid=0, parent=parent, offspring=Individual())
             query_items.append(query_item)
+
+        logging.info("Mutation: %d, Crossover: %d", mutation_count, crossover_count)
             
         return query_items
 

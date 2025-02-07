@@ -28,6 +28,7 @@ class Population(ABC):
 
         self.debug_save_on_the_fly = False
         self.save_dir = None
+        self.save_per_generation = None
 
     @abstractmethod
     def get_population_size(self):
@@ -97,23 +98,24 @@ class Population(ABC):
             with open(code_path, 'w', encoding='utf-8') as f:
                 f.write(code)
 
-            res = handler.eval_result
-            res_path = f'{self.save_dir}/{generation}-{index}_{name}.pkl'
-            with open(res_path, 'wb') as f:
-                pickle.dump(res, f)
+            handler_path = f'{self.save_dir}/{generation}-{index}_{name}_handler.pkl'
+            with open(handler_path, 'wb') as f:
+                pickle.dump(handler, f)
 
             prompt = handler.sys_prompt + '\n\n' + handler.prompt
             prompt_path = f'{self.save_dir}/{generation}-{index}_{name}_prompt.md'
             with open(prompt_path, 'w', encoding='utf-8') as f:
                 f.write(prompt)
 
-            raw_res = handler.raw_response + f'\n## Feedback\n {individual.feedback}'
-            res_path = f'{self.save_dir}/{generation}-{index}_{name}.md'
+            raw_res = handler.raw_response
+            if individual.feedback:
+                raw_res += f'\n## Feedback\n {individual.feedback}'
+            res_path = f'{self.save_dir}/{generation}-{index}_{name}_respond.md'
             with open(res_path, 'w', encoding='utf-8') as f:
                 f.write(raw_res)
 
 
-    def save(self, filename=None, dirname=None):
+    def save(self, filename=None, dirname=None, suffix=None):
         if dirname is None:
             dirname = self.save_dir
         if dirname is None:
@@ -123,9 +125,15 @@ class Population(ABC):
         if filename is None:
             filename = self.name
         filename = self._safe_file_name(filename)
+        if filename in dirname:
+            filename = ''
+        if suffix is not None:
+            filename += f'{suffix}'
+        if len(filename) > 0:
+            filename = '_' + filename
         time_stamp = datetime.now().strftime("%m%d%H%M%S")
-        filename = os.path.join(dirname, f"{self.__class__.__name__}_{filename}_{time_stamp}.pkl")
-        with open(filename, "wb") as f:
+        file_path = os.path.join(dirname, f"{self.__class__.__name__}{filename}_{time_stamp}.pkl")
+        with open(file_path, "wb") as f:
             pickle.dump(self, f)
     
     @classmethod

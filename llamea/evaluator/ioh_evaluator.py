@@ -209,7 +209,7 @@ class IOHEvaluator(AbstractEvaluator):
         
         self.obj_fn_params = obj_fn_params
 
-        problem_name = "bbob_" + "_".join([f"f{problem}" for problem in self.problems])
+        problem_name = "_".join([f"f{problem}" for problem in self.problems])
         self._problem_name = problem_name
 
     def problem_dim(self) -> int:
@@ -338,7 +338,7 @@ class IOHEvaluator(AbstractEvaluator):
                 if eval_basic_result.error is not None:
                     eval_result.error = eval_basic_result.error
                     eval_result.error_type = eval_basic_result.error_type
-                    logging.info("Evaluating %s: Got Error - %s", cls_name, eval_basic_result.error_type)
+                    logging.error("Evaluating %s: %s", cls_name, eval_basic_result.error_type)
                     break
                 else:
                     eval_result.result.append(eval_basic_result)

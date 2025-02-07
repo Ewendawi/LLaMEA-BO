@@ -117,7 +117,7 @@ class TrustRegionAdaptiveBOv1:
             indices = np.argsort(-acquisition_values.flatten())[:batch_size]
             return candidates[indices]
 
-    def _update_sample_points(self, X, y):
+    def _update_eval_points(self, X, y):
         if self.X is None:
             self.X = X
             self.y = y
@@ -131,7 +131,7 @@ class TrustRegionAdaptiveBOv1:
         initial_y = np.array([func(x) for x in initial_X]).reshape(-1, 1)
         self.n_evals += self.n_init
         
-        self._update_sample_points(initial_X, initial_y)
+        self._update_eval_points(initial_X, initial_y)
         
         self.best_y = np.min(self.y)
         self.best_x = self.X[np.argmin(self.y)]
@@ -172,7 +172,7 @@ class TrustRegionAdaptiveBOv1:
             
             self.n_evals += self.batch_size
             
-            self._update_sample_points(next_points, next_y)
+            self._update_eval_points(next_points, next_y)
             
             previous_best_y = self.best_y
             current_best_y = np.min(self.y)

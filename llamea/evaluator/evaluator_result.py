@@ -774,7 +774,6 @@ class EvaluatorResult:
     def __init__(self):
         self.name = None
         self.score = None
-        self.similarity = None
         self.error = None
         self.error_type = None
         

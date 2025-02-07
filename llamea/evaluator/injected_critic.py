@@ -1,9 +1,11 @@
+import logging
 import numpy as np
 import torch
 import gpytorch
 import botorch
 import sklearn
 from sklearn.metrics import r2_score
+from sklearn.gaussian_process import GaussianProcessRegressor
 from scipy.stats import qmc
 from .evaluator_result import EvaluatorSearchResult
 
@@ -24,32 +26,39 @@ def critic_wrapper(func):
                 _injected_critic.n_init = self.n_init
 
         if _injected_critic is not None:
-            if func.__name__ == "_update_sample_points":
-                n_evals = None
-                if hasattr(self, "n_evals"):
-                    n_evals = self.n_evals
-                next_X, next_y = args
-                next_X = to_numpy_if_tensor(next_X)
-                next_y = to_numpy_if_tensor(next_y)
-                X = to_numpy_if_tensor(self.X)
-                y = to_numpy_if_tensor(self.y)
-                _injected_critic.update_after_eval(X, y, next_X, next_y, n_evals)
+            if func.__name__ == "_update_eval_points":
+                try:
+                    next_X, next_y = args
+                    next_X = to_numpy_if_tensor(next_X)
+                    next_y = to_numpy_if_tensor(next_y)
+                    X = to_numpy_if_tensor(self.X)
+                    y = to_numpy_if_tensor(self.y)
+
+                    n_evals = None
+                    if hasattr(self, "n_evals"):
+                        n_evals = self.n_evals
+                    _injected_critic.update_after_eval(X, y, next_X, next_y, n_evals)
+                except Exception as e:
+                    logging.error("Error in _update_eval_points wrapper: %s", e)
 
         res = func(self, *args, **kwargs)
 
         if _injected_critic is not None:
             if func.__name__ == "_fit_model":
-                new_X = args[0]
-                new_y = args[1]
-                new_X = to_numpy_if_tensor(new_X)
-                new_y = to_numpy_if_tensor(new_y)
-                n_evals = len(new_X)
-                model = res
-                if hasattr(self, "n_evals"):
-                    n_evals = self.n_evals
-                if isinstance(model, tuple):
-                    model = model[0]
-                _injected_critic.update_after_model_fit(model, n_evals, new_X, new_y)
+                try:
+                    new_X = args[0]
+                    new_y = args[1]
+                    new_X = to_numpy_if_tensor(new_X)
+                    new_y = to_numpy_if_tensor(new_y)
+                    n_evals = len(new_X)
+                    model = res
+                    if hasattr(self, "n_evals"):
+                        n_evals = self.n_evals
+                    if isinstance(model, tuple):
+                        model = model[0]
+                    _injected_critic.update_after_model_fit(model, n_evals, new_X, new_y)
+                except Exception as e:
+                    logging.error("Error in _fit_model wrapper: %s", e)
         return res
     return injected_wrapper
 
@@ -105,6 +114,8 @@ class AlgorithmCritic:
         self.test_y = func.stateless_call(self.test_x)
 
     def update_after_eval(self, x, y, next_x, next_y, n_evals):
+        # n_evals should include the evaluation of next_x
+        
         # inverse the y to treat the problem as minimization
         if self.maximize:
             y = -y if y is not None else None
@@ -216,7 +227,7 @@ class AlgorithmCritic:
                     posterior = model.likelihood(model(x))
                     _variance = posterior.variance.cpu().numpy()
                     _uncertainty = np.sqrt(_variance)
-            elif isinstance(model, sklearn.gaussian_process.GaussianProcessRegressor):
+            elif isinstance(model, GaussianProcessRegressor):
                 _, _uncertainty = model.predict(x, return_std=True)
             mean_uncertainty = np.mean(_uncertainty)
             return mean_uncertainty
