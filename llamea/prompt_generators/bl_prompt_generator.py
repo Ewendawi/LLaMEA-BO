@@ -122,8 +122,14 @@ class BaselinePromptGenerator(PromptGenerator):
             population_summary = ""
             current_population = population.get_individuals()
             if len(current_population) > 0:
-                population_summary = "The current population of algorithms already evaluated (name, description, score) is:\n"
-                population_summary += "\n".join([ind.get_summary() for ind in current_population])
+                population_summary = "The current population of algorithms already evaluated(name, score, runtime and description):\n" 
+                for ind in current_population:
+                    handler = Population.get_handler_from_individual(ind)
+                    name = handler.code_name
+                    score = handler.eval_result.score
+                    runtime = handler.eval_result.total_execution_time
+                    desc = handler.desc
+                    population_summary += f"- {name}: {score:.4f}, {runtime:.2f} seconds, {desc}\n"
 
             final_prompt = f"""{task_prompt}
 {population_summary}

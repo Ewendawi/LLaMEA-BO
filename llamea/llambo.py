@@ -108,8 +108,6 @@ class LLaMBO:
         logging.info("%s", prompt_generator)
         logging.info("%s", evaluator)
 
-        # progress_bar = tqdm(total=n_generation, desc="Generation", position=1, leave=True)
-
         evaluator.return_checker = prompt_generator.get_return_checker()
 
         problem_description = evaluator.problem_prompt()
@@ -220,6 +218,3 @@ class LLaMBO:
             current_population = population.get_population_size()
         
         logging.info("======Finished with %s Generations and %s Population======", current_generation, current_population)
-            # progress_bar.update(1)
-
-        # progress_bar.close()

@@ -110,6 +110,8 @@ class Population(ABC):
             raw_res = handler.raw_response
             if individual.feedback:
                 raw_res += f'\n## Feedback\n {individual.feedback}'
+            elif individual.error:
+                raw_res += f'\n## Error\n {individual.error}'
             res_path = f'{self.save_dir}/{generation}-{index}_{name}_respond.md'
             with open(res_path, 'w', encoding='utf-8') as f:
                 f.write(raw_res)

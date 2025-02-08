@@ -2,8 +2,8 @@ import math
 import numpy as np
 import torch
 from skopt import gp_minimize 
-from .TuRBO.turbo import Turbo1, TurboM
-from .vanilla_bo import VanillaBO
+from Experiments.baselines.TuRBO.turbo import Turbo1, TurboM
+from Experiments.baselines.vanilla_bo import VanillaBO
 
 class BLRandomSearch:
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, **kwargs):
