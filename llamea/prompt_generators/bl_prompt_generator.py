@@ -80,7 +80,7 @@ class BaselinePromptGenerator(PromptGenerator):
             if candidates is None or len(candidates) == 0:
                 return "", ""
 
-        role_prompt = "You are a highly skilled computer scientist in the field of natural computing. Your task is to design novel metaheuristic algorithms to solve black box optimization problems."
+        role_prompt = "You are a highly skilled computer scientist in the field of natural computing. Your task is to design novel metaheuristic algorithms to solve black box optimization problems"
 
         task_prompt = self.task_description(task)
 

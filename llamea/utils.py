@@ -807,39 +807,41 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
         return np.nan if _target is None else _target
 
     def res_to_row(res, algo:str):
-            res_id = res.id
-            res_split = res_id.split("-")
-            problem_id = int(res_split[0])
-            instance_id = int(res_split[1])
-            repeat_id = int(res_split[2])
-            loss = res.y_hist - res.optimal_value
-            row = {}
-            for column_name, column_path in column_name_map.items():
-                if column_path is None:
-                    if column_name == 'algorithm':
-                        row[column_name] = algo
-                    elif column_name == 'problem_id':
-                        row[column_name] = problem_id
-                    elif column_name == 'instance_id':
-                        row[column_name] = instance_id
-                    elif column_name == 'exec_id':
-                        row[column_name] = repeat_id
-                    elif column_name == 'loss':
-                        row[column_name] = loss
-                    elif column_name == 'best_loss':
-                        row[column_name] = np.minimum.accumulate(loss)
-                else:
-                    value = dynamical_access(res, column_path)
-                    non_none_value = _none_to_nan(value)
-                    row[column_name] = non_none_value
-            return row
+        res_id = res.id
+        res_split = res_id.split("-")
+        problem_id = int(res_split[0])
+        instance_id = int(res_split[1])
+        repeat_id = int(res_split[2])
+        loss = res.y_hist - res.optimal_value
+        row = {}
+
+        for column_name, column_path in column_name_map.items():
+            if column_path is None:
+                if column_name == 'algorithm':
+                    row[column_name] = algo
+                elif column_name == 'problem_id':
+                    row[column_name] = problem_id
+                elif column_name == 'instance_id':
+                    row[column_name] = instance_id
+                elif column_name == 'exec_id':
+                    row[column_name] = repeat_id
+                elif column_name == 'loss':
+                    row[column_name] = loss
+                elif column_name == 'best_loss':
+                    row[column_name] = np.minimum.accumulate(loss)
+            else:
+                value = dynamical_access(res, column_path)
+                non_none_value = _none_to_nan(value)
+                row[column_name] = non_none_value
+        return row
 
     res_df = pd.DataFrame(columns=column_name_map.keys())
     for result in results:
         algo = result.name.removeprefix("BL")
         for res in result.result:
             row = res_to_row(res, algo)
-            res_df.loc[len(res_df)] = row
+            if row is not None:
+                res_df.loc[len(res_df)] = row
 
     # hanle aoc
     def _plot_aoc():
@@ -1138,12 +1140,15 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
             labels.append(_labels)
             colors.append(_colors)
 
-            sub_titles.append(data_col_map.get(col, col))
-
+            _sub_title = data_col_map.get(col, col)
             if col in y_scale_cols:
-                y_scales.append(y_scale_cols[col])
+                _y_scale, _y_scale_kwargs = y_scale_cols[col]
+                y_scales.append((_y_scale, _y_scale_kwargs))
+                sub_titles.append(_sub_title + f"({_y_scale})")
             else:
                 y_scales.append(None)
+                sub_titles.append(_sub_title)
+
 
         plot_result(
             y=plot_data, x=x_data, 

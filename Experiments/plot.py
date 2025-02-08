@@ -2,6 +2,7 @@ import pickle
 import os
 from llamea.utils import IndividualLogger
 from llamea.population.es_population import ESPopulation
+from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
 from llamea.evaluator.evaluator_result import EvaluatorResult
 from llamea.utils import plot_results, plot_algo_results
 
@@ -124,10 +125,13 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None):
     if len(res_list) == 0:
         for file_path in file_paths:
             with open(file_path, "rb") as f:
-                handler = pickle.load(f)
-                if handler.error is not None:
+                target = pickle.load(f)
+                if target.error is not None:
                     continue
-                res_list.append(handler.eval_result)
+                if isinstance(target, EvaluatorResult):
+                    res_list.append(target)
+                elif isinstance(target, ResponseHandler):
+                    res_list.append(target.eval_result)
             
     plot_algo_results(results=res_list)
     
@@ -136,12 +140,13 @@ if __name__ == "__main__":
     # plot_search()
 
     file_paths = [
-        'Experiments/pop_temp/ESPopulation_1+1_0207005138/5-6_KernelSelectionBOv5.pkl'
+        # 'Experiments/pop_temp/ESPopulation_1+1_0207005138/5-6_KernelSelectionBOv5.pkl'
+        'Experiments/algo_eval_res/BayesLocalAdaptiveAnnealBOv1_0208222147.pkl',
     ] 
 
-    dir_path = 'Experiments/pop_temp/ESPopulation_1+1_0206072505'
-
-    pop_path = 'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f3_dim-5_budget-100_instances-[1]_repeat-1_0207222633/ESPopulation_all_0207223344.pkl'
+    dir_path = None
+    # pop_path = 'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f3_dim-5_budget-100_instances-[1]_repeat-1_0207222633/ESPopulation_all_0207223344.pkl'
+    pop_path = None
 
     plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
 

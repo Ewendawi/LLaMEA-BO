@@ -129,8 +129,8 @@ def run_all_algo_eval_exp(plot=False):
     from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
     from Experiments.test_cands.QMCBOv1 import GP_Matern_EI_MSL_SobolBOv1
 
-    # evaluator = get_IOHEvaluator_for_final_eval()
-    evaluator = get_IOHEvaluator_for_test()
+    evaluator = get_IOHEvaluator_for_final_eval()
+    # evaluator = get_IOHEvaluator_for_test()
     
     evaluator.ignore_over_budget = True
     evaluator.inject_critic = True
@@ -159,7 +159,7 @@ def run_all_algo_eval_exp(plot=False):
         plot_algo_results(res_list)
 
 
-def run_algo_eval_from_file_map(evaluator, file_map, plot):
+def run_algo_eval_from_file_map(evaluator, file_map, plot, save):
     res_list = []
     for cls_name, file_path in file_map.items():
         if not os.path.exists(file_path):
@@ -172,7 +172,7 @@ def run_algo_eval_from_file_map(evaluator, file_map, plot):
         cls = dynamic_import_and_get_class(file_path, cls_name)
         if cls is None:
             continue
-        res = _run_algrothim_eval_exp(evaluator, cls, code=code)
+        res = _run_algrothim_eval_exp(evaluator, cls, code=code, save=save)
         res_list.append(res)
     if plot:
         plot_algo_results(res_list)
@@ -258,7 +258,7 @@ def _run_exp(prompt_generator:PromptGenerator,
         if 'llm_mocker' in options:
             llm.mock_res_provider = options['llm_mocker']
 
-    if len(population.name) < 10:
+    if population.get_current_generation() == 0:
         # population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
         population.name += f"_{evaluator}"
         if torch.cuda.is_available():
@@ -412,6 +412,7 @@ def debug_algo_eval():
     budget = 100
     
     evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
+    evaluator = get_IOHEvaluator_for_final_eval()
     evaluator.inject_critic = True
     evaluator.ignore_over_budget = True
     
@@ -419,7 +420,8 @@ def debug_algo_eval():
         'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
         'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
     }
-    run_algo_eval_from_file_map(evaluator, file_map, plot=True)
+    save = False
+    run_algo_eval_from_file_map(evaluator, file_map, plot=True, save=save)
 
 def get_search_default_params():
     params = {
@@ -471,6 +473,8 @@ def get_llm():
     # MODEL = LLMS["llama-3.3-70b-versatile"]
     # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
     # MODEL = LLMS["o_gemini-2.0-flash-exp"]
+    # MODEL = LLMS["onehub-gemini-2.0-flash"]
+    # MODEL = LLMS["onehub-gemma2-9b-it"]
 
     llm = LLMmanager(api_key=MODEL[1], model=MODEL[0], base_url=MODEL[2], max_interval=MODEL[3])
     return llm
@@ -496,6 +500,7 @@ def mock_res_provider(*args, **kwargs):
     return response
 
 if __name__ == "__main__":
+    # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
     # run_all_algo_eval_exp(plot=True)
