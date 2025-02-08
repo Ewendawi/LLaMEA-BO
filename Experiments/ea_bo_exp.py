@@ -60,9 +60,15 @@ def get_IOHEvaluator_for_final_eval():
 def get_IOHEvaluator_for_light_evol():
     budget = 100
     dim = 5
-    problems = [2, 8, 12, 18, 21]
+    problems = [
+        2, 4,
+        8, 10,
+        12, 14,
+        18, 15,
+        21, 23,
+    ]
     instances = [[1]] * len(problems)
-    repeat = 3
+    repeat = 1
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
     return evaluator
 
@@ -71,7 +77,7 @@ def get_IOHEvaluator_for_test(problems=[3], _instances=[1], repeat=1, budget=100
     dim = 5
     problems = problems
     instances = [_instances] * len(problems)
-    repeat = 1
+    repeat = repeat
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
     return evaluator
 
@@ -192,7 +198,11 @@ def _run_exp(prompt_generator:PromptGenerator,
         eval_overwrite_type = options.get("eval_overwrite_type", None)
         if eval_overwrite_type is not None:
             if eval_overwrite_type == 'test':
-                evaluator = get_IOHEvaluator_for_test()
+                _test_problems = options.get("test_eval_problems", [3])
+                _test_instances = options.get("test_eval_instances", [1])
+                _test_repeat = options.get("test_eval_repeat", 1)
+                _test_budget = options.get("test_eval_budget", 100)
+                evaluator = get_IOHEvaluator_for_test(problems=_test_problems, _instances=_test_instances, repeat=_test_repeat, budget=_test_budget)
             elif eval_overwrite_type == 'light_evol':
                 evaluator = get_IOHEvaluator_for_light_evol()
             elif eval_overwrite_type == 'evol':
@@ -202,8 +212,8 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "eval_inject_critic" in options:
             evaluator.inject_critic = options["eval_inject_critic"]
         
-        if "pop_check_point_path" in options:
-            check_point_path = options["pop_check_point_path"]
+        if "pop_load_check_point_path" in options:
+            check_point_path = options["pop_load_check_point_path"]
             if os.path.exists(check_point_path):
                 population = Population.load(check_point_path)
                 logging.info("Load population from check point: %s", check_point_path)
@@ -230,8 +240,8 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "pop_debug_save_on_the_fly" in options:
             population.debug_save_on_the_fly = options["pop_debug_save_on_the_fly"]
 
-        if "pop_check_point_interval" in options:
-            population.save_per_generation = options["pop_check_point_interval"]
+        if "pop_save_check_point_interval" in options:
+            population.save_per_generation = options["pop_save_check_point_interval"]
 
     if len(population.name) < 10:
         # population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
@@ -309,7 +319,6 @@ def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=Fal
         **params
     )
 
-
 def run_mu_plus_lambda_exp(
                     n_parent:int=2,
                     n_offspring:int=1,
@@ -371,6 +380,58 @@ def run_island_exp(
     )
 
 
+
+def tune_vanilla_bo(params):
+    file_path = "Experiments/baselines/vanilla_bo.py"
+    cls_name = "VanillaBO"
+    res_path = "Experiments/baselines/vanilla_bo_res.pkl"
+    pop_path = None
+    should_eval = False
+    plot = False
+    test_eval = False
+    tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
+
+def debug_algo_eval():
+    problems = [4,10]
+    instances = [1]
+    repeat = 2
+    budget = 100
+    
+    evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
+    evaluator.inject_critic = True
+    evaluator.ignore_over_budget = True
+    
+    file_map = {
+        'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
+        'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
+    }
+    run_algo_eval_from_file_map(evaluator, file_map, plot=True)
+
+def get_search_default_params():
+    params = {
+        # "time_out_per_eval": 60 * 20,
+        "time_out_per_eval": None,
+
+        "llm": get_llm(),
+        "prompt_generator": get_bo_prompt_generator(),
+        "n_generations": 200,
+        "n_population": 40,
+        "n_query_threads": 0,
+        "n_eval_workers": 0,
+        "gpu_name": "cuda:7",
+        "max_interval": 5,
+        "evaluator": get_IOHEvaluator_for_evol(),
+        "options": {
+            # 'pop_load_check_point_path': "Experiments/pop_temp/xxx.pkl",
+            'pop_debug_save_on_the_fly': True,
+            # 'pop_warmstart_handlers': [handler|handler_path],
+            # 'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
+            # 'eval_inject_critic': True,
+            # 'pop_save_check_point_interval': 1,
+        }
+    }
+    return params
+
 def get_llm():
     # MODEL = LLMS["deepseek/deepseek-chat"]
     # MODEL = LLMS["gemini-2.0-flash-exp"]
@@ -402,58 +463,9 @@ def get_llm():
 
     llm = LLMmanager(api_key=MODEL[1], model=MODEL[0], base_url=MODEL[2], max_interval=MODEL[3])
 
-    llm.mock_res_provider = mock_res_provider
+    # llm.mock_res_provider = mock_res_provider
 
     return llm
-
-def get_search_default_params():
-    params = {
-        # "time_out_per_eval": 60 * 20,
-        "time_out_per_eval": None,
-
-        "llm": get_llm(),
-        "prompt_generator": get_bo_prompt_generator(),
-        "n_generations": 200,
-        "n_population": 40,
-        "n_query_threads": 0,
-        "n_eval_workers": 0,
-        "gpu_name": "cuda:7",
-        "max_interval": 5,
-        "evaluator": get_IOHEvaluator_for_evol(),
-        "options": {
-            # 'pop_check_point_path': "Experiments/pop_temp/xxx.pkl",
-            'pop_debug_save_on_the_fly': True,
-            # 'pop_warmstart_handlers': [handler|handler_path],
-            # 'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
-            # 'eval_inject_critic': True,
-        }
-    }
-    return params
-
-def tune_vanilla_bo(params):
-    file_path = "Experiments/baselines/vanilla_bo.py"
-    cls_name = "VanillaBO"
-    res_path = "Experiments/baselines/vanilla_bo_res.pkl"
-    pop_path = None
-    should_eval = False
-    plot = False
-    test_eval = False
-    tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
-
-def debug_algo_eval():
-    problems = [3]
-    instances = [1]
-    repeat = 1
-    budget = 100
-    
-    evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
-    evaluator.inject_critic = True
-    
-    file_map = {
-        'EIBOLHSBOv1': 'Experiments/pop_temp/ESPopulation_evol_1+1_IOHEvaluator_f3_dim-5_budget-100_instances-[1]_repeat-1_0207214319/0-1_EIBOLHSBOv1_0.0348.py'
-    }
-    run_algo_eval_from_file_map(evaluator, file_map, plot=True)
-
 
 if __name__ == "__main__":
     setup_logger(level=logging.INFO)
