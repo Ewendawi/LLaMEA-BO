@@ -462,10 +462,10 @@ def get_search_default_params():
 
 def get_llm():
     # MODEL = LLMS["deepseek/deepseek-chat"]
-    # MODEL = LLMS["gemini-2.0-flash-exp"]
+    MODEL = LLMS["gemini-2.0-flash-exp"]
     # MODEL = LLMS["gemini-1.5-flash"]
     # MODEL = LLMS["gemini-2.0-pro"]
-    MODEL = LLMS["gemini-2.0-flash-thinking"]
+    # MODEL = LLMS["gemini-2.0-flash-thinking"]
     # MODEL = LLMS["gemini-exp-1206"]
     # MODEL = LLMS["llama-3.1-70b-versatile"]
     # MODEL = LLMS["llama-3.3-70b-versatile"]
@@ -503,11 +503,10 @@ if __name__ == "__main__":
     # debug_algo_eval()
 
     _params = get_search_default_params()
-
     _new_params = {
-        "n_population": 3,
-        "n_query_threads": 0,
-        "n_eval_workers": 0,
+        "n_population": 40,
+        "n_query_threads": 2,
+        "n_eval_workers": 2,
 
         # "gpu_name": "cuda:7",
         "gpu_name": None,
@@ -520,15 +519,15 @@ if __name__ == "__main__":
             'pop_preorder_aware_init': True,
             # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
             # 'pop_selection_strategy': diversity_awarness_selection_fn,
-            'pop_save_dir': 'Experiments/pop_temp1',
+            'pop_save_dir': 'Experiments/pop_40',
 
 
-            'eval_inject_critic': True,
-            'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
+            'eval_inject_critic': False,
+            'eval_overwrite_type': 'light_evol', # 'test', 'light_evol', 'evol', 'final_eval' 
             'test_eval_problems': [4], # [4, 10],
             'test_eval_instances': [1],
-            'test_eval_repeat': 3,
-            'test_eval_budget': 60,
+            'test_eval_repeat': 1,
+            'test_eval_budget': 100,
 
             # 'llm_mocker': mock_res_provider,
         }
@@ -536,9 +535,9 @@ if __name__ == "__main__":
 
     _params.update(_new_params)
 
-    N_PARENT = 1
-    N_PARENT_PER_OFFSPRING = 1
-    N_OFFSPRING = 1
+    N_PARENT = 10
+    N_PARENT_PER_OFFSPRING = 2
+    N_OFFSPRING = 6
 
     run_mu_plus_lambda_exp(
         n_parent=N_PARENT,
