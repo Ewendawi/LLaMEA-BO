@@ -1,7 +1,6 @@
-from datetime import datetime
 import logging
-import os
-import pickle
+import math
+import itertools
 import numpy as np
 from .population import Population, PopulationQueryItem, desc_similarity
 from ..individual import Individual
@@ -28,6 +27,8 @@ class ESPopulation(Population):
         if not self.use_elitism and self.n_parent > self.n_offspring:
             raise ValueError("n_parent should be less than or equal to n_offspring when not using elitism.")
 
+        if math.comb(n_parent, n_parent_per_offspring) < self.n_offspring:
+            raise ValueError(f"n_parent({n_parent}) choose n_parent_per_offspring({n_parent_per_offspring}) is {math.comb(n_parent, n_parent_per_offspring)}. It should be greater than or equal to n_offspring({n_offspring}).")
 
     def all_individuals(self):
         return self.individuals.values()
@@ -121,26 +122,27 @@ class ESPopulation(Population):
 
         last_pop = self.selected_generations[-1]
         last_pop = [self.individuals[id] for id in last_pop if id in self.individuals]
+        sorted_last_pop = sorted(last_pop, key=lambda x: x.fitness, reverse=True)
 
         # custom parent selection strategy
         if self.get_parent_strategy is not None:
-            return self.get_parent_strategy(last_pop, n_parent_per_offspring, self.n_offspring)
+            return self.get_parent_strategy(sorted_last_pop, n_parent_per_offspring, self.n_offspring)
             
-        # if donot have enough parents, repeat the last population
-        n_last_pop_needed = n_parent_per_offspring * self.n_offspring
-        if len(last_pop) < n_last_pop_needed:
-            last_pop = last_pop * (n_last_pop_needed // len(last_pop) + 1)
-
         parents = []
-        idx_last_pop = 0
+        n_comb = list(itertools.combinations(range(len(sorted_last_pop)), n_parent_per_offspring))
+        one_comb = list(range(len(sorted_last_pop)))
         for _ in range(self.n_offspring):
             _n_parent = n_parent_per_offspring
             if n_parent_per_offspring > 1 and np.random.rand() > self.cross_over_rate:
                 _n_parent = 1
-            parent = last_pop[idx_last_pop: idx_last_pop+_n_parent]
-            parents.append(parent)
-            idx_last_pop += _n_parent
 
+            if _n_parent == 1 and len(one_comb) > 0:
+                parent_index = one_comb.pop(0)
+                parents.append([sorted_last_pop[parent_index]])
+            else:
+                parent_index = n_comb.pop(0)
+                parents.append([sorted_last_pop[i] for i in parent_index])
+            
         query_items = []
         mutation_count = 0
         crossover_count = 0

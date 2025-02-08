@@ -1,6 +1,7 @@
 import os
 import pickle
 import math
+import itertools
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Callable
@@ -206,28 +207,57 @@ def diversity_awarness_selection_fn(next_inds: list[Individual], last_inds: list
             return -(sim1 - sim2)
 
     tuple_cands = sorted(list(zip(candidates, mean_similarity)), key=cmp_to_key(cmp_inds), reverse=True)
-    sorted_candidates = [ind for ind, _ in tuple_cands]
+    _score_list = []
+    _sim_list = []
+    sorted_candidates = []
+    for ind, sim in tuple_cands:
+        sorted_candidates.append(ind)
+        _score_list.append(get_score(ind))
+        _sim_list.append(sim)
+
+    logging.info("diversity-awareness selection\n%s\n%s", _score_list, _sim_list)
+
     return sorted_candidates[:n_parent]
 
 def max_divese_desc_get_parent_fn(individuals: list[Individual], n_parent: int, n_offspring: int) -> list[PopulationQueryItem]:
     mean_similarity, similarity_matrix = desc_similarity(individuals)
+
     # get n_offspring individuals with the lowest similarity
     candidate_idxs = np.argsort(mean_similarity)[:n_offspring].tolist()
-    parent_ids = []
-    for i in candidate_idxs:
-        parent_id = [i]
-        others = np.argsort(similarity_matrix[i])[:n_parent-1].tolist()
-        for j in others:
-            parent_id.append(j)
-        parent_ids.append(parent_id)
+    parent_set = set()
+    for candidate_idx in candidate_idxs:
+        # get n_parent-1 individuals with the lowest similarity to the candidate
+        other_sim = similarity_matrix[candidate_idx]
+        # remove the candidate itself
+        others = np.argsort(other_sim)[:-1].tolist()
+        other_comb = itertools.combinations(others, n_parent-1)
+        for other in other_comb:
+            parent_id = [candidate_idx]
+            parent_id.extend(other)
+            check_set = frozenset(parent_id)
+            if check_set not in parent_set:
+                parent_set.add(check_set)
+                break
+
     query_items = []
-    for parent_id in parent_ids:
+    query_p_sim = []
+    ind_names = [ind.name for ind in individuals]
+    for parent_id in parent_set:
         parent = [individuals[i] for i in parent_id]
         query_item = PopulationQueryItem()
         query_item.parent = parent
         query_item.offspring = Individual()
         query_item.qid = 0
         query_items.append(query_item)
+
+        _parent_sim = 0
+        for comb in itertools.combinations(parent_id, 2):
+            _parent_sim += similarity_matrix[comb[0]][comb[1]]
+        _parent_sim /= len(parent_id)
+        query_p_sim.append((list(parent_id),_parent_sim))
+        
+    logging.info("max_divese_desc_get_parent_fn\n%s\n%s\n%s", ind_names, similarity_matrix, query_p_sim)
+        
     return query_items
 
 def score_to_probability_with_logarithmic_curve(
