@@ -183,6 +183,6 @@ ast/graphstats*
 logs_*/
 exp-*
 currentexp
-Experiments/pop_temp
+Experiments/pop_*
 population_logs
 algo_eval_res

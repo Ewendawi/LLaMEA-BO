@@ -29,6 +29,7 @@ class Population(ABC):
 
         self.debug_save_on_the_fly = False
         self.save_dir = None
+        self._save_dir_suffix = None
         self.save_per_generation = None
 
     @abstractmethod
@@ -82,29 +83,37 @@ class Population(ABC):
     def _safe_file_name(self, name):
         return name.replace(" ", "").replace(":", "_").replace("/", "_")
 
+    def _update_save_dir_if_need(self):
+        if self.save_dir is None:
+            self.save_dir = "Experiments/pop_temp"
+        if self._save_dir_suffix is None:
+            time_stamp = datetime.now().strftime("%m%d%H%M%S")
+            file_name = self._safe_file_name(self.name)
+            self._save_dir_suffix = f"{self.__class__.__name__}_{file_name}_{time_stamp}"
+            
+
     def save_on_the_fly(self, individual: Individual, generation: int):
         if self.debug_save_on_the_fly:
-            if self.save_dir is None:
-                time_stamp = datetime.now().strftime("%m%d%H%M%S")
-                file_name = self._safe_file_name(self.name)
-                self.save_dir = f'Experiments/pop_temp/{self.__class__.__name__}_{file_name}_{time_stamp}'
-            os.makedirs(self.save_dir, exist_ok=True)
+            self._update_save_dir_if_need()
+            _save_dir = self.save_dir + '/' + self._save_dir_suffix
+            os.makedirs(_save_dir, exist_ok=True)
+
 
             handler = Population.get_handler_from_individual(individual)
             code = handler.code
             name = handler.code_name
             index = self.get_population_size()
             fitness = individual.fitness
-            code_path = f'{self.save_dir}/{generation}-{index}_{name}_{fitness:.4f}.py'
+            code_path = f'{_save_dir}/{generation}-{index}_{name}_{fitness:.4f}.py'
             with open(code_path, 'w', encoding='utf-8') as f:
                 f.write(code)
 
-            handler_path = f'{self.save_dir}/{generation}-{index}_{name}_handler.pkl'
+            handler_path = f'{_save_dir}/{generation}-{index}_{name}_handler.pkl'
             with open(handler_path, 'wb') as f:
                 pickle.dump(handler, f)
 
             prompt = handler.sys_prompt + '\n\n' + handler.prompt
-            prompt_path = f'{self.save_dir}/{generation}-{index}_{name}_prompt.md'
+            prompt_path = f'{_save_dir}/{generation}-{index}_{name}_prompt.md'
             with open(prompt_path, 'w', encoding='utf-8') as f:
                 f.write(prompt)
 
@@ -113,18 +122,16 @@ class Population(ABC):
                 raw_res += f'\n## Feedback\n {individual.feedback}'
             elif individual.error:
                 raw_res += f'\n## Error\n {individual.error}'
-            res_path = f'{self.save_dir}/{generation}-{index}_{name}_respond.md'
+            res_path = f'{_save_dir}/{generation}-{index}_{name}_respond.md'
             with open(res_path, 'w', encoding='utf-8') as f:
                 f.write(raw_res)
 
-
     def save(self, filename=None, dirname=None, suffix=None):
+        self._update_save_dir_if_need()
+        _save_dir = self.save_dir + '/' + self._save_dir_suffix
         if dirname is None:
-            dirname = self.save_dir
-        if dirname is None:
-            dirname = "Experiments/pop_temp"
-        if not os.path.exists(dirname):
-            os.mkdir(dirname)
+            dirname = _save_dir
+        os.makedirs(dirname, exist_ok=True)
         if filename is None:
             filename = self.name
         filename = self._safe_file_name(filename)

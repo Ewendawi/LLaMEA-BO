@@ -243,6 +243,21 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "pop_save_check_point_interval" in options:
             population.save_per_generation = options["pop_save_check_point_interval"]
 
+        if "pop_preorder_aware_init" in options:
+            population.preorder_aware_init = options["pop_preorder_aware_init"]
+        
+        if "pop_parent_strategy" in options:
+            population.get_parent_strategy = options["pop_parent_strategy"]
+            
+        if "pop_selection_strategy" in options:
+            population.selection_strategy = options["pop_selection_strategy"]
+
+        if "pop_save_dir" in options:
+            population.save_dir = options["pop_save_dir"]
+
+        if 'llm_mocker' in options:
+            llm.mock_res_provider = options['llm_mocker']
+
     if len(population.name) < 10:
         # population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
         population.name += f"_{evaluator}"
@@ -380,7 +395,6 @@ def run_island_exp(
     )
 
 
-
 def tune_vanilla_bo(params):
     file_path = "Experiments/baselines/vanilla_bo.py"
     cls_name = "VanillaBO"
@@ -425,9 +439,23 @@ def get_search_default_params():
             # 'pop_load_check_point_path': "Experiments/pop_temp/xxx.pkl",
             'pop_debug_save_on_the_fly': True,
             # 'pop_warmstart_handlers': [handler|handler_path],
-            # 'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
-            # 'eval_inject_critic': True,
             # 'pop_save_check_point_interval': 1,
+            # 'pop_save_dir': 'Experiments/pop_temp',
+
+            # 'pop_preorder_aware_init': True,
+            # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
+            # 'pop_selection_strategy': diversity_awarness_selection_fn,
+
+
+            # 'eval_inject_critic': True,
+
+            # 'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
+            # 'test_eval_problems': [4, 10],
+            # 'test_eval_instances': [1],
+            # 'test_eval_repeat': 2,
+            # 'test_eval_budget': 60,
+
+            # 'llm_mocker': None,
         }
     }
     return params
@@ -444,28 +472,28 @@ def get_llm():
     # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
     # MODEL = LLMS["o_gemini-2.0-flash-exp"]
 
-    def mock_res_provider(*args, **kwargs):
-        file_list = [
-            "Experiments/bbob_test_res/successful_heavy_res.md",
-            "Experiments/bbob_test_res/successful_light_res.md",
-            "Experiments/bbob_test_res/successful_light_res1.md",
-            "Experiments/bbob_test_res/fail_excute_res.md",
-            "Experiments/bbob_test_res/fail_overbudget_res.md",
-        ]
-        file_path = np.random.choice(file_list, size=1, p=[0.0, 1.0, 0.0, 0.0, 0.0])[0]
-
-        file_path = 'Experiments/pop_temp/ESPopulation_evol_1+1_IOHEvaluator_f3_dim-5_budget-100_instances-[1]_repeat-1_0207214319/0-1_EIBOLHSBOv1_respond.md'
-        
-        response = None
-        with open(file_path, "r", encoding="utf-8") as f:
-            response = f.read()
-        return response
-
     llm = LLMmanager(api_key=MODEL[1], model=MODEL[0], base_url=MODEL[2], max_interval=MODEL[3])
-
-    # llm.mock_res_provider = mock_res_provider
-
     return llm
+
+def mock_res_provider(*args, **kwargs):
+    file_list = [
+        'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208014955/0-1_AdaGPUCBBOv2_respond.md',
+
+        'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208020129/1-4_AdaptiveBayesBOv5_respond.md',
+
+        'Experiments/pop_temp/ESPopulation_evol_4+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208020829/1-5_BayesTrustRegionAdaptiveBOv1_respond.md',
+
+        'Experiments/pop_temp/ESPopulation_evol_4+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208020829/0-4_BayesTrustRegionBOv1_respond.md',
+
+        'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f4_f10_dim-5_budget-60_instances-[1]_repeat-2_0208010238/0-2_EfficientHybridBOv1_respond.md',
+    ]
+    file_path = np.random.choice(file_list, size=1)[0] 
+    # file_path = np.random.choice(file_list, size=1, p=[0.25, 0.25, 0.25, 0.25])[0]
+
+    response = None
+    with open(file_path, "r", encoding="utf-8") as f:
+        response = f.read()
+    return response
 
 if __name__ == "__main__":
     setup_logger(level=logging.INFO)
@@ -486,11 +514,23 @@ if __name__ == "__main__":
 
         "options": {
             'pop_debug_save_on_the_fly': True,
-            'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
-            'eval_inject_critic': True,
             # 'pop_warmstart_handlers': [],
-            # 'pop_check_point_path': 
-            'pop_check_point_interval': 1,
+            # 'pop_load_check_point_path':
+            # 'pop_save_check_point_interval': 1,
+            'pop_preorder_aware_init': True,
+            # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
+            # 'pop_selection_strategy': diversity_awarness_selection_fn,
+            'pop_save_dir': 'Experiments/pop_temp1',
+
+
+            'eval_inject_critic': True,
+            'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
+            'test_eval_problems': [4], # [4, 10],
+            'test_eval_instances': [1],
+            'test_eval_repeat': 3,
+            'test_eval_budget': 60,
+
+            # 'llm_mocker': mock_res_provider,
         }
     }
 
@@ -505,12 +545,3 @@ if __name__ == "__main__":
         n_offspring=N_OFFSPRING,
         n_parent_per_offspring=N_PARENT_PER_OFFSPRING,
         **_params)
-
-
-    # run_mu_plus_lambda_diversity_exp(
-    #     n_parent=N_PARENT,
-    #     n_offspring=N_PARENT_PER_OFFSPRING,
-    #     n_parent_per_offspring=N_OFFSPRING,
-    #     **params)
-
-    
