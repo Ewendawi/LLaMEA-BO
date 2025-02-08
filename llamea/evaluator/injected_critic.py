@@ -28,7 +28,8 @@ def critic_wrapper(func):
         if _injected_critic is not None:
             if func.__name__ == "_update_eval_points":
                 try:
-                    next_X, next_y = args
+                    next_X = args[0]
+                    next_y = args[1]
                     next_X = to_numpy_if_tensor(next_X)
                     next_y = to_numpy_if_tensor(next_y)
                     X = to_numpy_if_tensor(self.X)
