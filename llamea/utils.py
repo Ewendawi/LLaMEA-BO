@@ -864,23 +864,24 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
         labels = short_labels
 
         # plot aoc
-        plot_box_violin(data=aoc_plot_data, 
-                        labels=labels, 
-                        sub_titles=sub_titles, 
-                        title="AOC",
-                        plot_type="violin", 
+        # plot_box_violin(data=aoc_plot_data, 
+        #                 labels=labels, 
+        #                 sub_titles=sub_titles, 
+        #                 title="AOC",
+        #                 plot_type="violin", 
+        #                 n_cols=4,
+        #                 figsize=(14, 8),
+        #                 **kwargs)
+
+        # # plot log aoc
+        plot_box_violin(data=log_plot_data,
+                        labels=labels,
+                        sub_titles=sub_titles,
+                        title="Log AOC",
+                        plot_type="violin",
                         n_cols=4,
                         figsize=(14, 8),
                         **kwargs)
-
-        # # plot log aoc
-        # plot_box_violin(data=log_plot_data,
-        #                 labels=labels,
-        #                 sub_titles=sub_titles,
-        #                 title="Log AOC",
-        #                 plot_type="violin",
-        #                 n_cols=2,
-        #                 **kwargs) 
     
     _plot_aoc()
 
