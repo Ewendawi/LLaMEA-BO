@@ -68,7 +68,7 @@ def get_IOHEvaluator_for_light_evol():
         21, 23,
     ]
     instances = [[1]] * len(problems)
-    repeat = 1
+    repeat = 3
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
     return evaluator
 
@@ -428,7 +428,7 @@ def get_search_default_params():
 
         "llm": get_llm(),
         "prompt_generator": get_bo_prompt_generator(),
-        "n_generations": 200,
+        "n_generations": np.inf,
         "n_population": 40,
         "n_query_threads": 0,
         "n_eval_workers": 0,

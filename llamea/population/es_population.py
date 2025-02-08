@@ -102,7 +102,7 @@ class ESPopulation(Population):
     def get_current_generation(self):
         return len(self.selected_generations)
 
-    def get_offspring_queryitems(self, n_parent:int=None) -> list[PopulationQueryItem]:
+    def get_offspring_queryitems(self, n_parent:int=None, max_n_offspring:int=None) -> list[PopulationQueryItem]:
         if len(self.selected_generations) == 0:
             # Initial population
             if self.preorder_aware_init:
@@ -118,7 +118,10 @@ class ESPopulation(Population):
                     query_items.append(query_item)
                 return query_items
 
-        n_parent_per_offspring = self.n_parent_per_offspring if n_parent is None else n_parent
+        _n_parent_per_offspring = self.n_parent_per_offspring if n_parent is None else n_parent
+        _n_offspring = self.n_offspring
+        if max_n_offspring is not None and max_n_offspring < self.n_offspring:
+            _n_offspring = max_n_offspring
 
         last_pop = self.selected_generations[-1]
         last_pop = [self.individuals[id] for id in last_pop if id in self.individuals]
@@ -126,14 +129,14 @@ class ESPopulation(Population):
 
         # custom parent selection strategy
         if self.get_parent_strategy is not None:
-            return self.get_parent_strategy(sorted_last_pop, n_parent_per_offspring, self.n_offspring)
+            return self.get_parent_strategy(sorted_last_pop, _n_parent_per_offspring, _n_offspring)
             
         parents = []
-        n_comb = list(itertools.combinations(range(len(sorted_last_pop)), n_parent_per_offspring))
+        n_comb = list(itertools.combinations(range(len(sorted_last_pop)), _n_parent_per_offspring))
         one_comb = list(range(len(sorted_last_pop)))
-        for _ in range(self.n_offspring):
-            _n_parent = n_parent_per_offspring
-            if n_parent_per_offspring > 1 and np.random.rand() > self.cross_over_rate:
+        for _ in range(_n_offspring):
+            _n_parent = _n_parent_per_offspring
+            if _n_parent_per_offspring > 1 and np.random.rand() > self.cross_over_rate:
                 _n_parent = 1
 
             if _n_parent == 1 and len(one_comb) > 0:

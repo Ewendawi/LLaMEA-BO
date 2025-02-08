@@ -120,7 +120,9 @@ class LLaMBO:
         while current_population < n_population and current_generation < n_generation:
             logging.info("""======Start Generation %s/%s with %s/%s Population=======""", current_generation, n_generation, current_population, n_population)
             
-            query_items = population.get_offspring_queryitems()
+            _max_n_offspring = n_population - current_population
+            query_items = population.get_offspring_queryitems(max_n_offspring=_max_n_offspring)
+
             current_query_time = time.time()
             if current_query_time - last_query_time < max_interval:
                 logging.info("Sleeping for %s seconds", max_interval - (current_query_time - last_query_time))

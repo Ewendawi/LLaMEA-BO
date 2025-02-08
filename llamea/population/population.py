@@ -48,7 +48,7 @@ class Population(ABC):
         pass
 
     @abstractmethod
-    def get_offspring_queryitems(self, n_parent:int=None) -> list[PopulationQueryItem]:
+    def get_offspring_queryitems(self, n_parent:int=None, max_n_offspring:int=None) -> list[PopulationQueryItem]:
         return None
 
     @abstractmethod
