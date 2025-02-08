@@ -112,10 +112,10 @@ class IOHObjectiveFn:
             return np.array(y).reshape(-1,1)
         return y
 
-def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ingore_over_budget:bool=False, inject_critic:bool=False) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]: 
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ignore_over_budget:bool=False, inject_critic:bool=False) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]: 
 
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
-    obj_fn.ignore_over_budget = ingore_over_budget
+    obj_fn.ignore_over_budget = ignore_over_budget
 
     l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
     obj_fn.obj_fn.attach_logger(l2)
@@ -294,7 +294,7 @@ class IOHEvaluator(AbstractEvaluator):
                 "cls_name": cls_name,
                 "cls": cls,
                 "time_out": timeout,
-                "ingore_over_budget": self.ignore_over_budget,
+                "ignore_over_budget": self.ignore_over_budget,
                 "inject_critic": self.inject_critic,
                 "cls_init_kwargs": cls_init_kwargs,
                 "cls_call_kwargs": cls_call_kwargs,

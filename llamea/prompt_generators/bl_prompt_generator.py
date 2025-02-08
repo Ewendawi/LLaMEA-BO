@@ -232,6 +232,7 @@ class RandomSearch:
 ```python
 from collections.abc import Callable
 from scipy.stats import qmc #If you are using QMC sampling, qmc from scipy is encouraged. Remove this line if you have better alternatives.
+from scipy.stats import norm
 import numpy as np
 class <AlgorithmName>:
     def __init__(self, budget:int, dim:int):

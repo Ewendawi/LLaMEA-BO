@@ -62,7 +62,7 @@ def get_IOHEvaluator_for_light_evol():
     dim = 5
     problems = [
         2, 4,
-        8, 10,
+        6, 8,
         12, 14,
         18, 15,
         21, 23,
