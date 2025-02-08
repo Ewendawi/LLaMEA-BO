@@ -90,7 +90,7 @@ class BaselinePromptGenerator(PromptGenerator):
             pre_solution_prompt = ""
             if len(candidates) > 0:
                 n_solution = len(candidates)
-                pre_solution_prompt = f"{n_solution} algorithms have been designed. The new algorithm should be as **diverse** as possible from the previous ones.\n"
+                pre_solution_prompt = f"{n_solution} algorithms have been designed. The new algorithm should be as **diverse** as possible from the previous ones on every aspect.\n"
                 pre_solution_prompt += "If the errors from the previous algorithms are provided, analyze them. The new algorithm should be designed to avoid these errors.\n"
                 for i, candidate in enumerate(candidates):
                     candidate_prompt = self.__get_candidate_prompt(candidate)
@@ -99,7 +99,7 @@ class BaselinePromptGenerator(PromptGenerator):
                     # pre_solution_prompt += f"- {candidate.desc}\n"
                 pre_solution_prompt += "\n"
 
-            code_structure_prompt = "A code structure guide is as follows:\n" + self.code_structure()
+            code_structure_prompt = "A code structure guide is as follows and keep the comments from the guide when generating the code.\n" + self.code_structure()
             final_prompt = f"""{task_prompt}\n{pre_solution_prompt}\n{code_structure_prompt}\n{response_format_prompt}"""
         else:
             if len(candidates) > 1:
@@ -168,7 +168,8 @@ class BaselinePromptGenerator(PromptGenerator):
         task_prompt = f"""
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of {problem_desc}. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
-{lib_prompt} Do not use any other libraries unless they cannot be replaced by the above libraries. Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
+{lib_prompt} Do not use any other libraries unless they cannot be replaced by the above libraries.  Do not remove the comments from the code.
+Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
 
 Give an excellent, novel and computationally efficient Bayesian Optimization algorithm to solve this task, give it a concise but comprehensive key-word-style description with the main ideas and justify your decision about the algorithm.
 """
@@ -262,8 +263,9 @@ class <AlgorithmName>:
 
     def _select_next_points(self, batch_size):
         # Select the next points to evaluate
-        # Using a selection strategy to optimize the acquisition function is optional
-        # The options of the selection strategy can be Nothing, the methods from scipy.optimize.minimize or any other useful strategies.
+        # Use a selection strategy to optimize/leverage the acquisition function 
+        # The selection strategy can be any heuristic/evolutionary/mathematical/hybrid methods.
+        # Your decision should consider the problem characteristics, acquisition function, and the computational efficiency.
         # return array of shape (batch_size, n_dims)
 
     def _evaluate_points(self, func, X):
@@ -279,7 +281,8 @@ class <AlgorithmName>:
     
     def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
         # Main minimize optimization loop
-        # func: takes array of shape (n_dims,) and returns np.float64.
+        # func: takes array of shape (n_dims,) and returns np.float64. 
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
         # Return a tuple (best_y, best_x)
         
         self._evaluate_points()
@@ -291,13 +294,7 @@ class <AlgorithmName>:
             self._evaluate_points()
             self._update_eval_points()
 
-            # select points by other strategies, like local search
-            self._evaluate_points()
-            self._update_eval_points()
-
         return best_y, best_x
-
-    # Code Implementation only contain the algorithm class. No usage examples"
     {extra}
 ```
 """
