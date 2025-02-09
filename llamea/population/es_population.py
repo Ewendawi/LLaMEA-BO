@@ -96,7 +96,7 @@ class ESPopulation(Population):
         # Save population every n generations
         n_gen = len(self.selected_generations)
         if self.save_per_generation is not None and n_gen % self.save_per_generation == 0:
-            _suffix = f'checkpoint_{n_gen}'
+            _suffix = f'gen_checkpoint_{n_gen-1}'
             self.save(suffix=_suffix)
 
     def get_current_generation(self):

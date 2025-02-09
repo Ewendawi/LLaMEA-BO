@@ -266,7 +266,7 @@ def _run_exp(prompt_generator:PromptGenerator,
 
     llambo.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,
-                        n_retry=3, sup_results=None,
+                        n_retry=3, 
                         time_out_per_eval=time_out_per_eval,
                         n_query_threads=n_query_threads,
                         n_eval_workers=n_eval_workers,
@@ -511,7 +511,7 @@ if __name__ == "__main__":
     _new_params = {
         "n_population": 40,
         "n_query_threads": 0,
-        "n_eval_workers": 2,
+        "n_eval_workers": 0,
 
         # "gpu_name": "cuda:7",
         "gpu_name": None,

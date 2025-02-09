@@ -89,11 +89,34 @@ class LLaMBO:
 
         return response_handler
 
+    def _add_individual(self, population:Population, query_item:PopulationQueryItem, handler:ResponseHandler, current_generation:int, prompt_generator:PromptGenerator):
+        if handler.code is None or handler.code_name is None:
+            return
+        
+        parent_ids = query_item.parent
+        ind = query_item.offspring
+        ind.description = getattr(handler , "desc", "")
+        ind.solution = handler.code
+        ind.name = handler.code_name
+        ind.parent_id = parent_ids
+        Population.set_handler_to_individual(ind, handler)
+        if handler.error:
+            ind.error = str(handler.error)
+            ind.fitness = handler.eval_result.score if handler.eval_result else -np.inf
+        else:
+            ind.fitness = handler.eval_result.score
+            ind.feedback = prompt_generator.evaluation_feedback_prompt(handler.eval_result, None)
+
+        tags = ind.metadata["tags"] if "tags" in ind.metadata else []
+        tags.append(f"gen:{current_generation}")
+        ind.add_metadata("tags", tags)
+
+        population.add_individual(ind, current_generation)
+
     def run_evolutions(self, llm: LLMmanager,
                        evaluator: AbstractEvaluator,
                        prompt_generator: PromptGenerator,
                        population: Population,
-                       sup_results: list[EvaluatorResult] = None,
                        n_generation: int = np.inf,
                        n_population: int = 1,
                        n_retry: int = 3,
@@ -134,7 +157,7 @@ class LLaMBO:
                 current_task = self.update_current_task(query_item=query_item, generation=current_generation)
 
                 # Get prompt
-                other_results = (None, sup_results)
+                other_results = (None, None)
 
                 parent_handlers = [Population.get_handler_from_individual(p) for p in query_item.parent if p is not None]
                 role_setting, prompt = prompt_generator.get_prompt(
@@ -165,7 +188,7 @@ class LLaMBO:
 
             logging.info("Querying and Evaluating %s individuals", len(params))
 
-            next_handlers:dict[str, ResponseHandler] = {}
+            query_item_map = {query_item.offspring.id: query_item for query_item in query_items}
             if n_query_threads > 0:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=n_query_threads) as executor:
                     futures = {}
@@ -175,42 +198,21 @@ class LLaMBO:
                     for future in concurrent.futures.as_completed(futures):
                         ind_id = futures[future]
                         handler = future.result()
-                        if handler.code and handler.code_name:
-                            next_handlers[ind_id] = handler
+
+                        query_item = query_item_map[ind_id]
+                        self._add_individual(population, query_item, handler, current_generation, prompt_generator)
+
             else:
                 for i, kwargs in enumerate(params):
                     next_handler = self.evalution_func(**kwargs)
                     if next_handler.code and next_handler.code_name:
                         ind_id = query_items[i].offspring.id
-                        next_handlers[ind_id] = next_handler
-
-            query_item_map = {query_item.offspring.id: query_item for query_item in query_items}
-            for ind_id, handler in next_handlers.items():
-                parent_ids = [p.id for p in query_item_map[ind_id].parent if p is not None]
-                
-                ind = query_item_map[ind_id].offspring
-                ind.description = getattr(handler , "desc", "")
-                ind.solution = handler.code
-                ind.name = handler.code_name
-                ind.parent_id = parent_ids
-                Population.set_handler_to_individual(ind, handler)
-                if handler.error:
-                    ind.error = str(handler.error)
-                    ind.fitness = handler.eval_result.score if handler.eval_result else -np.inf
-                else:
-                    next_other_results = (None, sup_results)
-                    ind.fitness = handler.eval_result.score
-                    ind.feedback = prompt_generator.evaluation_feedback_prompt(handler.eval_result, next_other_results)
-
-                tags = ind.metadata["tags"] if "tags" in ind.metadata else []
-                tags.append(f"gen:{current_generation}")
-                ind.add_metadata("tags", tags)
-
-                population.add_individual(ind, current_generation)
+                        query_item = query_item_map[ind_id]
+                        self._add_individual(population, query_item, next_handler, current_generation, prompt_generator)
 
             population.select_next_generation()
 
-            prompt_generator.update_sharedbroad(evolved_sharedbroad, next_handlers, population)
+            prompt_generator.update_sharedbroad(evolved_sharedbroad, population)
 
             best_ind = population.get_best_individual(maximize=True)
             if best_ind is not None:

@@ -95,7 +95,7 @@ class PromptGenerator(ABC):
     def get_return_checker(self) -> ResponseImpReturnChecker:
         return None
 
-    def update_sharedbroad(self, sharedbroad: Any, handlers:list[ResponseHandler], population:Population) -> None:
+    def update_sharedbroad(self, sharedbroad: Any, population:Population) -> None:
         pass
 
     def get_prompt_sharedbroad(self) -> Any:
