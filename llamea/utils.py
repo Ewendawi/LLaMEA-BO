@@ -497,7 +497,7 @@ def plot_search_result(results:list[tuple[str,Population]]):
         "log_y_aoc",
         "y_aoc",
         "best_y",
-        'loss'
+        'loss',
         ]
 
     def res_to_row(res, gen:int, strategy_name:str, n_iter:int):
@@ -516,7 +516,7 @@ def plot_search_result(results:list[tuple[str,Population]]):
             "log_y_aoc": res.log_y_aoc,
             "y_aoc": res.y_aoc,
             "best_y": res.best_y,
-            'loss': abs(res.optimal_value - res.best_y)
+            'loss': abs(res.optimal_value - res.best_y),
         }
         return row
 
@@ -597,7 +597,7 @@ def plot_search_result(results:list[tuple[str,Population]]):
 
         x_base = np.arange(len(strategy_aoc[0]), dtype=np.int16)
         x = np.tile(x_base, (len(plot_y), 1))
-        plot_result(
+        plot_lines(
             y = plot_y,
             x = x,
             labels = [labels],
@@ -742,6 +742,134 @@ def plot_search_result(results:list[tuple[str,Population]]):
         #             figsize=(14, 8),
         #             )
     # _plot_similarity()
+
+    
+    def _plot_error_state():
+        # - error rate by strategy
+        # - error rate by generation
+        # - error type
+        column_names = [
+        'strategy',
+        'n_gen',
+        'n_repeat',
+        'n_iter',
+        'err_type',
+        ]
+        _err_df = pd.DataFrame(columns=column_names)
+        _unique_strategies = res_df['strategy'].unique()
+        _strategy_count = {}
+        for strategy_name, pop in results:
+            if strategy_name not in _strategy_count:
+                _strategy_count[strategy_name] = 0
+            _strategy_count[strategy_name] += 1
+
+            n_generation = pop.get_current_generation()
+            n_iter = 0
+            for gen in range(n_generation):
+                # offspring generated in this generation
+                gen_offsprings = pop.get_offsprings(generation=gen)
+                n_iter += len(gen_offsprings)
+                # offspring selected in this generation
+                for ind in gen_offsprings:
+                    handler = Population.get_handler_from_individual(ind)
+                    res = {
+                        'strategy': strategy_name,
+                        'n_gen': gen+1,
+                        'n_iter': n_iter,
+                        'n_repeat': _strategy_count[strategy_name],
+                        'err_type': handler.error_type
+                    }
+                    _err_df.loc[len(_err_df)] = res
+
+        # error rate by strategy
+        def _plot_all_error_rate():
+            _all_error_df = _err_df.groupby(['strategy', 'n_repeat'])['err_type'].agg(list).reset_index()
+            _all_error_df['err_rate'] = _all_error_df['err_type'].apply(lambda x: len([ele for ele in x if ele is not None]) / len(x))
+
+            y_err_rates = []
+            for strategy in _unique_strategies:
+                _strategy_error_df = _all_error_df[_all_error_df['strategy'] == strategy]
+                _error_rate = _strategy_error_df['err_rate'].to_list()
+                y_err_rates.append(_error_rate)
+
+            plot_box_violin(
+                data=[y_err_rates],
+                labels=[_unique_strategies],
+                plot_type="violin",
+                n_cols=4,
+                figsize=(14, 8),
+                ) 
+
+        # error rate by generation
+        def _plot_error_rate_by_generation():
+            def _combine_err_rate(df_series):
+                _n_iters = df_series['n_iter']
+                _contents = []
+                sort_idxs = np.argsort(_n_iters)
+                _rates = df_series['err_rate']
+                for i, _n_iter_idx in enumerate(sort_idxs):
+                    _n_iter = _n_iters[_n_iter_idx]
+                    _rate = _rates[_n_iter_idx]
+                    n_fill = _n_iter - len(_contents)
+                    _contents.extend([_rate] * n_fill)
+                return np.array(_contents)
+            
+            _gen_error_df = _err_df.groupby(['strategy', 'n_iter', 'n_repeat'])['err_type'].agg(list).reset_index()
+            _gen_error_df['err_rate'] = _gen_error_df['err_type'].apply(lambda x: len([ele for ele in x if ele is not None]) / len(x))
+            _gen_error_df = _gen_error_df.groupby(['strategy', 'n_repeat'])[['err_rate', 'n_iter']].agg(list).reset_index()
+            _gen_error_df['evol_err_rate'] = _gen_error_df.apply(_combine_err_rate, axis=1)
+
+            y_err_rates = []
+            y_err_rates_filling = []
+            labels = []
+            for strategy in _unique_strategies:
+                _strategy_error_df = _gen_error_df[_gen_error_df['strategy'] == strategy]
+
+                _evol_err_rate = _strategy_error_df['evol_err_rate'].to_list()
+                _mean_err_rate = np.mean(_evol_err_rate, axis=0)
+                _std_err_rate = np.std(_evol_err_rate, axis=0)
+
+                y_err_rates.append(_mean_err_rate)
+                y_err_rates_filling.append((_mean_err_rate + _std_err_rate, _mean_err_rate - _std_err_rate))
+
+                labels.append(strategy)
+                
+            plot_y = [np.array(y_err_rates)]
+            x_base = np.arange(len(y_err_rates[0]), dtype=np.int16)
+            x = np.tile(x_base, (len(plot_y), 1))
+            plot_lines(
+                y = plot_y,
+                x = x,
+                labels = [labels],
+                filling=[y_err_rates_filling], 
+                ) 
+
+        # error type
+        def _plot_error_type():
+            _size = _err_df.size
+            type_count = _err_df['err_type'].value_counts()
+            _all_type_count = type_count.sum()
+            # type_percentage = type_count.div(type_count.sum()).mul(100)
+
+            _title = f"{_all_type_count} errors in {_size} algorithms"
+            _title = f'Total errors: {_all_type_count}/{_size}'
+            _plot_data = type_count
+
+            _, ax = plt.subplots()
+            ax.pie(_plot_data, 
+                   labels=_plot_data.index, 
+                   autopct='%1.1f%%',
+                #    autopct=lambda p: '{:d}'.format(int(p / 100 * _all_type_count)),
+                   )
+            ax.set_title(_title)
+    
+        _plot_all_error_rate()
+        _plot_error_rate_by_generation()
+        _plot_error_type()
+
+        pass
+
+    _plot_error_state()
 
     pass
         
