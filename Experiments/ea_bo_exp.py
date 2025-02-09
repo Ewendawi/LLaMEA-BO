@@ -510,7 +510,7 @@ if __name__ == "__main__":
     _params = get_search_default_params()
     _new_params = {
         "n_population": 40,
-        "n_query_threads": 2,
+        "n_query_threads": 0,
         "n_eval_workers": 2,
 
         # "gpu_name": "cuda:7",
@@ -520,7 +520,7 @@ if __name__ == "__main__":
             'pop_debug_save_on_the_fly': True,
             # 'pop_warmstart_handlers': [],
             # 'pop_load_check_point_path':
-            # 'pop_save_check_point_interval': 1,
+            'pop_save_check_point_interval': 1,
             'pop_preorder_aware_init': True,
             # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
             # 'pop_selection_strategy': diversity_awarness_selection_fn,
