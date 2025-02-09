@@ -4,7 +4,7 @@ import time
 import tqdm
 from llamea import LLaMBO, LLMmanager
 from llamea.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BaselinePromptGenerator
-from llamea.utils import setup_logger, IndividualLogger, plot_results
+from llamea.utils import setup_logger, IndividualLogger 
 from llamea.evaluator.ioh_evaluator import IOHEvaluator 
 from llamea.llm import LLMS
 

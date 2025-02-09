@@ -4,7 +4,7 @@ from llamea.utils import IndividualLogger
 from llamea.population.es_population import ESPopulation
 from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
 from llamea.evaluator.evaluator_result import EvaluatorResult
-from llamea.utils import plot_results, plot_algo_results
+from llamea.utils import plot_algo_result, plot_search_result
 
 def plot_search():
     # file_paths = [
@@ -103,6 +103,22 @@ def plot_search():
 
     # plot_results(results=strategy_list, other_results=None)
 
+def plot_search_0209():
+    file_paths = [
+        ('Experiments/pop_40/ESPopulation_evol_8+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208161412/ESPopulation_final_0208164323.pkl', "8+4"), 
+        ('Experiments/pop_40/ESPopulation_evol_10+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208164605/ESPopulation_final_0208204450.pkl', "10+6"),
+        ("Experiments/pop_40/ESPopulation_evol_4+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208120530/ESPopulation_final_0208132608.pkl", "4+6"),
+    ]
+
+    pop_list = []
+    for file_path, name in file_paths:
+        pop = pickle.load(open(file_path, "rb"))
+        pop_list.append((name, pop))
+    
+
+    plot_search_result(pop_list)
+
+
 def plot_algo(file_paths=None, dir_path=None, pop_path=None):
     res_list = []
     if pop_path is not None:
@@ -133,7 +149,7 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None):
                 elif isinstance(target, ResponseHandler):
                     res_list.append(target.eval_result)
             
-    plot_algo_results(results=res_list)
+    plot_algo_result(results=res_list)
     
 
 if __name__ == "__main__":
@@ -148,6 +164,9 @@ if __name__ == "__main__":
     # pop_path = 'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f3_dim-5_budget-100_instances-[1]_repeat-1_0207222633/ESPopulation_all_0207223344.pkl'
     pop_path = None
 
-    plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
+    # plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
+
+    
+    plot_search_0209()
 
     pass

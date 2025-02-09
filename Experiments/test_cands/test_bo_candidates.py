@@ -1,6 +1,6 @@
 from llamea.evaluator.ioh_evaluator import IOHEvaluator
 from llamea.individual import Individual
-from llamea.utils import plot_results, plot_algo_results
+from llamea.utils import plot_algo_result
 
 from Experiments.test_cands.DeepEnsembleQMCBO import DeepEnsembleQMCBO
 from Experiments.test_cands.TuRBO import TuRBO
@@ -28,6 +28,6 @@ cls_list = [
 ]
 
 res = IOHEvaluator.evaluate_from_cls(cls_list, budget=budget, problems=problems, repeat=repeat)
-plot_algo_results(results=res)
+plot_algo_result(results=res)
 
 pass

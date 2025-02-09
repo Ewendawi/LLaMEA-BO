@@ -13,7 +13,7 @@ from .population.population import Population, PopulationQueryItem
 from .individual import Individual
 from .llm import LLMmanager
 from .prompt_generators import PromptGenerator, GenerationTask, ResponseHandler
-from .utils import IndividualLogger, NoCodeException, plot_results, plot_algo_results
+from .utils import IndividualLogger, NoCodeException 
 from .evaluator import EvaluatorResult, AbstractEvaluator
 
 class LLaMBO:

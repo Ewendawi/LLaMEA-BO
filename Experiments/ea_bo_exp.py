@@ -12,7 +12,7 @@ from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, T
 from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
 from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
-from llamea.utils import plot_results, plot_algo_results
+from llamea.utils import plot_algo_result
 from llamea.individual import Individual
 
 
@@ -156,7 +156,7 @@ def run_all_algo_eval_exp(plot=False):
         res_list.append(res)
 
     if plot:
-        plot_algo_results(res_list)
+        plot_algo_result(res_list)
 
 
 def run_algo_eval_from_file_map(evaluator, file_map, plot, save):
@@ -175,7 +175,7 @@ def run_algo_eval_from_file_map(evaluator, file_map, plot, save):
         res = _run_algrothim_eval_exp(evaluator, cls, code=code, save=save)
         res_list.append(res)
     if plot:
-        plot_algo_results(res_list)
+        plot_algo_result(res_list)
     
 
 # EA Experiments
@@ -308,7 +308,7 @@ def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=Fal
     logging.info("Results: %s", res) 
 
     if plot:
-        plot_algo_results([res])
+        plot_algo_result([res])
     
     if pop_path is not None and os.path.exists(pop_path):
         population = Population.load(pop_path) 

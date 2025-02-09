@@ -281,7 +281,7 @@ def gaussian_smoothing(data, sigma):
     return gaussian_filter1d(data, sigma)
 
 
-def plot_result(y:list[np.ndarray], x:list[np.ndarray],
+def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
 
                 labels:list[list[str]],
                 label_fontsize:int = 7,
@@ -358,6 +358,7 @@ def plot_result(y:list[np.ndarray], x:list[np.ndarray],
             _color = _colors[j] if _colors is not None and len(_colors) > j else None
             ax.plot(_x, _y[j,:], label=label, linewidth=linewidth, color=_color)
 
+            _color = _color if _color is not None else ax.get_lines()[-1].get_color()
             if _filling is not None:
                 upper, lower = _filling[j]
                 ax.fill_between(_x, lower, upper, alpha=0.3, color=_color)
@@ -476,9 +477,16 @@ def plot_box_violin(
 
 from .evaluator.evaluator_result import EvaluatorResult
 
-def plot_results(results:list[tuple[str,list[EvaluatorResult]|Population]], 
-                    other_results:list[EvaluatorResult] = None, **kwargs):
-    #results: (n_strategies, n_generations, n_evaluations)
+def dynamical_access(obj, attr_path):
+    attrs = attr_path.split(".")
+    target = obj
+    for attr in attrs:
+        target = getattr(target, attr, None)
+        if target is None:
+            break
+    return target
+
+def plot_search_result(results:list[tuple[str,Population]]):
     column_names = [
         'strategy',
         'problem_id',
@@ -486,7 +494,6 @@ def plot_results(results:list[tuple[str,list[EvaluatorResult]|Population]],
         'exec_id',
         'n_gen',
         'n_iter',
-        'pop',
         "log_y_aoc",
         "y_aoc",
         "best_y",
@@ -506,252 +513,241 @@ def plot_results(results:list[tuple[str,list[EvaluatorResult]|Population]],
             'exec_id': repeat_id,
             'n_gen': gen+1,
             'n_iter': n_iter,
-            "log_y_aoc": res.y_aoc_from_ioh,
+            "log_y_aoc": res.log_y_aoc,
             "y_aoc": res.y_aoc,
             "best_y": res.best_y,
             'loss': abs(res.optimal_value - res.best_y)
         }
         return row
 
-    # preprocess results
-    group_unique_inds = {}
-    group_gen_inds = {}
+        
     res_df = pd.DataFrame(columns=column_names)
-    for res_tuple in results:
-        strategy_name, gen_list = res_tuple 
-
-        # group by strategy
-        if strategy_name not in group_unique_inds:
-            group_unique_inds[strategy_name] = []
-            group_gen_inds[strategy_name] = []
-        unique_inds = {}
-        gen_inds_list = []
-        group_gen_inds[strategy_name].append(gen_inds_list)
-        group_unique_inds[strategy_name].append(unique_inds)
-        if isinstance(gen_list, Population):
-            n_iter = 0
-            pop = gen_list
-            n_generation = pop.get_current_generation()
-            for gen in range(n_generation):
-                # offspring generated in this generation
-                gen_offsprings = pop.get_offsprings(generation=gen)
-                n_iter += len(gen_offsprings)
-                # offspring selected in this generation
-                gen_inds = pop.get_individuals(generation=gen)
-                gen_inds_list.append(gen_inds)
-                for ind in gen_inds:
-                    if ind.id not in unique_inds:
-                        unique_inds[ind.id] = ind
-                    handler = Population.get_handler_from_individual(ind)
-                    for res in handler.eval_result.result:
-                        row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter)
-                        res_df.loc[len(res_df)] = row
-        elif isinstance(gen_list, list):
-            for i, gen_res in enumerate(gen_list):
-                if gen_res.error is not None:
-                    continue
-                for res in gen_res.result:
-                    row = res_to_row(res, i, strategy_name=strategy_name, n_iter=i+1) 
+    for strategy_name, pop in results:
+        n_generation = pop.get_current_generation()
+        n_iter = 0
+        for gen in range(n_generation):
+            # offspring generated in this generation
+            gen_offsprings = pop.get_offsprings(generation=gen)
+            n_iter += len(gen_offsprings)
+            # offspring selected in this generation
+            gen_inds = pop.get_individuals(generation=gen)
+            for ind in gen_inds:
+                handler = Population.get_handler_from_individual(ind)
+                for res in handler.eval_result.result:
+                    row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter)
                     res_df.loc[len(res_df)] = row
 
-    if other_results is not None:
-        for other_res in other_results:
-            for res in other_res.result:
-                row = res_to_row(res, -1, strategy_name=res.name, n_iter=-1)
-                res_df.loc[len(res_df)] = row
-
-    # strategy-wise
-    log_y_aocs, log_y_aoc_labels = [], []
-    baseline_y_aoc, baseline_y_aoc_labels = [], []
-    y_aocs, y_aoc_labels = [], []
-    baseline_y_aoc, baseline_y_aoc_labels = [], []
-    g_log_y_aoc = res_df.groupby(['strategy', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
-    max_iter = g_log_y_aoc['n_iter'].max()
-    for name, group in g_log_y_aoc.groupby('strategy'):
-        iters = group['n_iter'].values
-        if len(iters) == 1 and iters[0] == -1:
-            baseline_y_aoc.append(group['y_aoc'].values[0])
-            baseline_y_aoc_labels.append(name)
-            continue
-
-        # fill the missing iter with 0; start from 0
-        aoc = np.zeros(max_iter+1)
-        log_aoc = np.zeros(max_iter+1)
-        for iter in iters:
-            log_aoc[iter] = group[group['n_iter'] == iter]['log_y_aoc'].values[0]
-            aoc[iter] = group[group['n_iter'] == iter]['y_aoc'].values[0]
-
-        log_y_aocs.append(log_aoc)
-        y_aocs.append(aoc)
-        log_y_aoc_labels.append(name)
-        y_aoc_labels.append(name)
-
-    # problem-wise
-    loss_list = [[] for _ in range(1, 25)]
-    loss_labels = [[] for _ in range(1, 25)]
-    aoc_list = [[] for _ in range(1, 25)]
-    aoc_labels = [[] for _ in range(1, 25)]
-    log_aoc_list = [[] for _ in range(1, 25)]
-    log_aoc_labels = [[] for _ in range(1, 25)]
-    g_best_y = res_df.groupby(['strategy', 'n_iter', 'problem_id'])[['y_aoc', 'loss', 'log_y_aoc']].agg(np.mean).reset_index()
-    max_iter = g_best_y['n_iter'].max()
-    for (name, p_id), group in g_best_y.groupby(['strategy', 'problem_id']):
-        iters = group['n_iter'].values
-        if len(iters) == 1 and iters[0] == -1:
-            continue
-
-        aoc = np.zeros(max_iter+1)
-        loss = np.zeros(max_iter+1)
-        log_aoc = np.zeros(max_iter+1)
-        max_loss = group['loss'].max()
-        missing_iters = set(range(0, max_iter+1)) - set(iters)
-        for missing_iter in missing_iters:
-            loss[missing_iter] = max_loss
-        for iter in iters:
-            loss[iter] = group[group['n_iter'] == iter]['loss'].values[0]
-            aoc[iter] = group[group['n_iter'] == iter]['y_aoc'].values[0]
-            log_aoc[iter] = group[group['n_iter'] == iter]['log_y_aoc'].values[0]
-
-        aoc_list[p_id-1].append(aoc)
-        aoc_labels[p_id-1].append(name)
-        log_aoc_list[p_id-1].append(log_aoc)
-        log_aoc_labels[p_id-1].append(name+"(log)")
-        loss_list[p_id-1].append(loss)
-        loss_labels[p_id-1].append(name)
-
-    # similarity
-    handler_similarity = True
-    if handler_similarity:
-        group_mean_sim_labels = []
-        group_mean_sim = []
-        for strategy_name, group_inds in group_unique_inds.items():
-            temp_means = []
-            temp_len = []
-            for unique_inds in group_inds:
-                temp_len.append(len(unique_inds))
-                unique_inds = list(unique_inds.values())
-                mean_sim, _ = desc_similarity(unique_inds)
-                overall_sim = np.mean(mean_sim)
-                temp_means.append(overall_sim)
-            group_mean_sim.append([np.mean(temp_means)])
-            mean_len = np.mean(temp_len)
-            group_mean_sim_labels.append(strategy_name+f"({mean_len:.0f})")
-
-        group_gen_sim = []
-        group_gen_sim_labels = []
-        for strategy_name, group_inds in group_gen_inds.items():
-            group_sim = []
-            for instance in group_inds:
-                instance_sim = []
-                for gen_inds in instance:
-                    if len(gen_inds) < 2:
-                        continue
-
-                    handler = Population.get_handler_from_individual(gen_inds[0])
-                    mean_sim, _ = desc_similarity(gen_inds)
-                    instance_sim.append(np.mean(mean_sim))
-                if len(instance_sim) > 0:
-                    group_sim.append(instance_sim)
-            if len(group_sim) == 0:
-                continue
-            group_gen_sim.append(np.mean(np.array(group_sim), axis=0))
-            group_gen_sim_labels.append(strategy_name)
-        max_gen = max([gen_sim.size for gen_sim in group_gen_sim])
-        for i, gen_sim in enumerate(group_gen_sim):
-            if gen_sim.size < max_gen:
-                # append mean to the end
-                mean_sim = np.mean(gen_sim)
-                group_gen_sim[i] = np.append(gen_sim, [mean_sim] * (max_gen - gen_sim.size))
-                
-        # plot similarity
-        baseline_sim = np.array([group_mean_sim])
-        baseline_sim_labels = [group_mean_sim_labels]
-        y = np.array([group_gen_sim])
-        base_x = np.arange(0, max_gen, dtype=int)
-        x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-        labels = [group_gen_sim_labels]
-        x_labels = ["Generation"] * len(labels)
-        y_labels = ["Similarity"] * len(labels)
-        plot_result(y=y, x=x, labels=labels, 
-                    baseline_labels=baseline_sim_labels, baselines=baseline_sim,
-                    x_labels=x_labels, y_labels=y_labels,
-                    n_cols=1, **kwargs)
-        
-    # plot aoc
-    y = np.maximum.accumulate(np.array([log_y_aocs, y_aocs]), axis=2)
-    base_x = np.arange(0, max_iter+1, dtype=int)
-    x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-    sub_titles = ["Log AOC", "AOC"]
-    labels = [log_y_aoc_labels] * 2
-    plot_result(y=y, x=x, labels=labels,
-                title=None,
-                sub_titles=sub_titles, n_cols=2,
-                **kwargs)
-
-    # plot loss
-    y = np.minimum.accumulate(np.array(loss_list), axis=2)
-    base_x = np.arange(0, max_iter+1, dtype=int)
-    x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-    sub_titles = [f"F{p_id}" for p_id in range(1, 25)]
-    labels = loss_labels * len(loss_list)
-    x_labels = ["Population"] * len(loss_list)
-    n_cols = 6
-    for i, _ in enumerate(x_labels):
-        if i < len(x_labels) - n_cols:
-            x_labels[i] = ""
-    y_labels = ["Loss"] * len(loss_list)
-    for i, _ in enumerate(y_labels):
-        if i % n_cols != 0:
-            y_labels[i] = ""
-    title = "Loss"
-    plot_result(y=y, x=x, labels=labels,
-                figsize=(14, 8),
-                # x_labels=x_labels,
-                y_lim_bottom=0.0,
-                y_labels=y_labels,
-                label_fontsize=6,
-                title=title,
-                sub_titles=sub_titles, n_cols=n_cols,
-                **kwargs)
-        
-    # plot aoc by problem
-    # y_aoc = np.maximum.accumulate(np.array(aoc_list), axis=2)
-    # y_log_aoc = np.maximum.accumulate(np.array(log_aoc_list), axis=2)
-    # y = np.concatenate([y_log_aoc, y_aoc], axis=1)
-    # labels = [log_aoc_labels[i] + aoc_labels[i] for i in range(len(aoc_labels))]
-
-    y = np.maximum.accumulate(np.array(aoc_list), axis=2)
-    labels = aoc_labels
-    title = "AOC"
-
-    # y = np.maximum.accumulate(np.array(log_aoc_list), axis=2)
-    # labels = log_aoc_labels
-    # title = "Log AOC"
-
-    base_x = np.arange(0, max_iter+1, dtype=int)
-    x = np.tile(base_x, (y.shape[0], y.shape[1], 1))
-    sub_titles = [f"F{p_id}" for p_id in range(1, 25)]
-    # caption = "AOC\n2nd row: baseline$x=0$"
-    plot_result(y=y, x=x, labels=labels,
-                figsize=(14, 8),
-                # y_lim_bottom=0.0, y_lim_top=1.0,
-                sub_titles=sub_titles, n_cols=6,
-                title=title,
-                label_fontsize=6,
-                # caption=caption,
-                **kwargs)
-
-def plot_algo_results(results:list[EvaluatorResult], **kwargs):
+    def _combine_acc(column='y_aoc', maximum=True):
+        def _inner_combine_acc(df_series):
+            _n_iters = df_series['n_iter']
+            _contents = []
+            _n_iters.sort()
+            _aoc = df_series[column]
+            for i, _n_iter in enumerate(_n_iters):
+                n_fill = _n_iter - len(_contents) - 1
+                if maximum:
+                    _contents.extend([0] * n_fill)
+                else:
+                    _contents.extend([np.inf] * n_fill)
+                _contents.append(_aoc[i])
+            if maximum:
+                _acc = np.maximum.accumulate(_contents)
+            else:
+                _acc = np.minimum.accumulate(_contents)
+            return _acc
+        return _inner_combine_acc
     
-    def dynamical_access(obj, attr_path):
-        attrs = attr_path.split(".")
-        target = obj
-        for attr in attrs:
-            target = getattr(target, attr, None)
-            if target is None:
-                break
-        return target
+    def _plot_aoc():
+        aoc_df = res_df.groupby(['strategy', 'problem_id', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
+        
+        aoc_df = aoc_df.groupby(['strategy', 'problem_id'])[['n_iter',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
+        aoc_df['acc_y_aoc'] = aoc_df.apply(_combine_acc('y_aoc'), axis=1)
+        aoc_df['acc_log_y_aoc'] = aoc_df.apply(_combine_acc('log_y_aoc'), axis=1)
+
+        aoc_df = aoc_df.groupby(['strategy'])[['acc_y_aoc', 'acc_log_y_aoc']].agg(list).reset_index()
+
+        strategy_aoc = [] 
+        strategy_filling = []
+
+        strategy_log_aoc = []
+        strategy_log_filling = []
+        
+        labels = []
+
+        unique_strategies = aoc_df['strategy'].unique()
+        for strategy in unique_strategies:
+            strategy_df = aoc_df[aoc_df['strategy'] == strategy]
+
+            acc_y_aoc = np.array(strategy_df['acc_y_aoc'].values[0])
+            y_aoc = np.mean(acc_y_aoc, axis=0)
+            std_y_aoc = np.std(acc_y_aoc, axis=0)
+            strategy_aoc.append(y_aoc)
+            strategy_filling.append((y_aoc + std_y_aoc, y_aoc - std_y_aoc))
+
+            acc_log_y_aoc = np.array(strategy_df['acc_log_y_aoc'].values[0])
+            log_y_aoc = np.mean(acc_log_y_aoc, axis=0)
+            std_log_y_aoc = np.std(acc_log_y_aoc, axis=0)
+            strategy_log_aoc.append(log_y_aoc)
+            strategy_log_filling.append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
+
+            labels.append(strategy)
+
+
+        plot_y = [np.array(strategy_log_aoc)]
+
+        x_base = np.arange(len(strategy_aoc[0]), dtype=np.int16)
+        x = np.tile(x_base, (len(plot_y), 1))
+        plot_result(
+            y = plot_y,
+            x = x,
+            labels = [labels],
+            filling=[strategy_log_filling], 
+            # sub_titles=["AOC", "Log AOC"], 
+            )
+
+    
+    def _plot_problem_aoc_and_loss():
+        # aoc_df = res_df.copy()
+        aoc_df = res_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id', 'n_iter'])[["log_y_aoc", 'y_aoc', 'loss']].agg(np.mean).reset_index()
+        aoc_df = aoc_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id'])[['n_iter',"log_y_aoc", 'y_aoc', 'loss']].agg(list).reset_index()
+        aoc_df['acc_y_aoc'] = aoc_df.apply(_combine_acc('y_aoc'), axis=1)
+        aoc_df['acc_log_y_aoc'] = aoc_df.apply(_combine_acc('log_y_aoc'), axis=1)
+        aoc_df['acc_loss'] = aoc_df.apply(_combine_acc('loss', maximum=False), axis=1)
+        
+        problem_log_aoc = []
+        problem_log_aoc_filling = []
+        problem_loss = []
+        problem_loss_filling = []
+        labels = []
+
+        unique_problems = aoc_df['problem_id'].unique()
+        
+        for problem in unique_problems:
+            problem_df = aoc_df[aoc_df['problem_id'] == problem]
+            unique_strategies = problem_df['strategy'].unique()     
+            _log_aoc = []
+            _log_aoc_filling = []
+            _loss = []
+            _loss_filling = []
+            _labels = []    
+            for strategy in unique_strategies:
+                strategy_df = problem_df[problem_df['strategy'] == strategy]
+                acc_log_y_aoc = np.array(strategy_df['acc_log_y_aoc'].values)
+                log_y_aoc = np.mean(acc_log_y_aoc, axis=0)
+                std_log_y_aoc = np.std(acc_log_y_aoc, axis=0)
+                _log_aoc.append(log_y_aoc)
+                _log_aoc_filling.append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
+
+                acc_loss = np.array(strategy_df['acc_loss'].values)
+                loss = np.mean(acc_loss, axis=0)
+                std_loss = np.std(acc_loss, axis=0)
+                _loss.append(loss)
+                _loss_filling.append((loss + std_loss, loss - std_loss))
+
+                _labels.append(strategy)
             
+            problem_log_aoc.append(_log_aoc)
+            problem_log_aoc_filling.append(_log_aoc_filling)
+            problem_loss.append(_loss)
+            problem_loss_filling.append(_loss_filling)
+            labels.append(_labels) 
+        
+        aoc_and_loss = []
+        subtitles = []
+        filling = []
+        for i, problem in enumerate(unique_problems):
+            aoc_and_loss.append(problem_log_aoc[i])
+            subtitles.append(f"F{problem}-AOC")
+            filling.append(problem_log_aoc_filling[i])
+            
+            aoc_and_loss.append(problem_loss[i])
+            subtitles.append(f"F{problem}-Loss")
+            filling.append(problem_loss_filling[i])
+        labels = labels * 2
+
+        plot_y = np.array(aoc_and_loss)
+
+        x_base = np.arange(len(problem_log_aoc[0][0]), dtype=np.int16)
+        x = np.tile(x_base, (len(plot_y), 1))
+
+        plot_result(
+            y = plot_y,
+            x = x,
+            labels = labels,
+            filling=filling,
+            sub_titles=subtitles, 
+            n_cols=5,
+            figsize=(15, 9)
+            )
+    # _plot_problem_aoc_and_loss()
+
+
+    def _plot_similarity():
+        strategy_group = {}
+        for strategy_name, pop in results:
+            if strategy_name not in strategy_group:
+                strategy_group[strategy_name] = []
+            strategy_group[strategy_name].append(pop)
+
+        y_sim_list = []
+        y_sim_filling = []
+        labels = []
+        y_pop_sim_list = []
+
+        for strategy_name, group in strategy_group.items():
+            sim_list = []
+            pop_sim_list = []
+            for pop in group:
+                iter_sim_list = []
+                n_iter = 1
+                n_generation = pop.get_current_generation()
+                for gen in range(n_generation):
+                    gen_offsprings = pop.get_offsprings(generation=gen)
+                    n_iter += len(gen_offsprings)
+
+                    n_fill = n_iter - len(iter_sim_list)
+                    mean_sim, _ = desc_similarity(gen_offsprings)
+                    _sim = np.mean(mean_sim)
+                    iter_sim_list.extend([_sim] * n_fill)
+                sim_list.append(iter_sim_list)
+
+                all_inds = pop.all_individuals()
+                all_mean_sim, _ = desc_similarity(all_inds)
+                pop_sim_list.append(np.mean(all_mean_sim))
+
+            mean_sim = np.mean(sim_list, axis=0)
+            std_sim = np.std(sim_list, axis=0)
+            y_sim_list.append(mean_sim)
+            y_sim_filling.append((mean_sim + std_sim, mean_sim - std_sim))
+
+            labels.append(strategy_name)
+
+            y_pop_sim_list.append(pop_sim_list)
+
+        plot_y = [np.array(y_sim_list)]
+        x_base = np.arange(len(y_sim_list[0]), dtype=np.int16)
+        x = np.tile(x_base, (len(plot_y), 1))
+        plot_lines(
+            y = plot_y,
+            x = x,
+            labels = [labels],
+            filling=[y_sim_filling], 
+            )
+        
+        # plot_box_violin(
+        #             data=[y_pop_sim_list],
+        #             labels=[labels],
+        #             plot_type="violin",
+        #             n_cols=4,
+        #             figsize=(14, 8),
+        #             )
+    # _plot_similarity()
+
+    pass
+        
+
+def plot_algo_result(results:list[EvaluatorResult], **kwargs):
+
     # dynamic access from EvaluatorBasicResult. None means it should be handled separately
     column_name_map = {
         'algorithm' : None,
@@ -1150,7 +1146,7 @@ def plot_algo_results(results:list[EvaluatorResult], **kwargs):
                 sub_titles.append(_sub_title)
 
 
-        plot_result(
+        plot_lines(
             y=plot_data, x=x_data, 
             y_scales=y_scales,
             baselines=baselines,
