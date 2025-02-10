@@ -1,4 +1,7 @@
 import logging
+import time
+import functools
+from types import FunctionType
 import numpy as np
 import torch
 import gpytorch
@@ -9,8 +12,51 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from scipy.stats import qmc
 from .evaluator_result import EvaluatorSearchResult
 
+
+class FunctionProfiler:
+    def __init__(self):
+        self.name = None
+        self._execution_times = {}
+        self._call_counts = {}
+
+    def profile(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.perf_counter()
+            result = func(*args, **kwargs)
+            end_time = time.perf_counter()
+            execution_time = end_time - start_time
+
+            func_name = func.__name__
+            if func_name not in self._execution_times:
+                self._execution_times[func_name] = []
+                self._call_counts[func_name] = 0
+
+            self._execution_times[func_name].append(execution_time)
+            self._call_counts[func_name] += 1
+            return result
+        return wrapper
+
+    def wrap_class(self, cls):
+        for name, attr in cls.__dict__.items():
+            if isinstance(attr, FunctionType): 
+                setattr(cls, name, self.profile(attr)) 
+        return cls
+
+    def print_report(self):
+        print(f"\n--- {self.name} Profiling Report ---")
+        for func_name, times in self._execution_times.items():
+            call_count = self._call_counts[func_name]
+            total_time = sum(times)
+            avg_time = total_time / call_count if call_count > 0 else 0
+
+            print(f"Fun: {func_name}")
+            print(f"  Call Count: {call_count}")
+            print(f"  Total Time: {total_time:.4f} seconds")
+            print(f"  Ave Time: {avg_time:.4f} seconds")
+        print("--- End of Report ---")
+
 def critic_wrapper(func):
-    import functools
     functools.wraps(func)
 
     def to_numpy_if_tensor(x):

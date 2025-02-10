@@ -381,12 +381,13 @@ class IOHEvaluator(AbstractEvaluator):
                     if done_tasks % interval == 0:
                         logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
 
+        _all_eval_time = time.perf_counter() - _all_eval_time_start
         if eval_result.error is None:
             eval_result.score = np.mean([r.log_y_aoc for r in eval_result.result])
             eval_result.total_execution_time = np.sum([r.execution_time for r in eval_result.result])
-            logging.info("Evaluated %s: %.4f in %.4fs", cls_name, eval_result.score, eval_result.total_execution_time)
+            logging.info("Evaluated %s: %.4f executed %.2fs in %.2fs", cls_name, eval_result.score, eval_result.total_execution_time, _all_eval_time)
         else:                           
-            logging.error("Evaluated %s: Failed", cls_name)
+            logging.error("Evaluated %s: Failed in %.2fs", cls_name, _all_eval_time)
             eval_result.score = 0.0
             eval_result.total_execution_time = 0.0
 

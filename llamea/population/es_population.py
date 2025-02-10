@@ -183,7 +183,21 @@ class ESPopulation(Population):
             inds = [self.individuals[id] for id in ind_ids]
             return inds
 
-    def get_best_individual(self, maximize: bool = False):
+    def get_best_of_all(self, maximize: bool = True):
+        best = None
+        for ind in self.all_individuals():
+            if best is None:
+                best = ind
+            else:
+                if maximize:
+                    if ind.fitness > best.fitness:
+                        best = ind
+                else:
+                    if ind.fitness < best.fitness:
+                        best = ind
+        return best
+
+    def get_best_individual(self, maximize: bool = True):
         best = None
         if len(self.selected_generations) == 0:
             return best

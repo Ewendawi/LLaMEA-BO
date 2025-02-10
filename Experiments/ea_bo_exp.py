@@ -104,6 +104,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
     cls_name = algo_cls.__name__
     logging.info("Start evaluating %s on %s", cls_name, evaluator)
 
+    _max_eval_workers = 0
     extra_init_params = {}
     if options is not None:
         is_baseline = options.get("is_baseline", False)
@@ -112,18 +113,25 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
             if options is not None:
                 if 'device' in options:
                     extra_init_params['device'] = options['device']
+        
+        if 'max_eval_workers' in options:
+            _max_eval_workers = options['max_eval_workers']
 
     res = evaluator.evaluate(
         code=code,
         cls_name=cls_name,
         cls=algo_cls,
         cls_init_kwargs=extra_init_params,
+        max_eval_workers=_max_eval_workers,
     )
     if save:
-        dir_path = os.path.join("Experiments", "algo_eval_res")
+        save_dir = 'Experiments/algo_eval_res'
+        if options is not None and 'save_dir' in options:
+            save_dir = options['save_dir']
+        dir_path = save_dir
         os.makedirs(dir_path, exist_ok=True)
         time_stamp = datetime.now().strftime("%m%d%H%M%S")
-        file_path = os.path.join(dir_path, f"{cls_name}_{time_stamp}.pkl")
+        file_path = os.path.join(dir_path, f"{cls_name}_{evaluator}_{time_stamp}.pkl")
         with open(file_path, "wb") as f:
             pickle.dump(res, f)
     return res
@@ -420,6 +428,7 @@ def debug_algo_eval():
     options = {
         # 'device': 'cuda',
         # 'is_baseline': True,
+        'max_eval_workers': 4,
     }
 
     run_algo_eval_from_file_map(evaluator, file_map, cls_list=cls_list, plot=True, save=False, options=options)
@@ -431,15 +440,21 @@ def eval_final_algo():
 
     options = {
         # 'device': 'cuda',
-        # 'is_baseline': True,
+        'is_baseline': True,
+        'save_dir': 'Experiments/final_eval_res',
+        # 'max_eval_workers': 0,
     }
     _bl_file_map = {
-        'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
-        'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
+        'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',
+        # 'BLSKOpt': 'Experiments/baselines/bo_baseline.py',
+        # 'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
+        # 'BLTuRBOM': 'Experiments/baselines/bo_baseline.py',
+        # 'BLRBFKernelVanillaBO': 'Experiments/baselines/bo_baseline.py',
+        # 'BLScaledKernelVanillaBO': 'Experiments/baselines/bo_baseline.py',
     }
 
     _file_map = {
-        
+        'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
     }
 
     file_map = _bl_file_map
@@ -528,6 +543,7 @@ if __name__ == "__main__":
     setup_logger(level=logging.INFO)
 
     # debug_algo_eval()
+    eval_final_algo()
 
     _params = get_search_default_params()
     _new_params = {

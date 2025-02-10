@@ -236,8 +236,9 @@ class VanillaBO:
             dynamic_sigma = 0.05 + 0.1 * remaining_budget_ratio
 
             # Dynamically adjust num_restarts based on remaining budget
-            num_restarts = min(10, int(10 * remaining_budget_ratio))
-            raw_samples = 512 * (self.dim // 2 + 1)
+            num_restarts = min(5, int(5 * remaining_budget_ratio))
+
+            raw_samples = 512 * (self.dim // 2)
 
             candidate, _ = optimize_acqf(
                 acq_function=acqf_constructor(**acqf_kwargs),

@@ -420,6 +420,7 @@ def plot_box_violin(
     data:list[np.ndarray],
     labels: list[list[str]], 
     long_labels: list[str] = None,
+    label_fontsize:int = 7,
     sub_titles: list[str] = None,
     x_labels: list[str] = None,
     y_labels: list[str] = None,
@@ -462,13 +463,14 @@ def plot_box_violin(
         ax.yaxis.grid(True)
         _labels = _plot_get_element_from_list(labels, i, None) 
         if _labels is not None:
-            ax.set_xticks([y + 1 for y in range(len(data[i]))], labels=_labels)
+            ax.set_xticks([y + 1 for y in range(len(data[i]))], labels=_labels, fontsize=label_fontsize)
         _x_labels = _plot_get_element_from_list(x_labels, i, "")
-        ax.set_xlabel(_x_labels)
+        ax.set_xlabel(_x_labels, fontsize=label_fontsize)
         _y_labels = _plot_get_element_from_list(y_labels, i, "")
-        ax.set_ylabel(_y_labels)
+        ax.set_ylabel(_y_labels, fontsize=label_fontsize)
     
     fig.suptitle(title)
+    fig.tight_layout()
     if filename:
         plt.savefig(filename, dpi=300)
     if show:
@@ -797,7 +799,7 @@ def plot_search_result(results:list[tuple[str,Population]]):
                 labels=[_unique_strategies],
                 plot_type="violin",
                 n_cols=4,
-                figsize=(14, 8),
+                figsize=(15, 9),
                 ) 
 
         # error rate by generation
@@ -1003,10 +1005,10 @@ def plot_algo_result(results:list[EvaluatorResult], **kwargs):
         plot_box_violin(data=log_plot_data,
                         labels=labels,
                         sub_titles=sub_titles,
-                        title="Log AOC",
+                        title="AOC",
                         plot_type="violin",
                         n_cols=4,
-                        figsize=(14, 8),
+                        figsize=(15, 9),
                         **kwargs)
     
     _plot_aoc()
@@ -1057,238 +1059,242 @@ def plot_algo_result(results:list[EvaluatorResult], **kwargs):
         return filled_arr
 
     
+    def _plot_iter():
 
-    # handle y
-    data_col_map = {
-        'n_init': '',
-        'acq_exp_threshold': '',
+        # handle y
+        data_col_map = {
+            'n_init': '',
+            'acq_exp_threshold': '',
 
-        'loss': 'Loss',
-        'best_loss': 'Best Loss',
+            'loss': 'Loss',
+            'best_loss': 'Best Loss',
 
-        'r2': 'R2 on test',
-        'r2_on_train' : 'R2 on train',
-        'uncertainty' : 'Uncertainty on test',
-        'uncertainty_on_train' : 'Uncertainty on train',
+            'r2': 'R2 on test',
+            'r2_on_train' : 'R2 on train',
+            'uncertainty' : 'Uncertainty on test',
+            'uncertainty_on_train' : 'Uncertainty on train',
 
-        'grid_coverage' : 'Grid Coverage',
+            'grid_coverage' : 'Grid Coverage',
 
-        # 'dbscan_circle_coverage': 'DBSCAN Circle Coverage',
-        # 'dbscan_rect_coverage': 'DBSCAN Rect Coverage',
+            # 'dbscan_circle_coverage': 'DBSCAN Circle Coverage',
+            # 'dbscan_rect_coverage': 'DBSCAN Rect Coverage',
 
-        'online_rect_coverage': 'Online Cluster Rect Coverage',
-        # 'online_circle_coverage': 'Online Circle Coverage',
+            'online_rect_coverage': 'Online Cluster Rect Coverage',
+            # 'online_circle_coverage': 'Online Circle Coverage',
 
-        'acq_grid_coverage' : 'Acq Grid Coverage',
+            'acq_grid_coverage' : 'Acq Grid Coverage',
 
-        # 'acq_dbscan_circle_coverage': 'DBSCAN Circle Coverage(Acq)',
-        # 'acq_dbscan_rect_coverage': 'DBSCAN Rect Coverage(Acq)',
+            # 'acq_dbscan_circle_coverage': 'DBSCAN Circle Coverage(Acq)',
+            # 'acq_dbscan_rect_coverage': 'DBSCAN Rect Coverage(Acq)',
 
-        'acq_online_rect_coverage': 'Online Cluster Rect Coverage(Acq)',
-        # 'acq_online_circle_coverage': 'Online Circle Coverage(Acq)',
+            'acq_online_rect_coverage': 'Online Cluster Rect Coverage(Acq)',
+            # 'acq_online_circle_coverage': 'Online Circle Coverage(Acq)',
 
-        'exploitation_rate': 'Exploitation Rate',
-        'acq_exploitation_rate': 'Acq Exploitation Rate(er)',
+            'exploitation_rate': 'Exploitation Rate',
+            'acq_exploitation_rate': 'Acq Exploitation Rate(er)',
 
-        'acq_exploitation_improvement': 'Exploitation Improvement: $current-best$',
-        'acq_exploitation_score': 'Exploitation Score: $improve/(best-optimum)$',
-        'acq_exploitation_validity': 'Exploitation Validity: $score*er$',
+            'acq_exploitation_improvement': 'Exploitation Improvement: $current-best$',
+            'acq_exploitation_score': 'Exploitation Score: $improve/(best-optimum)$',
+            'acq_exploitation_validity': 'Exploitation Validity: $score*er$',
 
-        'acq_exploration_improvement': 'Exploration Improvement: $current-best$',
-        'acq_exploration_score': 'Exploration Score: $improve/fixed\_base$',
-        'acq_exploration_validity': 'Exploration Validity: $score*(1-er)$',
-    }
-    data_cols = list(data_col_map.keys())
-    
-    # if 'loss' in data_cols:
-    #     # apply loss to min.accumulate, then create new column
-    #     # y_df['best_loss'] = y_df['loss'].apply(_min_accumulate)
-    #     res_df['best_loss'] = res_df['loss'].apply(np.minimum.accumulate)
-    #     # insert best_loss to the next of loss in data_cols
-    #     loss_index = data_cols.index('loss')
-    #     data_cols.insert(loss_index+1, 'best_loss')
-    #     data_col_map['best_loss'] = 'Best Loss'
-
-    y_df = res_df.groupby(['algorithm', 'problem_id'])[data_cols].agg(mean_std_agg).reset_index()
-    y_df[data_cols].applymap(lambda x: x[0] if isinstance(x, list) else x)
-
-    problem_ids = y_df['problem_id'].unique()
-
-
-    def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
-        def _smooth_data(data):
-            if smooth_type == 'savgol':
-                return savgol_smoothing(data, window_size, polyorder)
-            elif smooth_type == 'moving':
-                return moving_average(data, window_size)
-            elif smooth_type == 'gaussian':
-                return gaussian_smoothing(data, sigma)
-        return _smooth_data
-
-    smooth_cols = {
-        # 'exploitation_rate': smooth_factory(smooth_type='moving', window_size=5),
-    }
-
-    def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
-        def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
-            _clip_len = int(data.shape[1] * upper_len_ratio)
-            _upper_bound = _bound
-            if bound_type == 'mean':
-                if inverse:
-                    _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
-                else:
-                    _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
-            elif bound_type == 'median':
-                if inverse:
-                    _upper_bound = np.nanmedian(data[:, _clip_len:])
-                else:
-                    _upper_bound = np.nanmedian(data[:, :_clip_len])
-            elif bound_type == 'fixed' and _bound is not None:
-                _upper_bound = _bound
-
-            _data = np.clip(data, 0, _upper_bound)
-            return _data, _upper_bound
-        return _clip_upper
-
-    clip_cols = {
-        'loss': clip_upper_factory(bound_type='mean'),
-    }
-
-    y_scale_cols = {
-        'loss': ('log', {}),
-        'best_loss': ('log', {}),
-    }
-
-    non_fill_cols = [
-        'loss',
-        'best_loss',
-    ]
-
-    ignore_cols = [
-        'n_init',
-        'acq_exp_threshold',
-    ]
-
-    for problem_id in problem_ids:
-        plot_data = []
-        x_data = []
-        plot_filling = []
-        labels = []
-        x_dots = []
-        sub_titles = []
-        y_scales = []
-        colors = []
-        baselines = []
-        baseline_labels = []
+            'acq_exploration_improvement': 'Exploration Improvement: $current-best$',
+            'acq_exploration_score': 'Exploration Score: $improve/fixed\_base$',
+            'acq_exploration_validity': 'Exploration Validity: $score*(1-er)$',
+        }
+        data_cols = list(data_col_map.keys())
         
-        _temp_df = y_df[y_df['problem_id'] == problem_id]
+        # if 'loss' in data_cols:
+        #     # apply loss to min.accumulate, then create new column
+        #     # y_df['best_loss'] = y_df['loss'].apply(_min_accumulate)
+        #     res_df['best_loss'] = res_df['loss'].apply(np.minimum.accumulate)
+        #     # insert best_loss to the next of loss in data_cols
+        #     loss_index = data_cols.index('loss')
+        #     data_cols.insert(loss_index+1, 'best_loss')
+        #     data_col_map['best_loss'] = 'Best Loss'
 
-        prop_cycle = plt.rcParams['axes.prop_cycle']
-        _default_colors = prop_cycle.by_key()['color']
+        y_df = res_df.groupby(['algorithm', 'problem_id'])[data_cols].agg(mean_std_agg).reset_index()
+        y_df[data_cols].applymap(lambda x: x[0] if isinstance(x, list) else x)
 
-        for col in data_cols:
-            if col in ignore_cols:
-                continue
+        problem_ids = y_df['problem_id'].unique()
 
-            data = _temp_df[col].to_list()
-            # remove empty data if len(data) == 0 or all nan
-            empty_indexs = [i for i, ele in enumerate(data) if ele[0].size == 0 or np.all(np.isnan(ele[0]))]
-            data = [ele for i, ele in enumerate(data) if i not in empty_indexs]
 
-            if len(data) == 0:
-                continue
+        def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
+            def _smooth_data(data):
+                if smooth_type == 'savgol':
+                    return savgol_smoothing(data, window_size, polyorder)
+                elif smooth_type == 'moving':
+                    return moving_average(data, window_size)
+                elif smooth_type == 'gaussian':
+                    return gaussian_smoothing(data, sigma)
+            return _smooth_data
+
+        smooth_cols = {
+            # 'exploitation_rate': smooth_factory(smooth_type='moving', window_size=5),
+        }
+
+        def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
+            def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
+                _clip_len = int(data.shape[1] * upper_len_ratio)
+                _upper_bound = _bound
+                if bound_type == 'mean':
+                    if inverse:
+                        _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
+                    else:
+                        _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
+                elif bound_type == 'median':
+                    if inverse:
+                        _upper_bound = np.nanmedian(data[:, _clip_len:])
+                    else:
+                        _upper_bound = np.nanmedian(data[:, :_clip_len])
+                elif bound_type == 'fixed' and _bound is not None:
+                    _upper_bound = _bound
+
+                _data = np.clip(data, 0, _upper_bound)
+                return _data, _upper_bound
+            return _clip_upper
+
+        clip_cols = {
+            'loss': clip_upper_factory(bound_type='mean'),
+        }
+
+        y_scale_cols = {
+            'loss': ('log', {}),
+            'best_loss': ('log', {}),
+        }
+
+        non_fill_cols = [
+            'loss',
+            'best_loss',
+        ]
+
+        ignore_cols = [
+            'n_init',
+            'acq_exp_threshold',
+        ]
+
+        for problem_id in problem_ids:
+            plot_data = []
+            x_data = []
+            plot_filling = []
+            labels = []
+            x_dots = []
+            sub_titles = []
+            y_scales = []
+            colors = []
+            baselines = []
+            baseline_labels = []
             
-            # fill short data and replace nan with the left
-            max_len = max([len(ele[0]) for ele in data])
-            for i, ele in enumerate(data):
-                _content = []
-                for _sub_ele in ele:
-                    _new_sub_ele = _sub_ele
-                    if len(_new_sub_ele) < max_len:
-                        fill_len = max_len - len(_new_sub_ele)
-                        _new_sub_ele = np.append(_new_sub_ele, [np.nan] * fill_len)
-                    _new_sub_ele = fill_nan_with_left(_new_sub_ele)
-                    _content.append(_new_sub_ele)
-                data[i] = _content
-                    
-            mean_array = np.array([ele[0] for ele in data])
-            std_array = np.array([ele[1] for ele in data])
+            _temp_df = y_df[y_df['problem_id'] == problem_id]
 
-            # clip if needed
-            if col in clip_cols:
-                mean_array, _upper_bound = clip_cols[col](mean_array)
-                std_array = np.where(mean_array == _upper_bound, 0, std_array)
+            prop_cycle = plt.rcParams['axes.prop_cycle']
+            _default_colors = prop_cycle.by_key()['color']
 
-            # smooth if needed
-            if col in smooth_cols:
-                mean_array = smooth_cols[col](mean_array)
-            
-            plot_data.append(mean_array)
-            x_data.append(np.arange(mean_array.shape[1]))
-            
-            # fill the area between mean - std and mean + std
-            if col not in non_fill_cols:
-                upper_bound = mean_array + std_array 
-                lower_bound = mean_array - std_array
-                plot_filling.append(list(zip(lower_bound, upper_bound)))
-            else:
-                plot_filling.append(None)
+            for col in data_cols:
+                if col in ignore_cols:
+                    continue
 
-            if 'acq_exploitation_rate' in col:
-                exp_threshold = _temp_df['acq_exp_threshold'].to_list()
-                mean_exp = [ele[0] for ele in exp_threshold]
-                _bl = np.nanmean(mean_exp)
-                baselines.append([_bl])
-                baseline_labels.append(["Threshold"])
-            else:
-                baselines.append(None)
-                baseline_labels.append(None)
+                data = _temp_df[col].to_list()
+                # remove empty data if len(data) == 0 or all nan
+                empty_indexs = [i for i, ele in enumerate(data) if ele[0].size == 0 or np.all(np.isnan(ele[0]))]
+                data = [ele for i, ele in enumerate(data) if i not in empty_indexs]
 
-            # handle n_init
-            n_init_data = _temp_df['n_init'].to_list()
-            _x_dots = []
-            for n_init in n_init_data:
-                if n_init[0] > 0:
-                    _x_dots.append(np.array([n_init[0]], dtype=int))
+                if len(data) == 0:
+                    continue
+                
+                # fill short data and replace nan with the left
+                max_len = max([len(ele[0]) for ele in data])
+                for i, ele in enumerate(data):
+                    _content = []
+                    for _sub_ele in ele:
+                        _new_sub_ele = _sub_ele
+                        if len(_new_sub_ele) < max_len:
+                            fill_len = max_len - len(_new_sub_ele)
+                            _new_sub_ele = np.append(_new_sub_ele, [np.nan] * fill_len)
+                        _new_sub_ele = fill_nan_with_left(_new_sub_ele)
+                        _content.append(_new_sub_ele)
+                    data[i] = _content
+                        
+                mean_array = np.array([ele[0] for ele in data])
+                std_array = np.array([ele[1] for ele in data])
+
+                # clip if needed
+                if col in clip_cols:
+                    mean_array, _upper_bound = clip_cols[col](mean_array)
+                    std_array = np.where(mean_array == _upper_bound, 0, std_array)
+
+                # smooth if needed
+                if col in smooth_cols:
+                    mean_array = smooth_cols[col](mean_array)
+                
+                plot_data.append(mean_array)
+                x_data.append(np.arange(mean_array.shape[1]))
+                
+                # fill the area between mean - std and mean + std
+                if col not in non_fill_cols:
+                    upper_bound = mean_array + std_array 
+                    lower_bound = mean_array - std_array
+                    plot_filling.append(list(zip(lower_bound, upper_bound)))
                 else:
-                    _x_dots.append(np.array([], dtype=int))
-            # remove empty data
-            _x_dots = [ele for i, ele in enumerate(_x_dots) if i not in empty_indexs]
-            x_dots.append(_x_dots)
+                    plot_filling.append(None)
 
-            _labels = _temp_df['algorithm'].to_list()
-            _colors = _default_colors[:len(_labels)]
-            _labels = [ele for i, ele in enumerate(_labels) if i not in empty_indexs]
-            _labels = [label[:10] for label in _labels]
-            _colors = [color for i, color in enumerate(_colors) if i not in empty_indexs]
-            labels.append(_labels)
-            colors.append(_colors)
+                if 'acq_exploitation_rate' in col:
+                    exp_threshold = _temp_df['acq_exp_threshold'].to_list()
+                    mean_exp = [ele[0] for ele in exp_threshold]
+                    _bl = np.nanmean(mean_exp)
+                    baselines.append([_bl])
+                    baseline_labels.append(["Threshold"])
+                else:
+                    baselines.append(None)
+                    baseline_labels.append(None)
 
-            _sub_title = data_col_map.get(col, col)
-            if col in y_scale_cols:
-                _y_scale, _y_scale_kwargs = y_scale_cols[col]
-                y_scales.append((_y_scale, _y_scale_kwargs))
-                sub_titles.append(_sub_title + f"({_y_scale})")
-            else:
-                y_scales.append(None)
-                sub_titles.append(_sub_title)
+                # handle n_init
+                n_init_data = _temp_df['n_init'].to_list()
+                _x_dots = []
+                for n_init in n_init_data:
+                    if n_init[0] > 0:
+                        _x_dots.append(np.array([n_init[0]], dtype=int))
+                    else:
+                        _x_dots.append(np.array([], dtype=int))
+                # remove empty data
+                _x_dots = [ele for i, ele in enumerate(_x_dots) if i not in empty_indexs]
+                x_dots.append(_x_dots)
+
+                _labels = _temp_df['algorithm'].to_list()
+                _colors = _default_colors[:len(_labels)]
+                _labels = [ele for i, ele in enumerate(_labels) if i not in empty_indexs]
+                _labels = [label[:10] for label in _labels]
+                _colors = [color for i, color in enumerate(_colors) if i not in empty_indexs]
+                labels.append(_labels)
+                colors.append(_colors)
+
+                _sub_title = data_col_map.get(col, col)
+                if col in y_scale_cols:
+                    _y_scale, _y_scale_kwargs = y_scale_cols[col]
+                    y_scales.append((_y_scale, _y_scale_kwargs))
+                    sub_titles.append(_sub_title + f"({_y_scale})")
+                else:
+                    y_scales.append(None)
+                    sub_titles.append(_sub_title)
 
 
-        plot_lines(
-            y=plot_data, x=x_data, 
-            y_scales=y_scales,
-            baselines=baselines,
-            baseline_labels=baseline_labels,
-            colors=colors,
-            labels=labels, 
-            label_fontsize=6,
-            linewidth=1.0,
-            filling=plot_filling,
-            x_dot=x_dots,
-            n_cols=5,
-            sub_titles=sub_titles,
-            sub_title_fontsize=9,
-            title=f"F{problem_id}",
-            figsize=(15, 9),
-            **kwargs
-        ) 
+            plot_lines(
+                y=plot_data, x=x_data, 
+                y_scales=y_scales,
+                baselines=baselines,
+                baseline_labels=baseline_labels,
+                colors=colors,
+                labels=labels, 
+                label_fontsize=6,
+                linewidth=1.0,
+                filling=plot_filling,
+                x_dot=x_dots,
+                n_cols=5,
+                sub_titles=sub_titles,
+                sub_title_fontsize=9,
+                title=f"F{problem_id}",
+                figsize=(15, 9),
+                **kwargs
+            ) 
+
+
+    # _plot_iter()

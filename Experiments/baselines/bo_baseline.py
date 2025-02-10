@@ -165,12 +165,12 @@ class BLTuRBOM:
 
         return f_opt, x_opt
 
-class BLRBFKernelVanillaBO(VanillaBO):
+class BLMaternVanillaBO(VanillaBO):
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
-        super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device, surrogate_model="RBFKernel")
+        super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device, surrogate_model="MaternKernel")
 
 
-class BLScaledKernelVanillaBO(VanillaBO):
+class BLScaledVanillaBO(VanillaBO):
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
         super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device, surrogate_model="ScaleKernel")
 
