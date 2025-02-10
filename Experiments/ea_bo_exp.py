@@ -511,11 +511,13 @@ if __name__ == "__main__":
     _new_params = {
         "n_population": 40,
         "n_query_threads": 0,
+
+        # better not to use eval_workers with time_out_per_eval
         "n_eval_workers": 0,
+        "time_out_per_eval": 60 * 20,
 
         # "gpu_name": "cuda:7",
         "gpu_name": None,
-        "time_out_per_eval": None,
 
         "options": {
             'pop_debug_save_on_the_fly': True,
