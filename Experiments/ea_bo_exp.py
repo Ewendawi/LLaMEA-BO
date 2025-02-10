@@ -100,13 +100,18 @@ def baseline_algo_eval_param(dim, budget):
     }
     return bl_init_params
 
-def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, is_bl=False, save=False, options=None):
+def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=None):
     cls_name = algo_cls.__name__
     logging.info("Start evaluating %s on %s", cls_name, evaluator)
 
     extra_init_params = {}
-    if is_bl:
-        extra_init_params = baseline_algo_eval_param(evaluator.dim, evaluator.budget)
+    if options is not None:
+        is_baseline = options.get("is_baseline", False)
+        if is_baseline:
+            extra_init_params = baseline_algo_eval_param(evaluator.dim, evaluator.budget)
+            if options is not None:
+                if 'device' in options:
+                    extra_init_params['device'] = options['device']
 
     res = evaluator.evaluate(
         code=code,
@@ -123,57 +128,32 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, is_bl=False, save=Fa
             pickle.dump(res, f)
     return res
 
-def run_all_algo_eval_exp(plot=False):
-    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO, BLRandomSearch, BLSKOpt
-    from Experiments.test_cands.EnsembleLocalSearchBOv1 import EnsembleLocalSearchBOv1
-    from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
-    from Experiments.test_cands.QMCBOv1 import GP_Matern_EI_MSL_SobolBOv1
 
-    evaluator = get_IOHEvaluator_for_final_eval()
-    # evaluator = get_IOHEvaluator_for_test()
-    
-    evaluator.ignore_over_budget = True
-    evaluator.inject_critic = True
-    options = {
-    }
-    save = True
-
-    cls_list = [
-        # BLRandomSearch,
-        BLRBFKernelVanillaBO,
-        # BLScaledKernelVanillaBO,
-        # BLTuRBO1,
-        # BLTuRBOM,
-        # BLSKOpt,
-        # EnsembleLocalSearchBOv1,
-        # EnsembleDeepKernelAdaptiveTSLocalSearchARDv1,
-        # GP_Matern_EI_MSL_SobolBOv1,
-    ]
-
+def run_algo_eval_from_file_map(evaluator, file_map=None, cls_list=None, plot=False, save=True, options=None):
     res_list = []
-    for _cls in cls_list:
-        res = _run_algrothim_eval_exp(evaluator, _cls, save=save, options=options)
+    _cls_list = cls_list
+    _code_list = []
+    if _cls_list is None or len(_cls_list) == 0:
+        _cls_list = []
+        for cls_name, file_path in file_map.items():
+            if not os.path.exists(file_path):
+                logging.warning("File not exist: %s", file_path)
+                continue
+            code = ""
+            with open(file_path, "r") as f:
+                code = f.read()
+        
+            _cls = dynamic_import_and_get_class(file_path, cls_name)
+            if _cls is None:
+                continue
+            _cls_list.append(_cls)
+            _code_list.append(code)
+    
+    for i, _cls in enumerate(_cls_list): 
+        _code = _code_list[i] if i < len(_code_list) else None
+        res = _run_algrothim_eval_exp(evaluator, _cls, code=_code, save=save, options=options)
         res_list.append(res)
 
-    if plot:
-        plot_algo_result(res_list)
-
-
-def run_algo_eval_from_file_map(evaluator, file_map, plot, save):
-    res_list = []
-    for cls_name, file_path in file_map.items():
-        if not os.path.exists(file_path):
-            logging.warning("File not exist: %s", file_path)
-            continue
-        code = ""
-        with open(file_path, "r") as f:
-            code = f.read()
-    
-        cls = dynamic_import_and_get_class(file_path, cls_name)
-        if cls is None:
-            continue
-        res = _run_algrothim_eval_exp(evaluator, cls, code=code, save=save)
-        res_list.append(res)
     if plot:
         plot_algo_result(res_list)
     
@@ -408,20 +388,64 @@ def tune_vanilla_bo(params):
 def debug_algo_eval():
     problems = [4,10]
     instances = [1]
-    repeat = 2
+    repeat = 1
     budget = 100
     
     evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
-    evaluator = get_IOHEvaluator_for_final_eval()
     evaluator.inject_critic = True
     evaluator.ignore_over_budget = True
     
     file_map = {
+        # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
+        'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
+    }
+
+    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO, BLRandomSearch, BLSKOpt
+    from Experiments.test_cands.EnsembleLocalSearchBOv1 import EnsembleLocalSearchBOv1
+    from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
+    from Experiments.test_cands.QMCBOv1 import GP_Matern_EI_MSL_SobolBOv1
+
+    cls_list = [
+        # BLRandomSearch,
+        # BLRBFKernelVanillaBO,
+        # BLScaledKernelVanillaBO,
+        # BLTuRBO1,
+        # BLTuRBOM,
+        # BLSKOpt,
+        # EnsembleLocalSearchBOv1,
+        EnsembleDeepKernelAdaptiveTSLocalSearchARDv1,
+        # GP_Matern_EI_MSL_SobolBOv1,
+    ]
+
+    options = {
+        # 'device': 'cuda',
+        # 'is_baseline': True,
+    }
+
+    run_algo_eval_from_file_map(evaluator, file_map, cls_list=cls_list, plot=True, save=False, options=options)
+
+def eval_final_algo():
+    evaluator = get_IOHEvaluator_for_final_eval()
+    evaluator.inject_critic = True
+    evaluator.ignore_over_budget = True
+
+    options = {
+        # 'device': 'cuda',
+        # 'is_baseline': True,
+    }
+    _bl_file_map = {
         'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
         'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
     }
-    save = False
-    run_algo_eval_from_file_map(evaluator, file_map, plot=True, save=save)
+
+    _file_map = {
+        
+    }
+
+    file_map = _bl_file_map
+
+    run_algo_eval_from_file_map(evaluator, file_map, plot=False, save=True, options=options)
+ 
 
 def get_search_default_params():
     params = {
@@ -503,8 +527,6 @@ if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
-    # run_all_algo_eval_exp(plot=True)
-
     # debug_algo_eval()
 
     _params = get_search_default_params()
@@ -512,7 +534,7 @@ if __name__ == "__main__":
         "n_population": 40,
         "n_query_threads": 0,
 
-        # better not to use eval_workers with time_out_per_eval
+        # Choose time_out_per_eval carefully when running multiple evaluations of expriments in parallel due to OS's dispatching mechanism
         "n_eval_workers": 0,
         "time_out_per_eval": 60 * 20,
 

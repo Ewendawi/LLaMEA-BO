@@ -4,7 +4,7 @@ import math
 import itertools
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Callable
+from collections.abc import Callable
 import logging
 from functools import cmp_to_key
 import numpy as np
