@@ -515,6 +515,7 @@ if __name__ == "__main__":
 
         # "gpu_name": "cuda:7",
         "gpu_name": None,
+        "time_out_per_eval": None,
 
         "options": {
             'pop_debug_save_on_the_fly': True,

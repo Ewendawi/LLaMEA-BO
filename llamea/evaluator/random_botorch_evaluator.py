@@ -164,7 +164,7 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
             captured_output = captured_output_stream.getvalue()
             err = None
         else:
-            res, captured_output, err = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, time_out=timeout)
+            res, captured_output, err = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs)
         # self.evaluating = False
         eval_basic_result.execution_time = time.perf_counter() - start_time
         eval_basic_result.set_capture_output(captured_output)

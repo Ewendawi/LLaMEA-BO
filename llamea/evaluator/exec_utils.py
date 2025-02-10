@@ -196,7 +196,7 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
 
     return res, captured_output.getvalue(), err, critic
 
-def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:float=None, cls=None, inject_critic=False):
+def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, cls=None, inject_critic=False):
     params = {
             "code": code,
             "cls_name": cls_name,
@@ -205,16 +205,4 @@ def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, time_out:fl
             "call_kwargs": call_kwargs,
             "inject_critic": inject_critic
     }
-    if time_out is None:
-        return __default_exec(**params)
-    else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(__default_exec, **params)
-            done, not_done = concurrent.futures.wait([future], timeout=time_out)
-            if done:
-                return future.result()
-            if not_done:
-                _err = TimeoutError("Evaluation timed out")
-                err = TrackExecExceptionWrapper(_err, None)
-                future.cancel()
-                return None, None, err, None
+    return __default_exec(**params)

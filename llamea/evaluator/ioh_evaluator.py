@@ -135,7 +135,7 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     if cls_call_kwargs is not None:
         call_kwargs.update(cls_call_kwargs)
 
-    res, captured_output, err, critic = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, time_out=time_out, inject_critic=inject_critic)
+    res, captured_output, err, critic = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, inject_critic=inject_critic)
     exec_time = time.perf_counter() - start_time
 
     # unset the unpicklable object
@@ -293,7 +293,6 @@ class IOHEvaluator(AbstractEvaluator):
                 "code": code,
                 "cls_name": cls_name,
                 "cls": cls,
-                "time_out": timeout,
                 "ignore_over_budget": self.ignore_over_budget,
                 "inject_critic": self.inject_critic,
                 "cls_init_kwargs": cls_init_kwargs,
@@ -304,6 +303,15 @@ class IOHEvaluator(AbstractEvaluator):
 
         total_tasks = len(params)
         interval = min(max(1, total_tasks // 4), 20)
+
+        _all_eval_time_start = time.perf_counter()
+        def _check_timeout(start_time, timeout):
+            if timeout is not None:
+                _current_eval_time = time.perf_counter()
+                _time_diff = _current_eval_time - start_time
+                if _time_diff > timeout:
+                    return True
+            return False
 
         if max_eval_workers is None or max_eval_workers > 0:
             max_workers = min(os.cpu_count() - 1, max_eval_workers)
@@ -318,33 +326,54 @@ class IOHEvaluator(AbstractEvaluator):
 
             logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
             executor_cls = concurrent.futures.ThreadPoolExecutor
-                
-            with executor_cls(max_workers=max_workers) as executor:
-                futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
-                for future in concurrent.futures.as_completed(futures.keys()):
-                    res = future.result()
-                    eval_basic_result = self.__process_results(*res)
-                    if eval_basic_result.error is not None:
-                        eval_result.error = eval_basic_result.error
-                        eval_result.error_type = eval_basic_result.error_type
-                        logging.info("Evaluating %s: Got Error - %s", cls_name, eval_basic_result.error_type)
-                        executor.shutdown(wait=False)
-                        break
-                    else:
-                        eval_result.result.append(eval_basic_result)
-                        done_tasks = len(eval_result.result)
-                        if done_tasks % interval == 0:
-                            logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
+
+            executor = executor_cls(max_workers=max_workers)
+            futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
+            _should_shutdown = False
+
+            for future in concurrent.futures.as_completed(futures.keys()):
+                res = future.result()
+                eval_basic_result = self.__process_results(*res)
+
+                _err = eval_basic_result.error
+                _err_type = eval_basic_result.error_type
+                if _err is None and _check_timeout(_all_eval_time_start, timeout):
+                    _err = TimeoutError("Evaluation timed out (%ds)", timeout)
+                    _err_type = "Timeout"
+
+                if _err is not None:
+                    eval_result.error = _err
+                    eval_result.error_type = _err_type
+                    logging.error("Evaluating %s: Got Error - %s", cls_name, _err_type)
+                    _should_shutdown = True
+                    break
+                else:
+                    eval_result.result.append(eval_basic_result)
+                    done_tasks = len(eval_result.result)
+                    if done_tasks % interval == 0:
+                        logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
+
+            if _should_shutdown:
+                logging.error("Evaluating %s: Shutting down executor", cls_name)
+                # better to wait for all running tasks to finish in case of resource competition
+                executor.shutdown(wait=True, cancel_futures=True)
+                logging.error("Evaluating %s: Executor shut down", cls_name)
         else:
             logging.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
 
             for param in params:
                 res = ioh_evaluate_block(**param)
                 eval_basic_result = self.__process_results(*res)
-                if eval_basic_result.error is not None:
-                    eval_result.error = eval_basic_result.error
-                    eval_result.error_type = eval_basic_result.error_type
-                    logging.error("Evaluating %s: %s", cls_name, eval_basic_result.error_type)
+
+                _err = eval_basic_result.error
+                _err_type = eval_basic_result.error_type
+                if _err is None and _check_timeout(_all_eval_time_start, timeout):
+                    _err = TimeoutError("Evaluation timed out (%d)", timeout)
+                    _err_type = "Timeout"
+                if _err is not None:
+                    eval_result.error = _err 
+                    eval_result.error_type = _err_type
+                    logging.error("Evaluating %s: %s", cls_name, _err_type)
                     break
                 else:
                     eval_result.result.append(eval_basic_result)
@@ -357,6 +386,7 @@ class IOHEvaluator(AbstractEvaluator):
             eval_result.total_execution_time = np.sum([r.execution_time for r in eval_result.result])
             logging.info("Evaluated %s: %.4f in %.4fs", cls_name, eval_result.score, eval_result.total_execution_time)
         else:                           
+            logging.error("Evaluated %s: Failed", cls_name)
             eval_result.score = 0.0
             eval_result.total_execution_time = 0.0
 
