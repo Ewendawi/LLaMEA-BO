@@ -14,6 +14,7 @@ from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
 from llamea.utils import plot_algo_result
 from llamea.individual import Individual
+from llamea.evaluator.injected_critic import FunctionProfiler
 
 
 # Utils
@@ -157,10 +158,23 @@ def run_algo_eval_from_file_map(evaluator, file_map=None, cls_list=None, plot=Fa
             _cls_list.append(_cls)
             _code_list.append(code)
     
+    _time_profile = False
+    if options is not None and 'time_profile' in options:
+        _time_profile = options['time_profile']
+    
     for i, _cls in enumerate(_cls_list): 
+        _wrapper = None
+        if _time_profile:
+            _wrapper = FunctionProfiler()
+            _wrapper.name = f"{_cls.__name__}"
+            _profiler = _wrapper.wrap_class(_cls)
+            _cls = _profiler
         _code = _code_list[i] if i < len(_code_list) else None
         res = _run_algrothim_eval_exp(evaluator, _cls, code=_code, save=save, options=options)
         res_list.append(res)
+
+        if _wrapper is not None:
+            _wrapper.print_report()
 
     if plot:
         plot_algo_result(res_list)
@@ -394,9 +408,10 @@ def tune_vanilla_bo(params):
     tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
 
 def debug_algo_eval():
-    problems = [4,10]
-    instances = [1]
-    repeat = 1
+    problems = [4, 10, 14, 21]
+    # problems = list(range(1, 25))
+    instances = [8]
+    repeat = 3
     budget = 100
     
     evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
@@ -405,30 +420,36 @@ def debug_algo_eval():
     
     file_map = {
         # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
-        'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
+        # 'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
+        # 'AdaptiveBatchBOv7': 'Experiments/pop_40_f/ESPopulation_evol_1+1_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210043001/25-26_AdaptiveBatchBOv7_0.0748.py',
+
+
+        'AdaptiveLocalPenaltyVarianceBOv3':'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208230817/5-40_AdaptiveLocalPenaltyVarianceBOv3_0.0482.py',
     }
 
-    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRBFKernelVanillaBO, BLScaledKernelVanillaBO, BLRandomSearch, BLSKOpt
+    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO 
+    from Experiments.baselines.vanilla_bo import VanillaBO
     from Experiments.test_cands.EnsembleLocalSearchBOv1 import EnsembleLocalSearchBOv1
     from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
     from Experiments.test_cands.QMCBOv1 import GP_Matern_EI_MSL_SobolBOv1
 
     cls_list = [
+        # VanillaBO,
         # BLRandomSearch,
-        # BLRBFKernelVanillaBO,
-        # BLScaledKernelVanillaBO,
+        # BLMaternVanillaBO,
         # BLTuRBO1,
         # BLTuRBOM,
-        # BLSKOpt,
+        BLSKOpt,
         # EnsembleLocalSearchBOv1,
-        EnsembleDeepKernelAdaptiveTSLocalSearchARDv1,
+        # EnsembleDeepKernelAdaptiveTSLocalSearchARDv1,
         # GP_Matern_EI_MSL_SobolBOv1,
     ]
 
     options = {
         # 'device': 'cuda',
         # 'is_baseline': True,
-        'max_eval_workers': 4,
+        # 'max_eval_workers': 4,
+        # 'time_profile': True,
     }
 
     run_algo_eval_from_file_map(evaluator, file_map, cls_list=cls_list, plot=True, save=False, options=options)
@@ -438,26 +459,52 @@ def eval_final_algo():
     evaluator.inject_critic = True
     evaluator.ignore_over_budget = True
 
+    
+    # problems = list(range(1, 25))
+    # instances = [8]
+    # repeat = 3
+    # budget = 100
+    # evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
+
     options = {
         # 'device': 'cuda',
-        'is_baseline': True,
+        # 'is_baseline': True,
         'save_dir': 'Experiments/final_eval_res',
         # 'max_eval_workers': 0,
     }
     _bl_file_map = {
-        'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',
-        # 'BLSKOpt': 'Experiments/baselines/bo_baseline.py',
+        # 'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',
         # 'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
         # 'BLTuRBOM': 'Experiments/baselines/bo_baseline.py',
-        # 'BLRBFKernelVanillaBO': 'Experiments/baselines/bo_baseline.py',
-        # 'BLScaledKernelVanillaBO': 'Experiments/baselines/bo_baseline.py',
+        'BLMaternVanillaBO': 'Experiments/baselines/bo_baseline.py',
+        # 'BLScaledVanillaBO': 'Experiments/baselines/bo_baseline.py',
+        # 'BLSKOpt': 'Experiments/baselines/bo_baseline.py',
     }
 
     _file_map = {
-        'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
+        # 0.04
+        'NoisyBanditBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-10_NoisyBanditBOv1_0.0434.py',
+        'ParetoActiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_4+2_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210025714/0-3_ParetoActiveBOv1_0.0426.py',
+
+        # 0.05
+        'AdaptiveBatchUCBLocalSearchBOv2': 'Experiments/pop_40_f/ESPopulation_evol_4+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210043822/4-20_AdaptiveBatchUCBLocalSearchBOv2_0.0526.py',
+        'AdaptiveControlVariateBOv4': 'Experiments/pop_40_f/ESPopulation_evol_8+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209152106/6-29_AdaptiveControlVariateBOv4_0.0595.py'
+
+        # 0.06
+        # 'AdaptiveEvoBatchHybridBOv2': 'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208224540/4-32_AdaptiveEvoBatchHybridBOv2_0.0619.py',
+        # 'MultiObjectiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-19_MultiObjectiveBOv1_0.0665.py',
+
+        # 0.07
+        # 'AdaptiveTrustRegionImputationDPPBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065238/3-40_AdaptiveTrustRegionImputationDPPBOv1_0.0769.py',
+        # 'TrustRegionBOv1': 'Experiments/pop_40_f/ESPopulation_evol_12+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209000244/0-2_TrustRegionBOv1_0.0720.py',
+
+        # 0.08
+        # 'TrustRegionAdaptiveTempBOv2': 'Experiments/pop_40_f/ESPopulation_evol_4+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209173952/4-23_TrustRegionAdaptiveTempBOv2_0.0807.py',
+        # 'AdaptiveTrustImputationBOv2': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065238/2-31_AdaptiveTrustImputationBOv2_0.0806.py',
+        # 'BayesLocalAdaptiveAnnealBOv1': 'Experiments/pop_40_temp/ESPopulation_evol_10+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208164605/3-24_BayesLocalAdaptiveAnnealBOv1_0.0827.py',
     }
 
-    file_map = _bl_file_map
+    file_map = _file_map
 
     run_algo_eval_from_file_map(evaluator, file_map, plot=False, save=True, options=options)
  
