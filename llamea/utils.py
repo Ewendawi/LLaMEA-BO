@@ -4,6 +4,8 @@ from datetime import datetime
 import logging
 import pickle
 import os
+import copy
+from functools import cmp_to_key
 from matplotlib import pyplot as plt
 import numpy as np
 from scipy.signal import savgol_filter 
@@ -416,6 +418,41 @@ def _plot_get_element_from_list(data, index, default=None):
         return data[index]
     return default
 
+def plot_group_bar(
+    data:np.ndarray,
+    labels: list[str],
+    group_labels: list[str] = None,
+    label_fontsize:int = 10,
+    fig_size:tuple[int,int] = (10, 6),
+    title = ""):
+
+    data = data.T
+
+    group_labels = [_label[:10] for _label in group_labels]
+
+    n_groups = data.shape[0]
+    n_bars = data.shape[1]
+    x = np.arange(n_bars)
+    width = 1/(n_groups+1)
+    fig, ax = plt.subplots(figsize=fig_size)
+    for i in range(n_groups):
+        ax.bar(x + i * width, data[i], width, label=labels[i])
+    ax.set_xticks(x + width * (n_groups - 1) / 2, labels=group_labels, fontsize=label_fontsize)
+    ax.legend()
+    ax.set_title(title)
+    plt.show(block=False)
+
+def test_group_bar():
+    n_groups = 3
+    data = [ ]
+    for i in range(n_groups):
+        data.append(np.random.rand(4))
+    data = np.array(data)
+        
+    group_labels = ["A", "B", "C"]
+    labels = ["G1", "G2", "G3", "G4"]
+    plot_group_bar(data, labels, group_labels)
+
 def plot_box_violin(
     data:list[np.ndarray],
     labels: list[list[str]], 
@@ -488,21 +525,23 @@ def dynamical_access(obj, attr_path):
             break
     return target
 
-def plot_search_result(results:list[tuple[str,Population]]):
+def plot_search_result(results:list[tuple[str,Population]], save=False, file_name=None):
     column_names = [
         'strategy',
+        'n_strategy',
         'problem_id',
         'instance_id',
         'exec_id',
         'n_gen',
         'n_iter',
+        'n_ind',
         "log_y_aoc",
         "y_aoc",
         "best_y",
         'loss',
         ]
 
-    def res_to_row(res, gen:int, strategy_name:str, n_iter:int):
+    def res_to_row(res, gen:int, strategy_name:str, n_iter:int, n_ind:int, n_strategy:int):
         res_id = res.id
         res_split = res_id.split("-")
         problem_id = int(res_split[0])
@@ -510,11 +549,13 @@ def plot_search_result(results:list[tuple[str,Population]]):
         repeat_id = int(res_split[2])
         row = {
             'strategy': strategy_name,
+            'n_strategy': n_strategy,
             'problem_id': problem_id,
             'instance_id': instance_id,
             'exec_id': repeat_id,
             'n_gen': gen+1,
             'n_iter': n_iter,
+            'n_ind': n_ind,
             "log_y_aoc": res.log_y_aoc,
             "y_aoc": res.y_aoc,
             "best_y": res.best_y,
@@ -522,29 +563,51 @@ def plot_search_result(results:list[tuple[str,Population]]):
         }
         return row
 
-        
-    res_df = pd.DataFrame(columns=column_names)
-    for strategy_name, pop in results:
-        n_generation = pop.get_current_generation()
-        n_iter = 0
-        for gen in range(n_generation):
-            # offspring generated in this generation
-            gen_offsprings = pop.get_offsprings(generation=gen)
-            n_iter += len(gen_offsprings)
-            # offspring selected in this generation
-            gen_inds = pop.get_individuals(generation=gen)
-            for ind in gen_inds:
-                handler = Population.get_handler_from_individual(ind)
-                for res in handler.eval_result.result:
-                    row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter)
-                    res_df.loc[len(res_df)] = row
+    res_df = None
+    if not save and file_name is not None:
+        res_df = pd.read_pickle(file_name)
+    else: 
+        _strategy_count = {}
+        res_df = pd.DataFrame(columns=column_names)
+        for strategy_name, pop in results:
+            if strategy_name not in _strategy_count:
+                _strategy_count[strategy_name] = 0
+            _strategy_count[strategy_name] += 1
+            n_generation = pop.get_current_generation()
+            n_iter = 1
+            for gen in range(n_generation):
+                # offspring generated in this generation
+                n_inds = n_iter
+                gen_offsprings = pop.get_offsprings(generation=gen)
+                n_iter += len(gen_offsprings)
+                # offspring selected in this generation
+                # gen_inds = pop.get_individuals(generation=gen)
+                gen_inds = gen_offsprings
+                for i, ind in enumerate(gen_inds):
+                    handler = Population.get_handler_from_individual(ind)
+                    _n_ind = n_inds + i
+                    _count = _strategy_count[strategy_name]
+                    for res in handler.eval_result.result:
+                        row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=_n_ind, n_strategy=_count)
+                        res_df.loc[len(res_df)] = row
 
-    def _combine_acc(column='y_aoc', maximum=True):
+    if save and file_name is not None:
+        res_df.to_pickle(file_name)
+
+    def _combine_acc(column='y_aoc', maximum=True, max_n_iter=None):
         def _inner_combine_acc(df_series):
-            _n_iters = df_series['n_iter']
+            _n_iters = df_series['n_iter'].copy()
             _contents = []
             _n_iters.sort()
-            _aoc = df_series[column]
+            _aoc = df_series[column].copy()
+
+            if max_n_iter is not None and max_n_iter > _n_iters[-1]:
+                _n_iters.append(max_n_iter)
+                if maximum:
+                    _aoc.append(0)
+                else:
+                    _aoc.append(np.inf)
+            
             for i, _n_iter in enumerate(_n_iters):
                 n_fill = _n_iter - len(_contents) - 1
                 if maximum:
@@ -558,15 +621,61 @@ def plot_search_result(results:list[tuple[str,Population]]):
                 _acc = np.minimum.accumulate(_contents)
             return _acc
         return _inner_combine_acc
+
+    def compare_expressions(expr1, expr2):
+        a1, b1 = map(int, expr1.split('+'))
+        a2, b2 = map(int, expr2.split('+'))
+
+        if a1 == a2:
+            return b1 - b2
+        else:
+            return a1 - a2
+
+    unique_strategies = res_df['strategy'].unique()
+    unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
     
     def _plot_aoc():
-        aoc_df = res_df.groupby(['strategy', 'problem_id', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
+        max_aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
+        max_aoc_df = max_aoc_df.groupby(['strategy', 'n_strategy'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
+        max_aoc_df = max_aoc_df.groupby(['strategy'])[['log_y_aoc', 'y_aoc']].agg(list).reset_index()
+
+        _volin_y = []
+        for strategy in unique_strategies:
+            strategy_df = max_aoc_df[max_aoc_df['strategy'] == strategy]
+            _max_aoc_list = strategy_df['log_y_aoc'].values[0]
+            _volin_y.append(np.array(_max_aoc_list))
         
-        aoc_df = aoc_df.groupby(['strategy', 'problem_id'])[['n_iter',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
-        aoc_df['acc_y_aoc'] = aoc_df.apply(_combine_acc('y_aoc'), axis=1)
-        aoc_df['acc_log_y_aoc'] = aoc_df.apply(_combine_acc('log_y_aoc'), axis=1)
+        plot_box_violin(
+            data=[_volin_y],
+            labels=[unique_strategies],
+            plot_type="violin",
+            n_cols=4,
+            title="AOC",
+            label_fontsize=10,
+            figsize=(14, 8),
+            )
+            
+        max_n_iter = res_df['n_iter'].max()
+        aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_iter', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
+        aoc_df = aoc_df.groupby(['strategy', 'n_strategy', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
+
+        aoc_df = aoc_df.groupby(['strategy', 'n_strategy',])[['n_iter',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
+        aoc_df['acc_y_aoc'] = aoc_df.apply(_combine_acc('y_aoc', max_n_iter=max_n_iter), axis=1)
+        aoc_df['acc_log_y_aoc'] = aoc_df.apply(_combine_acc('log_y_aoc', max_n_iter=max_n_iter), axis=1)
 
         aoc_df = aoc_df.groupby(['strategy'])[['acc_y_aoc', 'acc_log_y_aoc']].agg(list).reset_index()
+
+        strategy_group = {}
+        # same n_parent: 4, 8, 12, 20
+        # n_offspring: mu > lambda, mu <= lambda
+        gruoup_name_map = {
+            '4': '4+*',
+            '8': '8+*',
+            '12': '12+*',
+            '20': '20+*',
+            'mu': '$\mu$ > $\lambda$',
+            'lambda': '$\mu$ <= $\lambda$',
+        }
 
         strategy_aoc = [] 
         strategy_filling = []
@@ -576,7 +685,6 @@ def plot_search_result(results:list[tuple[str,Population]]):
         
         labels = []
 
-        unique_strategies = aoc_df['strategy'].unique()
         for strategy in unique_strategies:
             strategy_df = aoc_df[aoc_df['strategy'] == strategy]
 
@@ -594,23 +702,81 @@ def plot_search_result(results:list[tuple[str,Population]]):
 
             labels.append(strategy)
 
+            mu, lam = strategy.split('+') 
+            int_mu, int_lam = int(mu), int(lam)
 
-        plot_y = [np.array(strategy_log_aoc)]
+            if int_mu == 1 or mu in strategy_group:
+                _keys = []
+                if int_mu == 1:
+                    _keys.extend(gruoup_name_map.keys())
+                else:
+                    _keys.append(mu)
+                    if int_mu > int_lam:
+                        _keys.append('mu')
+                    else:
+                        _keys.append('lambda')
+                
+                for _key in _keys:
+                    if _key not in strategy_group:
+                        _temp = {
+                            'aoc': [],
+                            'aoc_filling': [],
+                            'log_aoc': [],
+                            'log_aoc_filling': [],
+                            'labels': [], 
+                        }
+                        strategy_group[_key] = _temp
+                    
+                    strategy_group[_key]['aoc'].append(y_aoc)
+                    strategy_group[_key]['aoc_filling'].append((y_aoc + std_y_aoc, y_aoc - std_y_aoc))
+                    strategy_group[_key]['log_aoc'].append(log_y_aoc)
+                    strategy_group[_key]['log_aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
+                    strategy_group[_key]['labels'].append(strategy)
+        
+        plot_y = []
+        sub_titles = []
+        fillings = []
+        plot_labels = []
+        for group_key, group_ele in strategy_group.items():
+            # plot_y.append(np.array(group_ele['aoc']))
+            # fillings.append(group_ele['aoc_filling'])
+
+            plot_y.append(np.array(group_ele['log_aoc']))
+            fillings.append(group_ele['log_aoc_filling'])
+            sub_titles.append(gruoup_name_map[group_key])
+            plot_labels.append(group_ele['labels'])
+
+        # plot_y = [np.array(strategy_log_aoc)]
+        # sub_titles = ["AOC"]
+        # filling = [strategy_log_filling]
+        # plot_labels = [labels]
 
         x_base = np.arange(len(strategy_aoc[0]), dtype=np.int16)
         x = np.tile(x_base, (len(plot_y), 1))
         plot_lines(
             y = plot_y,
             x = x,
-            labels = [labels],
-            filling=[strategy_log_filling], 
-            # sub_titles=["AOC", "Log AOC"], 
+            labels = plot_labels,
+            filling= fillings,
+            sub_titles=sub_titles,
+            n_cols=3,
+            label_fontsize=10,
+            figsize=(15, 9),
+            title="AOC",
+            # y_scales=[("log", {})],
             )
+
+    # _plot_aoc()
 
     
     def _plot_problem_aoc_and_loss():
-        # aoc_df = res_df.copy()
-        aoc_df = res_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id', 'n_iter'])[["log_y_aoc", 'y_aoc', 'loss']].agg(np.mean).reset_index()
+
+        def _min_max_agg(x):
+            if 'log' in x.name:
+                return np.max(x)
+            return np.min(x)
+
+        aoc_df = res_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id', 'n_iter'])[["log_y_aoc", 'y_aoc', 'loss']].agg(_min_max_agg).reset_index()
         aoc_df = aoc_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id'])[['n_iter',"log_y_aoc", 'y_aoc', 'loss']].agg(list).reset_index()
         aoc_df['acc_y_aoc'] = aoc_df.apply(_combine_acc('y_aoc'), axis=1)
         aoc_df['acc_log_y_aoc'] = aoc_df.apply(_combine_acc('log_y_aoc'), axis=1)
@@ -622,6 +788,18 @@ def plot_search_result(results:list[tuple[str,Population]]):
         problem_loss_filling = []
         labels = []
 
+        # same n_parent: 4, 8, 12, 20
+        # n_offspring: mu > lambda, mu <= lambda
+        gruoup_name_map = {
+            '4': '4+*',
+            '8': '8+*',
+            '12': '12+*',
+            '20': '20+*',
+            'mu': '$\mu$ > $\lambda$',
+            'lambda': '$\mu$ <= $\lambda$',
+        }
+        problem_group = {}
+
         unique_problems = aoc_df['problem_id'].unique()
         
         for problem in unique_problems:
@@ -632,6 +810,7 @@ def plot_search_result(results:list[tuple[str,Population]]):
             _loss = []
             _loss_filling = []
             _labels = []    
+            strategy_group_in_problem = {}
             for strategy in unique_strategies:
                 strategy_df = problem_df[problem_df['strategy'] == strategy]
                 acc_log_y_aoc = np.array(strategy_df['acc_log_y_aoc'].values)
@@ -647,24 +826,105 @@ def plot_search_result(results:list[tuple[str,Population]]):
                 _loss_filling.append((loss + std_loss, loss - std_loss))
 
                 _labels.append(strategy)
-            
+
+                mu, lam = strategy.split('+') 
+                int_mu, int_lam = int(mu), int(lam)
+
+                if int_mu == 1 or mu in strategy_group_in_problem:
+                    _keys = []
+                    if int_mu == 1:
+                        _keys.extend(gruoup_name_map.keys())
+                    else:
+                        _keys.append(mu)
+                        if int_mu > int_lam:
+                            _keys.append('mu')
+                        else:
+                            _keys.append('lambda')
+                    
+                    for _key in _keys:
+                        if _key not in strategy_group_in_problem:
+                            _temp = {
+                                'aoc': [],
+                                'aoc_filling': [],
+                                'loss': [],
+                                'loss_filling': [],
+                                'labels': [], 
+                            }
+                            strategy_group_in_problem[_key] = _temp
+
+                        strategy_group_in_problem[_key]['aoc'].append(log_y_aoc)
+                        strategy_group_in_problem[_key]['aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
+                        strategy_group_in_problem[_key]['loss'].append(loss)
+                        strategy_group_in_problem[_key]['loss_filling'].append((loss + std_loss, loss - std_loss))
+                        strategy_group_in_problem[_key]['labels'].append(strategy)
+
+            problem_group[problem] = strategy_group_in_problem
             problem_log_aoc.append(_log_aoc)
             problem_log_aoc_filling.append(_log_aoc_filling)
             problem_loss.append(_loss)
             problem_loss_filling.append(_loss_filling)
             labels.append(_labels) 
-        
+
+        for problem, strategy_group in problem_group.items():
+            plot_y = []
+            sub_titles = []
+            fillings = []
+            plot_labels = []
+            y_scale = []
+            title = f"F{problem}"
+            for group_key, group_ele in strategy_group.items():
+                plot_y.append(np.array(group_ele['aoc']))
+                fillings.append(group_ele['aoc_filling'])
+                sub_titles.append(f"{gruoup_name_map[group_key]}(AOC)")
+                plot_labels.append(group_ele['labels'])
+                y_scale.append(("log", {}))
+
+                plot_y.append(np.array(group_ele['loss']))
+                fillings.append(group_ele['loss_filling'])
+                sub_titles.append(f"{gruoup_name_map[group_key]}(Loss)")
+                plot_labels.append(group_ele['labels'])
+                y_scale.append(("linear", {}))
+
+            x_base = np.arange(len(problem_log_aoc[0][0]), dtype=np.int16)
+            x = np.tile(x_base, (len(plot_y), 1))
+            plot_lines(
+                y = plot_y,
+                x = x,
+                labels = plot_labels,
+                filling=fillings,
+                sub_titles=sub_titles,
+                # y_scales=y_scale,
+                title=title,
+                n_cols=4,
+                figsize=(15, 9),
+                )
+            
+
         aoc_and_loss = []
         subtitles = []
         filling = []
-        for i, problem in enumerate(unique_problems):
-            aoc_and_loss.append(problem_log_aoc[i])
-            subtitles.append(f"F{problem}-AOC")
-            filling.append(problem_log_aoc_filling[i])
+        n_cols = 5
+
+        # step n_cols
+        for i in range(0, len(unique_problems), n_cols):
+            aoc_and_loss.extend(problem_log_aoc[i:i+n_cols])
+            subtitles.extend([f"F{problem}-AOC" for problem in unique_problems[i:i+n_cols]])
+            filling.extend(problem_log_aoc_filling[i:i+n_cols])
             
-            aoc_and_loss.append(problem_loss[i])
-            subtitles.append(f"F{problem}-Loss")
-            filling.append(problem_loss_filling[i])
+            aoc_and_loss.extend(problem_loss[i:i+n_cols])
+            subtitles.extend([f"F{problem}-Loss" for problem in unique_problems[i:i+n_cols]])
+            filling.extend(problem_loss_filling[i:i+n_cols])
+
+        # for i, problem in enumerate(unique_problems):
+        #     aoc_and_loss.append(problem_log_aoc[i])
+        #     subtitles.append(f"F{problem}-AOC")
+        #     filling.append(problem_log_aoc_filling[i])
+            
+        #     aoc_and_loss.append(problem_loss[i])
+        #     subtitles.append(f"F{problem}-Loss")
+        #     filling.append(problem_loss_filling[i])
+
+        
         labels = labels * 2
 
         plot_y = np.array(aoc_and_loss)
@@ -672,17 +932,17 @@ def plot_search_result(results:list[tuple[str,Population]]):
         x_base = np.arange(len(problem_log_aoc[0][0]), dtype=np.int16)
         x = np.tile(x_base, (len(plot_y), 1))
 
-        plot_result(
-            y = plot_y,
-            x = x,
-            labels = labels,
-            filling=filling,
-            sub_titles=subtitles, 
-            n_cols=5,
-            figsize=(15, 9)
-            )
-    # _plot_problem_aoc_and_loss()
+        # plot_lines(
+        #     y = plot_y,
+        #     x = x,
+        #     labels = labels,
+        #     filling=filling,
+        #     sub_titles=subtitles, 
+        #     n_cols=5,
+        #     figsize=(15, 9)
+        #     )
 
+    # _plot_problem_aoc_and_loss()
 
     def _plot_similarity():
         strategy_group = {}
@@ -758,7 +1018,6 @@ def plot_search_result(results:list[tuple[str,Population]]):
         'err_type',
         ]
         _err_df = pd.DataFrame(columns=column_names)
-        _unique_strategies = res_df['strategy'].unique()
         _strategy_count = {}
         for strategy_name, pop in results:
             if strategy_name not in _strategy_count:
@@ -789,16 +1048,19 @@ def plot_search_result(results:list[tuple[str,Population]]):
             _all_error_df['err_rate'] = _all_error_df['err_type'].apply(lambda x: len([ele for ele in x if ele is not None]) / len(x))
 
             y_err_rates = []
-            for strategy in _unique_strategies:
+
+            for strategy in unique_strategies:
                 _strategy_error_df = _all_error_df[_all_error_df['strategy'] == strategy]
                 _error_rate = _strategy_error_df['err_rate'].to_list()
                 y_err_rates.append(_error_rate)
 
             plot_box_violin(
                 data=[y_err_rates],
-                labels=[_unique_strategies],
+                labels=[unique_strategies],
                 plot_type="violin",
                 n_cols=4,
+                label_fontsize=10,
+                title="Error rate by strategy",
                 figsize=(15, 9),
                 ) 
 
@@ -821,10 +1083,29 @@ def plot_search_result(results:list[tuple[str,Population]]):
             _gen_error_df = _gen_error_df.groupby(['strategy', 'n_repeat'])[['err_rate', 'n_iter']].agg(list).reset_index()
             _gen_error_df['evol_err_rate'] = _gen_error_df.apply(_combine_err_rate, axis=1)
 
+            strategy_group = {}
+            # same n_parent: 4, 8, 12, 20
+            # n_offspring: mu > lambda, mu <= lambda
+            gruoup_name_map = {
+                '4': '4+*',
+                '8': '8+*',
+                '12': '12+*',
+                '20': '20+*',
+                'mu': '$\mu$ > $\lambda$',
+                'lambda': '$\mu$ <= $\lambda$',
+            }
+
+            for _key in gruoup_name_map.keys():
+                strategy_group[_key] = {
+                    'err_rate': [],
+                    'err_rate_filling': [],
+                    'labels': [],
+                }
+
             y_err_rates = []
             y_err_rates_filling = []
             labels = []
-            for strategy in _unique_strategies:
+            for strategy in unique_strategies:
                 _strategy_error_df = _gen_error_df[_gen_error_df['strategy'] == strategy]
 
                 _evol_err_rate = _strategy_error_df['evol_err_rate'].to_list()
@@ -835,15 +1116,63 @@ def plot_search_result(results:list[tuple[str,Population]]):
                 y_err_rates_filling.append((_mean_err_rate + _std_err_rate, _mean_err_rate - _std_err_rate))
 
                 labels.append(strategy)
+
+                mu, lam = strategy.split('+') 
+                int_mu, int_lam = int(mu), int(lam)
+
+                if int_mu == 1:
+                    continue 
+
+                _keys = []
+                if int_mu == 1:
+                    _keys.extend(gruoup_name_map.keys())
+                else:
+                    _keys.append(mu)
+                    if int_mu > int_lam:
+                        _keys.append('mu')
+                    else:
+                        _keys.append('lambda')
                 
-            plot_y = [np.array(y_err_rates)]
+                for _key in _keys:
+                    if _key not in strategy_group:
+                        _temp = {
+                            'err_rate': [],
+                            'err_rate_filling': [],
+                            'labels': [],
+                        }
+                        strategy_group[_key] = _temp
+                    
+                    strategy_group[_key]['err_rate'].append(_mean_err_rate)
+                    if int_mu == 1:
+                        strategy_group[_key]['err_rate_filling'].append((_mean_err_rate, _mean_err_rate))
+                    else:
+                        strategy_group[_key]['err_rate_filling'].append((_mean_err_rate + _std_err_rate, _mean_err_rate - _std_err_rate))
+                    strategy_group[_key]['labels'].append(strategy)
+
+            plot_y = []
+            sub_titles = []
+            fillings = []
+            plot_labels = []
+            for group_key, group_ele in strategy_group.items():
+                plot_y.append(np.array(group_ele['err_rate']))
+                fillings.append(group_ele['err_rate_filling'])
+                sub_titles.append(gruoup_name_map[group_key])
+                plot_labels.append(group_ele['labels']) 
+                
+            # plot_y = [np.array(y_err_rates)]
+
             x_base = np.arange(len(y_err_rates[0]), dtype=np.int16)
             x = np.tile(x_base, (len(plot_y), 1))
             plot_lines(
                 y = plot_y,
                 x = x,
-                labels = [labels],
-                filling=[y_err_rates_filling], 
+                labels = plot_labels,
+                label_fontsize=9,
+                # filling=fillings,
+                sub_titles=sub_titles,
+                title="Error rate by generation",
+                n_cols=3,
+                figsize=(15, 9),
                 ) 
 
         # error type
@@ -851,13 +1180,21 @@ def plot_search_result(results:list[tuple[str,Population]]):
             _size = _err_df.size
             type_count = _err_df['err_type'].value_counts()
             _all_type_count = type_count.sum()
-            # type_percentage = type_count.div(type_count.sum()).mul(100)
+
+            # sum types less than 0.01 into others
+            _threshold = 0.01
+            _other_count = 0
+            for _type, _count in type_count.items():
+                if _count / _all_type_count < _threshold:
+                    _other_count += _count
+            type_count = type_count[type_count / _all_type_count >= _threshold]
+            type_count['others'] = _other_count
 
             _title = f"{_all_type_count} errors in {_size} algorithms"
             _title = f'Total errors: {_all_type_count}/{_size}'
             _plot_data = type_count
 
-            _, ax = plt.subplots()
+            _, ax = plt.subplots(figsize=(10, 6))
             ax.pie(_plot_data, 
                    labels=_plot_data.index, 
                    autopct='%1.1f%%',
@@ -865,9 +1202,9 @@ def plot_search_result(results:list[tuple[str,Population]]):
                    )
             ax.set_title(_title)
     
-        _plot_all_error_rate()
+        # _plot_all_error_rate()
         _plot_error_rate_by_generation()
-        _plot_error_type()
+        # _plot_error_type()
 
         pass
 
@@ -971,6 +1308,24 @@ def plot_algo_result(results:list[EvaluatorResult], **kwargs):
 
     # hanle aoc
     def _plot_aoc():
+        all_aoc_df = res_df.groupby(['algorithm', 'problem_id'])[['y_aoc', 'log_y_aoc']].agg(np.mean).reset_index()
+        all_aoc_df = all_aoc_df.groupby(['algorithm'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
+        all_log_plot_data = []
+        labels = []
+        for algo in all_aoc_df['algorithm']:
+            _temp_df = all_aoc_df[all_aoc_df['algorithm'] == algo].agg(list)
+            all_log_plot_data.append(_temp_df['log_y_aoc'].values[0])
+            labels.append(algo)
+
+        # plot aoc
+        plot_box_violin(
+            data=[all_log_plot_data],
+            labels=[labels],
+            plot_type="violin",
+            title="AOC on all problems",
+            figsize=(15, 9),
+        )
+
         problem_id_list = res_df['problem_id'].unique()
         aoc_df = res_df.groupby(['algorithm','problem_id'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
         #(problem, data)
@@ -987,31 +1342,29 @@ def plot_algo_result(results:list[EvaluatorResult], **kwargs):
 
             _labels = _temp_df['algorithm'].to_list()
             labels.append(_labels)
-            short_labels.append([label[:10] for label in _labels])
+            short_labels.append([label[:16] for label in _labels])
 
         labels = short_labels
 
-        # plot aoc
-        # plot_box_violin(data=aoc_plot_data, 
-        #                 labels=labels, 
-        #                 sub_titles=sub_titles, 
-        #                 title="AOC",
-        #                 plot_type="violin", 
-        #                 n_cols=4,
-        #                 figsize=(14, 8),
-        #                 **kwargs)
+        # iter by step
+        step = 6
+        for i in range(0, len(log_plot_data), step):
+            _plot_data = log_plot_data[i:i+step]
+            _labels = labels[i:i+step]
+            _sub_titles = sub_titles[i:i+step]
 
-        # # plot log aoc
-        plot_box_violin(data=log_plot_data,
-                        labels=labels,
-                        sub_titles=sub_titles,
-                        title="AOC",
-                        plot_type="violin",
-                        n_cols=4,
-                        figsize=(15, 9),
-                        **kwargs)
+            # plot log aoc
+            plot_box_violin(data=_plot_data,
+                            labels=_labels,
+                            sub_titles=_sub_titles,
+                            title="AOC",
+                            plot_type="violin",
+                            label_fontsize=8, 
+                            n_cols=2,
+                            figsize=(15, 9),
+                            **kwargs)
     
-    _plot_aoc()
+    # _plot_aoc()
 
     def mean_std_agg(agg_series):
         if is_numeric_dtype(agg_series.dtype):
@@ -1284,17 +1637,17 @@ def plot_algo_result(results:list[EvaluatorResult], **kwargs):
                 baseline_labels=baseline_labels,
                 colors=colors,
                 labels=labels, 
-                label_fontsize=6,
+                label_fontsize=8,
                 linewidth=1.0,
                 filling=plot_filling,
                 x_dot=x_dots,
-                n_cols=5,
+                n_cols=3,
                 sub_titles=sub_titles,
                 sub_title_fontsize=9,
                 title=f"F{problem_id}",
-                figsize=(15, 9),
+                figsize=(15, 20),
                 **kwargs
             ) 
 
 
-    # _plot_iter()
+    _plot_iter()

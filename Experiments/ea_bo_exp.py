@@ -219,6 +219,8 @@ def _run_exp(prompt_generator:PromptGenerator,
             if os.path.exists(check_point_path):
                 population = Population.load(check_point_path)
                 logging.info("Load population from check point: %s", check_point_path)
+            else:
+                logging.warning("Check point path not exist: %s", check_point_path)
         elif "pop_warmstart_handlers" in options:
             warmstart_handlers = options["pop_warmstart_handlers"]
             warmstart_inds = []
@@ -483,16 +485,16 @@ def eval_final_algo():
 
     _file_map = {
         # 0.04
-        'NoisyBanditBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-10_NoisyBanditBOv1_0.0434.py',
-        'ParetoActiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_4+2_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210025714/0-3_ParetoActiveBOv1_0.0426.py',
+        # 'NoisyBanditBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-10_NoisyBanditBOv1_0.0434.py',
+        # 'ParetoActiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_4+2_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210025714/0-3_ParetoActiveBOv1_0.0426.py',
 
         # 0.05
-        'AdaptiveBatchUCBLocalSearchBOv2': 'Experiments/pop_40_f/ESPopulation_evol_4+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210043822/4-20_AdaptiveBatchUCBLocalSearchBOv2_0.0526.py',
-        'AdaptiveControlVariateBOv4': 'Experiments/pop_40_f/ESPopulation_evol_8+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209152106/6-29_AdaptiveControlVariateBOv4_0.0595.py'
+        # 'AdaptiveBatchUCBLocalSearchBOv2': 'Experiments/pop_40_f/ESPopulation_evol_4+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210043822/4-20_AdaptiveBatchUCBLocalSearchBOv2_0.0526.py',
+        # 'AdaptiveControlVariateBOv4': 'Experiments/pop_40_f/ESPopulation_evol_8+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209152106/6-29_AdaptiveControlVariateBOv4_0.0595.py'
 
         # 0.06
-        # 'AdaptiveEvoBatchHybridBOv2': 'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208224540/4-32_AdaptiveEvoBatchHybridBOv2_0.0619.py',
-        # 'MultiObjectiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-19_MultiObjectiveBOv1_0.0665.py',
+        'AdaptiveEvoBatchHybridBOv2': 'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208224540/4-32_AdaptiveEvoBatchHybridBOv2_0.0619.py',
+        'MultiObjectiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-19_MultiObjectiveBOv1_0.0665.py',
 
         # 0.07
         # 'AdaptiveTrustRegionImputationDPPBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065238/3-40_AdaptiveTrustRegionImputationDPPBOv1_0.0769.py',
