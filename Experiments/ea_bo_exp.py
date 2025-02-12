@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from datetime import datetime
 import importlib.util
@@ -12,10 +13,9 @@ from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, T
 from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
 from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
-from llamea.utils import plot_algo_result
 from llamea.individual import Individual
 from llamea.evaluator.injected_critic import FunctionProfiler
-
+from Experiments.plot import plot_algo_result
 
 # Utils
 def dynamic_import_and_get_class(module_path, class_name):
@@ -114,7 +114,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
             if options is not None:
                 if 'device' in options:
                     extra_init_params['device'] = options['device']
-        
+
         if 'max_eval_workers' in options:
             _max_eval_workers = options['max_eval_workers']
 
@@ -151,18 +151,18 @@ def run_algo_eval_from_file_map(evaluator, file_map=None, cls_list=None, plot=Fa
             code = ""
             with open(file_path, "r") as f:
                 code = f.read()
-        
+
             _cls = dynamic_import_and_get_class(file_path, cls_name)
             if _cls is None:
                 continue
             _cls_list.append(_cls)
             _code_list.append(code)
-    
+
     _time_profile = False
     if options is not None and 'time_profile' in options:
         _time_profile = options['time_profile']
-    
-    for i, _cls in enumerate(_cls_list): 
+
+    for i, _cls in enumerate(_cls_list):
         _wrapper = None
         if _time_profile:
             _wrapper = FunctionProfiler()
@@ -178,18 +178,18 @@ def run_algo_eval_from_file_map(evaluator, file_map=None, cls_list=None, plot=Fa
 
     if plot:
         plot_algo_result(res_list)
-    
+
 
 # EA Experiments
-def _run_exp(prompt_generator:PromptGenerator, 
-            evaluator:AbstractEvaluator, 
+def _run_exp(prompt_generator:PromptGenerator,
+            evaluator:AbstractEvaluator,
             llm:LLMmanager,
             population:Population,
-            n_generations:int=200, 
-            n_population:int=30, 
-            gpu_name:str=None, 
-            max_interval:int=5, 
-            n_query_threads:int=0, 
+            n_generations:int=200,
+            n_population:int=30,
+            gpu_name:str=None,
+            max_interval:int=5,
+            n_query_threads:int=0,
             n_eval_workers:int=0,
             time_out_per_eval:int=None,
             options:dict=None,
@@ -213,7 +213,7 @@ def _run_exp(prompt_generator:PromptGenerator,
                 evaluator = get_IOHEvaluator_for_final_eval()
         if "eval_inject_critic" in options:
             evaluator.inject_critic = options["eval_inject_critic"]
-        
+
         if "pop_load_check_point_path" in options:
             check_point_path = options["pop_load_check_point_path"]
             if os.path.exists(check_point_path):
@@ -240,7 +240,7 @@ def _run_exp(prompt_generator:PromptGenerator,
             if len(warmstart_inds) > 0:
                 population.select_next_generation()
                 logging.info("Warmstart %d individuals", len(warmstart_inds))
-        
+
         if "pop_debug_save_on_the_fly" in options:
             population.debug_save_on_the_fly = options["pop_debug_save_on_the_fly"]
 
@@ -249,10 +249,10 @@ def _run_exp(prompt_generator:PromptGenerator,
 
         if "pop_preorder_aware_init" in options:
             population.preorder_aware_init = options["pop_preorder_aware_init"]
-        
+
         if "pop_parent_strategy" in options:
             population.get_parent_strategy = options["pop_parent_strategy"]
-            
+
         if "pop_selection_strategy" in options:
             population.selection_strategy = options["pop_selection_strategy"]
 
@@ -270,7 +270,7 @@ def _run_exp(prompt_generator:PromptGenerator,
 
     llambo.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,
-                        n_retry=3, 
+                        n_retry=3,
                         time_out_per_eval=time_out_per_eval,
                         n_query_threads=n_query_threads,
                         n_eval_workers=n_eval_workers,
@@ -280,7 +280,7 @@ def _run_exp(prompt_generator:PromptGenerator,
 
     population.save(suffix='final')
 
-def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=False, test_eval=False, pop_path=None): 
+def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=False, test_eval=False, pop_path=None):
     code = ""
     with open(file_path, "r") as f:
         code = f.read()
@@ -309,13 +309,13 @@ def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=Fal
     with open(res_path, "rb") as f:
         res = pickle.load(f)
 
-    logging.info("Results: %s", res) 
+    logging.info("Results: %s", res)
 
     if plot:
         plot_algo_result([res])
-    
+
     if pop_path is not None and os.path.exists(pop_path):
-        population = Population.load(pop_path) 
+        population = Population.load(pop_path)
     else:
         population = ESPopulation(n_parent=1, n_parent_per_offspring=1, n_offspring=1)
         population.name = f"tune_{cls_name}_1+1"
@@ -332,7 +332,7 @@ def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=Fal
         ind.fitness = res.score
         population.add_individual(ind, generation=0)
         population.select_next_generation()
-    
+
     _run_exp(
         population=population,
         **params
@@ -346,7 +346,7 @@ def run_mu_plus_lambda_exp(
                     ):
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
     population.name = f"evol_{n_parent}+{n_offspring}"
-    
+
     _run_exp(
         population=population,
         **kwargs
@@ -410,23 +410,22 @@ def tune_vanilla_bo(params):
     tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
 
 def debug_algo_eval():
-    problems = [4, 10, 14, 21]
+    problems = [4]
     # problems = list(range(1, 25))
     instances = [8]
     repeat = 3
     budget = 100
-    
+
     evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
     evaluator.inject_critic = True
     evaluator.ignore_over_budget = True
-    
+
     file_map = {
         # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
         # 'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
         # 'AdaptiveBatchBOv7': 'Experiments/pop_40_f/ESPopulation_evol_1+1_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210043001/25-26_AdaptiveBatchBOv7_0.0748.py',
 
-
-        'AdaptiveLocalPenaltyVarianceBOv3':'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208230817/5-40_AdaptiveLocalPenaltyVarianceBOv3_0.0482.py',
+        # 'AdaptiveLocalPenaltyVarianceBOv3':'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208230817/5-40_AdaptiveLocalPenaltyVarianceBOv3_0.0482.py',
     }
 
     from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO 
@@ -438,10 +437,10 @@ def debug_algo_eval():
     cls_list = [
         # VanillaBO,
         # BLRandomSearch,
-        # BLMaternVanillaBO,
+        BLMaternVanillaBO,
         # BLTuRBO1,
         # BLTuRBOM,
-        BLSKOpt,
+        # BLSKOpt,
         # EnsembleLocalSearchBOv1,
         # EnsembleDeepKernelAdaptiveTSLocalSearchARDv1,
         # GP_Matern_EI_MSL_SobolBOv1,
@@ -493,23 +492,25 @@ def eval_final_algo():
         # 'AdaptiveControlVariateBOv4': 'Experiments/pop_40_f/ESPopulation_evol_8+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209152106/6-29_AdaptiveControlVariateBOv4_0.0595.py'
 
         # 0.06
-        'AdaptiveEvoBatchHybridBOv2': 'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208224540/4-32_AdaptiveEvoBatchHybridBOv2_0.0619.py',
-        'MultiObjectiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-19_MultiObjectiveBOv1_0.0665.py',
+        # 'AdaptiveEvoBatchHybridBOv2': 'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208224540/4-32_AdaptiveEvoBatchHybridBOv2_0.0619.py',
+        # 'MultiObjectiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-19_MultiObjectiveBOv1_0.0665.py',
+        # 'AdaptiveHybridBOv6':'Experiments/pop_40_f/ESPopulation_evol_1+1_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0211000947/10-11_AdaptiveHybridBOv6_0.0615.py',
+        # 'AdaptiveTrustRegionDynamicAllocationBOv2': 'Experiments/pop_40_f/ESPopulation_evol_8+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065623/2-22_AdaptiveTrustRegionDynamicAllocationBOv2_0.0650.py'
 
         # 0.07
-        # 'AdaptiveTrustRegionImputationDPPBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065238/3-40_AdaptiveTrustRegionImputationDPPBOv1_0.0769.py',
-        # 'TrustRegionBOv1': 'Experiments/pop_40_f/ESPopulation_evol_12+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209000244/0-2_TrustRegionBOv1_0.0720.py',
+        # 'AdaptiveTrustRegionVarianceQuantileDEBOv2': 'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208225600/5-40_AdaptiveTrustRegionVarianceQuantileDEBOv2_0.0731.py',
 
         # 0.08
         # 'TrustRegionAdaptiveTempBOv2': 'Experiments/pop_40_f/ESPopulation_evol_4+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209173952/4-23_TrustRegionAdaptiveTempBOv2_0.0807.py',
-        # 'AdaptiveTrustImputationBOv2': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065238/2-31_AdaptiveTrustImputationBOv2_0.0806.py',
         # 'BayesLocalAdaptiveAnnealBOv1': 'Experiments/pop_40_temp/ESPopulation_evol_10+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208164605/3-24_BayesLocalAdaptiveAnnealBOv1_0.0827.py',
+
+        # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
     }
 
     file_map = _file_map
 
     run_algo_eval_from_file_map(evaluator, file_map, plot=False, save=True, options=options)
- 
+
 
 def get_search_default_params():
     params = {
@@ -551,20 +552,27 @@ def get_search_default_params():
     return params
 
 def get_llm():
-    # MODEL = LLMS["deepseek/deepseek-chat"]
-    MODEL = LLMS["gemini-2.0-flash-exp"]
-    # MODEL = LLMS["gemini-1.5-flash"]
-    # MODEL = LLMS["gemini-2.0-pro"]
-    # MODEL = LLMS["gemini-2.0-flash-thinking"]
-    # MODEL = LLMS["gemini-exp-1206"]
-    # MODEL = LLMS["llama-3.1-70b-versatile"]
-    # MODEL = LLMS["llama-3.3-70b-versatile"]
-    # MODEL = LLMS["o_gemini-flash-1.5-8b-exp"]
-    # MODEL = LLMS["o_gemini-2.0-flash-exp"]
-    # MODEL = LLMS["onehub-gemini-2.0-flash"]
-    # MODEL = LLMS["onehub-gemma2-9b-it"]
+    # MODEL = 'deepseek/deepseek-chat'
 
-    llm = LLMmanager(api_key=MODEL[1], model=MODEL[0], base_url=MODEL[2], max_interval=MODEL[3])
+    # MODEL = 'gemini-2.0-flash-exp'
+    MODEL = 'gemini-1.5-flash'
+    # MODEL = 'gemini-2.0-pro-exp'
+    # MODEL = 'gemini-2.0-flash-thinking-exp'
+    # MODEL = 'gemini-exp-1206'
+
+    # MODEL = 'llama3-70b-8192'
+    # MODEL = 'llama-3.3-70b-versatile'
+    # MODEL = 'deepseek-r1-distill-llama-70b'
+    # MODEL = 'deepseek-r1-distill-qwen-32b'
+    
+    # MODEL = 'o_gemini-flash-1.5-8b-exp'
+    # MODEL = 'o_gemini-2.0-flash-exp'
+
+    # MODEL = 'onehub-gemini-2.0-flash'
+    # MODEL = 'onehub-gemma2-9b-it'
+
+    llm = LLMmanager(model_key=MODEL)
+
     return llm
 
 def mock_res_provider(*args, **kwargs):
@@ -592,11 +600,11 @@ if __name__ == "__main__":
     setup_logger(level=logging.INFO)
 
     # debug_algo_eval()
-    eval_final_algo()
+    # eval_final_algo()
 
     _params = get_search_default_params()
     _new_params = {
-        "n_population": 40,
+        "n_population": 4,
         "n_query_threads": 0,
 
         # Choose time_out_per_eval carefully when running multiple evaluations of expriments in parallel due to OS's dispatching mechanism

@@ -22,3 +22,7 @@ disable=
     broad-exception-raised,
 
     relative-beyond-top-level,
+
+    invalid-name,
+    unspecified-encoding,
+    trailing-whitespace,

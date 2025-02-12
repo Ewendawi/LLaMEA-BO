@@ -40,6 +40,8 @@ botorch = "^0.12.0"
 gpytorch = "^1.13"
 sentence-transformers = "^3.4.0"
 scikit-optimize = "^0.10.2"
+aisuite = {extras = ["groq", "openai"], version = "^0.1.9"}
+google-genai = "^1.2.0"
 
 [tool.poetry.dev-dependencies]
 black = "^23.11.0"
