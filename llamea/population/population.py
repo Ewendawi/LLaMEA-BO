@@ -1,4 +1,5 @@
 import os
+import time
 import pickle
 import math
 import itertools
@@ -12,9 +13,15 @@ from ..individual import Individual
 
 
 class PopulationQueryItem:
-    def __init__(self, qid=None, parent=None, offspring=None):
-        self.qid = qid
+    def __init__(self,qid=None, parent=None, offspring=None):
+        if qid is None:
+            self.qid = time.time()
+        else:
+            self.qid = qid
+        self.generation = None
         self.is_initialized = False
+
+        self.type = None
         self.parent: list[Individual] = parent
         self.offspring: Individual = offspring
 
@@ -31,6 +38,12 @@ class Population(ABC):
         self.save_dir = None
         self._save_dir_suffix = None
         self.save_per_generation = None
+
+    def get_evaluator(self, query_item: PopulationQueryItem):
+        return None
+
+    def get_promptor(self, query_item: PopulationQueryItem):
+        return None
 
     @abstractmethod
     def get_population_size(self):
@@ -49,6 +62,9 @@ class Population(ABC):
 
     @abstractmethod
     def get_offspring_queryitems(self, n_parent:int=None, max_n_offspring:int=None) -> list[PopulationQueryItem]:
+        return None
+
+    def get_next_queryitems(self, query_items: list[PopulationQueryItem]) -> list[PopulationQueryItem]:
         return None
 
     @abstractmethod

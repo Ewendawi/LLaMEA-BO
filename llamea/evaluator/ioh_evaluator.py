@@ -329,7 +329,7 @@ class IOHEvaluator(AbstractEvaluator):
 
             executor = executor_cls(max_workers=max_workers)
             futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
-            _should_shutdown = False
+            _should_cancel = False
 
             for future in concurrent.futures.as_completed(futures.keys()):
                 res = future.result()
@@ -353,11 +353,10 @@ class IOHEvaluator(AbstractEvaluator):
                     if done_tasks % interval == 0:
                         logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
 
-            if _should_shutdown:
-                logging.error("Evaluating %s: Shutting down executor", cls_name)
-                # better to wait for all running tasks to finish in case of resource competition
-                executor.shutdown(wait=True, cancel_futures=True)
-                logging.error("Evaluating %s: Executor shut down", cls_name)
+            logging.error("Evaluating %s: Shutting down executor", cls_name)
+            # better to wait for all running tasks to finish in case of resource competition
+            executor.shutdown(wait=True, cancel_futures=_should_cancel)
+            logging.error("Evaluating %s: Executor shut down", cls_name)
         else:
             logging.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
 

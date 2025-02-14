@@ -9,7 +9,7 @@ import torch
 import numpy as np
 from llamea import LLaMBO
 from llamea.llm import LLMmanager, LLMS
-from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator
+from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator
 from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
 from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
@@ -46,6 +46,15 @@ def get_IOHEvaluator_for_evol():
     problems = list(range(1, 25))
     instances = [[1, 2]] * len(problems)
     repeat = 2
+    evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
+    return evaluator
+
+def get_light_IOHEvaluator_for_crossover():
+    budget = 100
+    dim = 5
+    problems = [1]
+    instances = [[1]] * len(problems)
+    repeat = 1
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
     return evaluator
 
@@ -87,6 +96,10 @@ def get_bo_prompt_generator():
     prompt_generator.is_bo = True
     return prompt_generator
 
+def get_light_Promptor_for_crossover():
+    prompt_generator = LightBaselinePromptGenerator()
+    prompt_generator.is_bo = True
+    return prompt_generator
 
 # Evaluate Algorithms
 def baseline_algo_eval_param(dim, budget):
@@ -249,6 +262,24 @@ def _run_exp(prompt_generator:PromptGenerator,
 
         if "pop_preorder_aware_init" in options:
             population.preorder_aware_init = options["pop_preorder_aware_init"]
+
+        if "pop_replaceable_parent_selection" in options:
+            population.replaceable_parent_selection = options["pop_replaceable_parent_selection"]
+            
+        if "pop_random_parent_selection" in options:
+            population.random_parent_selection = options["pop_random_parent_selection"]
+            
+        if "pop_exclusive_operations" in options:
+            population.exclusive_operations = options["pop_exclusive_operations"]
+
+        if "pop_cross_over_rate" in options:
+            population.cross_over_rate = options["pop_cross_over_rate"]
+
+        if "pop_cr_light_eval" in options:
+            population.light_cross_over_evaluator = options["pop_cr_light_eval"]
+
+        if 'pop_cr_light_promptor' in options:
+            population.light_cross_over_promptor = options['pop_cr_light_promptor']
 
         if "pop_parent_strategy" in options:
             population.get_parent_strategy = options["pop_parent_strategy"]
@@ -536,6 +567,9 @@ def get_search_default_params():
             # 'pop_preorder_aware_init': True,
             # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
             # 'pop_selection_strategy': diversity_awarness_selection_fn,
+            # 'pop_replaceable_parent_selection': True,
+            # 'pop_random_parent_selection': False,
+            # 'pop_exclusive_operations': True,
 
 
             # 'eval_inject_critic': True,
@@ -554,8 +588,8 @@ def get_search_default_params():
 def get_llm():
     # MODEL = 'deepseek/deepseek-chat'
 
-    # MODEL = 'gemini-2.0-flash-exp'
-    MODEL = 'gemini-1.5-flash'
+    MODEL = 'gemini-2.0-flash-exp'
+    # MODEL = 'gemini-1.5-flash'
     # MODEL = 'gemini-2.0-pro-exp'
     # MODEL = 'gemini-2.0-flash-thinking-exp'
     # MODEL = 'gemini-exp-1206'
@@ -622,11 +656,18 @@ if __name__ == "__main__":
             'pop_preorder_aware_init': True,
             # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
             # 'pop_selection_strategy': diversity_awarness_selection_fn,
-            'pop_save_dir': 'Experiments/pop_40',
+            'pop_save_dir': 'Experiments/pop_40_test',
+
+            # 'pop_replaceable_parent_selection': False,
+            # 'pop_random_parent_selection': True,
+            # 'pop_exclusive_operations': False,
+            # 'pop_cross_over_rate': 0.5,
+            # 'pop_cr_light_eval': get_light_IOHEvaluator_for_crossover(),
+            # 'pop_cr_light_promptor': get_light_Promptor_for_crossover(),
 
 
             'eval_inject_critic': False,
-            'eval_overwrite_type': 'light_evol', # 'test', 'light_evol', 'evol', 'final_eval' 
+            'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
             'test_eval_problems': [4], # [4, 10],
             'test_eval_instances': [1],
             'test_eval_repeat': 1,
@@ -638,9 +679,9 @@ if __name__ == "__main__":
 
     _params.update(_new_params)
 
-    N_PARENT = 10
+    N_PARENT = 2
     N_PARENT_PER_OFFSPRING = 2
-    N_OFFSPRING = 6
+    N_OFFSPRING = 1
 
     run_mu_plus_lambda_exp(
         n_parent=N_PARENT,

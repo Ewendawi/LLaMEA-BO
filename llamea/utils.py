@@ -556,3 +556,169 @@ def plot_box_violin(
         plt.savefig(filename, dpi=300)
     if show:
         plt.show()
+
+
+
+
+# Task Queue
+import time
+import concurrent.futures
+
+
+class TaskStatus:
+    INIT = "INIT"
+    READY = "READY"
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    FINISHED = "FINISHED"
+
+class Task:
+    def __init__(self, name, func, dependencies=None):
+        """
+        :param name: Unique identifier for the task.
+        :param func: Callable that performs the task.
+        :param dependencies: List of task names that must complete before this task runs.
+        """
+        self.task_id = time.time()
+        self.name = name
+        self.func = func
+        self.dependencies = dependencies or []
+
+        self.result = None
+        self.status = TaskStatus.INIT
+
+
+    def __eq__(self, other):
+        return self.task_id == other.task_id
+    
+    def __hash__(self):
+        return hash(self.task_id)
+    
+class TaskQueue:
+    def __init__(self, max_workers=1):
+        self.all_tasks = {}
+
+        self.inverse_dependencies = {}
+
+        self.ready_queue = []
+
+        self.max_workers = max_workers
+        self._is_running = False
+    
+    def _add_task(self, task:Task):
+        if not task.dependencies:
+            self.all_tasks[task.task_id] = task
+            self.ready_queue.append(task.task_id)
+            task.status = TaskStatus.READY
+        else:
+            dep_check = all([dep_id in self.all_tasks for dep_id in task.dependencies])
+            if dep_check:
+                self.all_tasks[task.task_id] = task
+                task.status = TaskStatus.PENDING
+
+                for dep_id in task.dependencies:
+                    if dep_id not in self.inverse_dependencies:
+                        self.inverse_dependencies[dep_id] = []
+
+                    self.inverse_dependencies[dep_id].append(task.task_id)
+            else:
+                logging.error("Can't find Task %s's dependencies.", task.name)
+    
+    def add_tasks(self, tasks, run_now=False):
+        if self._is_running:
+            logging.error("TaskQueue is already running.")
+            return
+        
+        for task in tasks:
+            self._add_task(task)
+
+        if run_now:
+            self.run_tasks()
+
+    def _task_done(self, task, res):
+        task.result = res
+        task.status = TaskStatus.FINISHED
+
+        task_id = task.task_id
+
+        # check others' readiness
+        if task_id in self.inverse_dependencies:
+            for p_id in self.inverse_dependencies[task_id]:
+                p_task = self.all_tasks[p_id]
+                all_dep_finished = all([self.all_tasks[dep_id].status == TaskStatus.FINISHED for dep_id in p_task.dependencies])
+                if all_dep_finished:
+                    self.ready_queue.append(p_id)
+                    p_task.status = TaskStatus.READY
+
+    def run_tasks(self):
+        self._is_running = True
+        while self.ready_queue:
+            if self.max_workers > 1:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    _ready_tasks = []
+                    for task_id in self.ready_queue:
+                        _task = self.all_tasks[task_id]
+                        _ready_tasks.append(_task)
+                        _task.status = TaskStatus.RUNNING
+                    self.ready_queue = []
+
+                    futures = {executor.submit(task.func): task for task in _ready_tasks}
+
+                    for future in concurrent.futures.as_completed(futures.keys()):
+                        task = futures[future]
+                        res = future.result()
+                        self._task_done(task, res)
+            else:
+                task_id = self.ready_queue.pop(0)
+                task = self.all_tasks[task_id]
+                task.status = TaskStatus.RUNNING
+                res = task.func()
+                self._task_done(task, res)
+                            
+        self._is_running = False
+        return list(self.all_tasks.values())
+        
+def task_test():
+    def task_a():
+        time.sleep(1)
+        print("Task A")
+        return "Result A"
+
+    def task_b():
+        time.sleep(2)
+        print("Task B")
+        return "Result B"
+
+    def task_c():
+        time.sleep(1.5)
+        print("Task C")
+        return "Result C"
+
+    def task_d():
+        time.sleep(1)
+        print("Task D")
+        return "Result D"
+
+    # Define tasks; B depends on A, and C depends on both A and B.
+    task_a = Task("A", task_a)
+    task_b = Task("B", task_b, dependencies=[task_a.task_id])
+    task_c = Task("C", task_c, dependencies=[task_a.task_id, task_b.task_id])
+    task_d = Task("D", task_d)
+    tasks = [
+        task_a,
+        task_b,
+        task_c,
+        task_d,
+    ]
+    
+    print("Running tasks in parallel:")
+    task_queue = TaskQueue(max_workers=2)
+    task_queue.add_tasks(tasks)
+    results_parallel = task_queue.run_tasks()
+    print("Parallel Results:", results_parallel)
+
+    print("Running tasks sequentially:")
+    task_queue = TaskQueue(max_workers=1)
+    task_queue.add_tasks(tasks)
+    results_sequential = task_queue.run_tasks()
+    print("Sequential Results:", results_sequential)

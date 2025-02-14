@@ -30,6 +30,10 @@ class ResponseHandler(ABC):
 
         self._eval_result:EvaluatorResult = None
 
+        self.query_time = 0
+        self.prompt_token_count = 0
+        self.response_token_count = 0
+
     @property
     def eval_result(self) -> EvaluatorResult:
         return self._eval_result

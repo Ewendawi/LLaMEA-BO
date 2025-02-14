@@ -54,8 +54,8 @@ class LLMClientResponse:
     def __init__(self, response):
         self.response = response
         self.text = None
-        self.prompt_token_count = None
-        self.response_token_count = None
+        self.prompt_token_count = 0
+        self.response_token_count = 0
         self.error = None
 
     def __str__(self):
@@ -297,7 +297,11 @@ class LLMmanager:
 
     def chat(self, session_messages, temperature=0.7, **kwargs):
         if self.mock_res_provider is not None:
-            return self.mock_res_provider(session_messages, temperature, **kwargs)
+            _content = self.mock_res_provider(session_messages, temperature, **kwargs)
+            res = LLMClientResponse(None)
+            res.text = _content
+            res.response_token_count = len(_content.split()) 
+            return res
         
         response = self.client.raw_completion(
             session_messages,
@@ -307,6 +311,4 @@ class LLMmanager:
 
         if response.error is not None:
             logging.error("LLM: %s, %s", self.model_name(), response.error)
-            return ""
-        else:
-            return response.text
+        return response

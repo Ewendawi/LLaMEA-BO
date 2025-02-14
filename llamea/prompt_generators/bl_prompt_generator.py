@@ -59,6 +59,7 @@ class BaselineResponseHandler(ResponseHandler):
             error_str = f"{section} not found in the response."
         return res, error_str
 
+
 class BaselinePromptGenerator(PromptGenerator):
 
     def __init__(self):
@@ -369,3 +370,15 @@ The mean AOCC score of the algorithm {algorithm_name} on Separable functions was
 # Helper functions
     def get_response_handler(self):
         return BaselineResponseHandler()
+
+class LightBaselinePromptGenerator(BaselinePromptGenerator):
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+        if eval_res is None or len(eval_res.result) == 0:
+            return ""
+
+        algorithm_name = eval_res.name
+        
+        execution_time = eval_res.total_execution_time
+        time_prompt = f"The algorithm {algorithm_name} took {execution_time:0.2f} seconds to run."
+
+        return time_prompt
