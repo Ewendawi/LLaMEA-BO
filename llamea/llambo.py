@@ -59,11 +59,11 @@ class LLaMBO:
 
         logging.info("Querying")
         res_content = ''
-        _temperature = None
+        _llm_params = {}
         if options is not None:
-            _temperature = options.get("temperature", None)
+            _llm_params.update(options.get("llm_params", {}))
         for i_try in range(retry):
-            response = llm.chat(session_messages, temperature=_temperature)
+            response = llm.chat(session_messages, **_llm_params)
             res_content = response.text
             response_handler.query_time += 1
             response_handler.prompt_token_count += response.prompt_token_count

@@ -661,7 +661,9 @@ def run_temperature_exp():
         print(f"temperature: {temperature}")
         messages_res_list = []
         options = {
-            'temperature': temperature,
+            'llm_params': {
+                'temperature': temperature,
+            }
         }
         for i, messages in enumerate(messages_list):
             parent = parent_handlers[i]
