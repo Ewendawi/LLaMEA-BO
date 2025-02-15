@@ -1,4 +1,4 @@
-from .population import Population, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
+from .population import Population, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn, desc_similarity_from_handlers, code_diff_similarity_from_handlers
 from .es_population import ESPopulation
 from .island_population import IslandESPopulation
 from .sequence_population import SequencePopulation

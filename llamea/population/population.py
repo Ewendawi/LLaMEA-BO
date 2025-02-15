@@ -2,6 +2,7 @@ import os
 import time
 import pickle
 import math
+import difflib
 import itertools
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -182,20 +183,74 @@ from sentence_transformers import SentenceTransformer, util
 # disable sentence transformer logging
 logging.getLogger('sentence_transformers').setLevel(logging.WARNING)
 
+def code_diff_similarity(inds:list[Individual]) -> tuple[np.ndarray, np.ndarray]:
+    if not inds:
+        return np.array([]), np.array([])
+
+    codes = [Population.get_handler_from_individual(ind).code for ind in inds]
+    return _code_diff_similarity(codes)
+
+def code_diff_similarity_from_handlers(handlers: list) -> tuple[np.ndarray, np.ndarray]:
+    if not handlers:
+        return np.array([]), np.array([])
+
+    codes = [handler.code for handler in handlers]
+    return _code_diff_similarity(codes)
+
+def _code_diff_similarity(codes: list) -> tuple[np.ndarray, np.ndarray]:
+    if not codes:
+        return np.array([]), np.array([])
+
+    logging.info("Calculating code diversity of %s", len(codes))
+
+    def code_compare(code1, code2):
+        diff = difflib.ndiff(code1.splitlines(), code2.splitlines())
+        diffs = sum(1 for x in diff if x.startswith("- ") or x.startswith("+ "))
+        total_lines = max(len(code1.splitlines()), len(code2.splitlines()))
+        similarity_ratio = (total_lines - diffs) / total_lines if total_lines else 1
+        return similarity_ratio
+    
+    similarity_matrix = np.zeros((len(codes), len(codes)))
+    for i, code1 in enumerate(codes):
+        for j, code2 in enumerate(codes):
+            similarity_matrix[i,j] = code_compare(code1, code2)
+            similarity_matrix[j,i] = similarity_matrix[i,j]
+
+    # Calculate mean similarity excluding diagonal (self-similarity)
+    mean_similarity = np.array([
+        np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
+        for i in range(len(codes))
+    ])
+
+    return mean_similarity, similarity_matrix
+
 def desc_similarity(inds:list[Individual]) -> tuple[np.ndarray, np.ndarray]:
     if not inds:
         return np.array([]), np.array([])
 
-    logging.info("Calculating desc diversity of %s individuals", len(inds))
-    # Calculate the diversity of the candidates based on the description
     descs = [Population.get_handler_from_individual(ind).desc for ind in inds]
+    return _desc_similarity(descs)
+
+def desc_similarity_from_handlers(handlers: list) -> tuple[np.ndarray, np.ndarray]:
+    if not handlers:
+        return np.array([]), np.array([])
+
+    descs = [handler.desc for handler in handlers]
+    return _desc_similarity(descs)
+
+def _desc_similarity(descs: list) -> tuple[np.ndarray, np.ndarray]:
+    if not descs:
+        return np.array([]), np.array([])
+
+    logging.info("Calculating desc diversity of %s", len(descs))
+    # Calculate the diversity of the candidates based on the description
     model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
     embeddings = model.encode(descs, convert_to_tensor=False)
     similarity_matrix = util.cos_sim(embeddings, embeddings).numpy()
     # Calculate mean similarity excluding diagonal (self-similarity)
     mean_similarity = np.array([
         np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
-        for i in range(len(inds))
+        for i in range(len(descs))
     ])
 
     return mean_similarity, similarity_matrix

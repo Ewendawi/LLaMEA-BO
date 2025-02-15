@@ -1,5 +1,5 @@
 import os
-import time
+import random
 import logging
 from datetime import datetime
 import importlib.util
@@ -9,8 +9,8 @@ import torch
 import numpy as np
 from llamea import LLaMBO
 from llamea.llm import LLMmanager, LLMS
-from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator
-from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
+from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator, GenerationTask
+from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn, desc_similarity_from_handlers, code_diff_similarity_from_handlers
 from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
 from llamea.individual import Individual
@@ -383,23 +383,6 @@ def run_mu_plus_lambda_exp(
         **kwargs
     )
 
-def run_mu_plus_lambda_diversity_exp(
-                    n_parent:int=2,
-                    n_offspring:int=1,
-                    n_parent_per_offspring:int=2,
-                    **kwargs
-                    ):
-    population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-    population.preorder_aware_init = True
-    population.get_parent_strategy = max_divese_desc_get_parent_fn
-    population.selection_strategy = diversity_awarness_selection_fn
-    population.name = f"evol_{n_parent}+{n_offspring}_diversity"
-
-    _run_exp(
-        population=population,
-        **kwargs
-    )
-
 def run_island_exp(
         n_parent:int=2,
         n_offspring:int=1,
@@ -543,6 +526,194 @@ def eval_final_algo():
     run_algo_eval_from_file_map(evaluator, file_map, plot=False, save=True, options=options)
 
 
+
+def show_code_similarity():
+    file_paths = [
+        'Experiments/temperature_res/0215081907/temperature_res.pkl',
+    ]
+
+    for file_path in file_paths:
+        with open(file_path, "rb") as f:
+            target = pickle.load(f)
+
+
+        for temperature_res in target:
+            mean_sim, sim_matrix = code_diff_similarity_from_handlers(temperature_res[0])
+
+            print(f"Mean similarity: {mean_sim}")
+            print(sim_matrix)
+
+        pass
+
+class temperatureRes:
+    def __init__(self):
+        self.parent_name = None
+        self.desc_mean_sim = None
+        self.desc_sim_matrix = None
+        self.code_mean_sim = 0
+        self.code_sim_matrix = None
+        self.parent_handler = None
+        self.res_list = []
+
+def run_temperature_exp():
+
+    # show_code_similarity()
+ 
+    file_paths = [
+        'Experiments/pop_40_f/ESPopulation_evol_4+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209171704/0-2_BOTSDynBOv1_respond.md',
+        
+        'Experiments/pop_40_f/ESPopulation_evol_4+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209171704/1-10_AdaEEBOv2_respond.md', 
+
+        'Experiments/pop_40_f/ESPopulation_evol_4+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209165843/0-2_ThompsonSamplingBOv1_respond.md',
+        
+        
+        'Experiments/pop_40_f/ESPopulation_evol_12+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209000244/0-2_TrustRegionBOv1_respond.md',
+
+        'Experiments/pop_40_f/ESPopulation_evol_12+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209000244/0-3_GradientEnhancedBOv1_respond.md',
+        
+        'Experiments/pop_40_f/ESPopulation_evol_12+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209000244/0-10_DuelingBanditBOv1_respond.md',
+        
+        'Experiments/pop_40_f/ESPopulation_evol_12+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209000244/0-11_SurrogateModelFreeBOv1_respond.md',
+
+        'Experiments/pop_40_f/ESPopulation_evol_12+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209000244/0-10_DuelingBanditBOv1_respond.md',
+
+        'Experiments/pop_40_f/ESPopulation_evol_12+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209000244/0-9_BayesMetaLearningBOv1_respond.md',
+        
+        'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209061439/0-4_BayesUCBwithRBFBOv1_respond.md',
+        
+        'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209061439/0-5_DEwithLocalSearchBOv1_respond.md',
+
+        'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209061439/0-9_StochasticLHSwithHistoryBOv1_respond.md',
+
+        'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065238/0-12_VarianceReductionBOv1_respond.md',
+
+        'Experiments/pop_40_f/ESPopulation_evol_20+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208225928/0-6_DynamicPenaltyBOv1_respond.md'
+    ]
+
+    is_mutation = False
+    chunk_size = 1 if is_mutation else 2
+
+    size = 5 * chunk_size
+    _selected_index = np.random.choice(len(file_paths), size=size, replace=False)
+    _selected_files = [file_paths[i] for i in _selected_index]
+
+    promptor = BaselinePromptGenerator()
+    promptor.is_bo = True
+    evaluator = get_IOHEvaluator_for_test(problems=[4], _instances=[1], repeat=1, budget=100)
+    problem_description = evaluator.problem_prompt()
+    current_task = GenerationTask.OPTIMIZE_PERFORMANCE
+
+    parent_handler_list = []
+    for i, file_path in enumerate(_selected_files):
+        prompt = ""
+        with open(file_path, "r") as f:
+            prompt = f.read()
+
+        handler = promptor.get_response_handler() 
+        handler.extract_response(prompt, current_task)
+        parent_handler_list.append(handler)
+
+    parent_handlers = [parent_handler_list[i:i+chunk_size] for i in range(0, len(parent_handler_list), chunk_size)]
+
+    llm = get_llm()
+    
+    messages_list = []
+    for parent in parent_handlers:
+        role_setting, prompt = promptor.get_prompt(
+            task=current_task,
+            problem_desc=problem_description,
+            candidates=parent,
+            )
+        session_messages = [
+            {"role": "system", "content": role_setting},
+            {"role": "user", "content": prompt},
+        ]
+        messages_list.append(session_messages)
+
+    temperatures = [0.4, 0.8, 1.2, 1.6, 2.0]
+
+    temperatures = [0]
+    repeat = 1
+
+    llmbo = LLaMBO()
+
+    save_dir = 'Experiments/temperature_res'
+    time_stamp = datetime.now().strftime("%m%d%H%M%S")
+    save_dir = os.path.join(save_dir, time_stamp)
+    os.makedirs(save_dir, exist_ok=True)
+
+    def _save_code(file_dir, temperature, prefix, handler, name):
+        code = handler.code
+        file_name = f"{temperature}-{name}-{prefix}.py"
+        file_path = os.path.join(file_dir, file_name)
+        with open(file_path, "w") as f:
+            f.write(code)
+
+        respond = handler.raw_response
+        res_file_name = f"{temperature}-{name}-{prefix}_respond.md"
+        res_file_path = os.path.join(file_dir, res_file_name)
+        with open(res_file_path, "w") as f:
+            f.write(respond)
+
+
+    temperature_res_map = {}
+    for temperature in temperatures:
+        print(f"temperature: {temperature}")
+        messages_res_list = []
+        options = {
+            'temperature': temperature,
+        }
+        for i, messages in enumerate(messages_list):
+            parent = parent_handlers[i]
+            for j, parent_handler in enumerate(parent):
+                file_name = parent_handler.code_name
+                _save_code(save_dir, temperature, f"0.{j}", parent_handler, file_name)
+
+            print(f"Prompt {file_name}")
+            
+            res_list = []
+            for j in range(repeat):
+                next_handler = promptor.get_response_handler()
+                llmbo.evalution_func(
+                    session_messages=messages,
+                    llm=llm,
+                    evaluator=evaluator,
+                    task=current_task,
+                    retry=1,
+                    response_handler=next_handler,
+                    options=options
+                )
+                _save_code(save_dir, temperature, f"1.{j}", next_handler, file_name)
+                res_list.append(next_handler)
+
+            comp_res_list = [parent_handler] + res_list
+
+            mean_sim, sim_matrix = desc_similarity_from_handlers(comp_res_list) 
+            print('Desc similarity')
+            print(mean_sim)
+            print(sim_matrix)
+
+
+            code_mean_sim, code_sim_matrix = code_diff_similarity_from_handlers(comp_res_list)
+            print('Code similarity')
+            print(code_mean_sim)
+            print(code_sim_matrix)
+
+            temp_res = temperatureRes()
+            temp_res.parent_name = file_name
+            temp_res.parent_handler = parent_handler
+            temp_res.res_list = res_list
+            temp_res.desc_mean_sim = mean_sim
+            temp_res.desc_sim_matrix = sim_matrix
+            temp_res.code_mean_sim = code_mean_sim
+            temp_res.code_sim_matrix = code_sim_matrix
+            messages_res_list.append(temp_res)
+            
+        temperature_res_map[temperature] = messages_res_list
+        print("")
+    with open(os.path.join(save_dir, "temperature_res.pkl"), "wb") as f:
+        pickle.dump(temperature_res_map, f)
+
 def get_search_default_params():
     params = {
         # "time_out_per_eval": 60 * 20,
@@ -633,6 +804,8 @@ if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
+    # run_temperature_exp()
+
     # debug_algo_eval()
     # eval_final_algo()
 
@@ -680,11 +853,9 @@ if __name__ == "__main__":
     _params.update(_new_params)
 
     N_PARENT = 2
-    N_PARENT_PER_OFFSPRING = 2
     N_OFFSPRING = 1
 
-    run_mu_plus_lambda_exp(
-        n_parent=N_PARENT,
-        n_offspring=N_OFFSPRING,
-        n_parent_per_offspring=N_PARENT_PER_OFFSPRING,
-        **_params)
+    # run_mu_plus_lambda_exp(
+    #     n_parent=N_PARENT,
+    #     n_offspring=N_OFFSPRING,
+    #     **_params)

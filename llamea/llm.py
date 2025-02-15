@@ -295,9 +295,9 @@ class LLMmanager:
     def model_name(self) -> str:
         return self.client.name
 
-    def chat(self, session_messages, temperature=0.7, **kwargs):
+    def chat(self, session_messages, **kwargs):
         if self.mock_res_provider is not None:
-            _content = self.mock_res_provider(session_messages, temperature, **kwargs)
+            _content = self.mock_res_provider(session_messages, **kwargs)
             res = LLMClientResponse(None)
             res.text = _content
             res.response_token_count = len(_content.split()) 
@@ -305,7 +305,6 @@ class LLMmanager:
         
         response = self.client.raw_completion(
             session_messages,
-            temperature=temperature,
             **kwargs
         )
 

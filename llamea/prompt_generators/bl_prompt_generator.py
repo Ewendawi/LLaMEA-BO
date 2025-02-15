@@ -25,7 +25,7 @@ class BaselineResponseHandler(ResponseHandler):
     def extract_response(self, response:str, task:GenerationTask):
         if not response:
             return
-        
+
         self.raw_response = response
         sections = ["Description",
                     "Justification",
@@ -38,7 +38,7 @@ class BaselineResponseHandler(ResponseHandler):
                 self.desc, _ = self.extract_from_response(response, section)
             elif section == "Justification":
                 self.reason, _ = self.extract_from_response(response, section)
-        
+
     def extract_from_response(self, response: str, section: str, pattern=None) -> tuple[str, str]:
         error_str = ""
         res = ""
@@ -121,9 +121,9 @@ class BaselinePromptGenerator(PromptGenerator):
                 selected_prompt = f"""The selected solution to update is:\n{candidate_prompt}\n{mutation_operator}\n"""
 
             population_summary = ""
-            current_population = population.get_individuals()
-            if len(current_population) > 0:
-                population_summary = "The current population of algorithms already evaluated(name, score, runtime and description):\n" 
+            if population is not None and population.get_population_size() > 0:
+                current_population = population.get_individuals()
+                population_summary = "The current population of algorithms already evaluated(name, score, runtime and description):\n"
                 for ind in current_population:
                     handler = Population.get_handler_from_individual(ind)
                     name = handler.code_name
@@ -175,7 +175,7 @@ Name the class based on the characteristics of the algorithm with a template '<c
 Give an excellent, novel and computationally efficient Bayesian Optimization algorithm to solve this task, give it a concise but comprehensive key-word-style description with the main ideas and justify your decision about the algorithm.
 """
         return task_prompt
-    
+
     def __task_description(self, task:GenerationTask, extra:str="") -> str:
         task_prompt = """
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
