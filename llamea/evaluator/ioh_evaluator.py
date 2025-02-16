@@ -348,10 +348,10 @@ class IOHEvaluator(AbstractEvaluator):
                     if done_tasks % interval == 0:
                         logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
 
-            logging.error("Evaluating %s: Shutting down executor", cls_name)
+            logging.info("Evaluating %s: Shutting down executor", cls_name)
             # better to wait for all running tasks to finish in case of resource competition
             executor.shutdown(wait=True, cancel_futures=_should_cancel)
-            logging.error("Evaluating %s: Executor shut down", cls_name)
+            logging.info("Evaluating %s: Executor shut down", cls_name)
         else:
             logging.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
 
