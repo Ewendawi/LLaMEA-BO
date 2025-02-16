@@ -567,6 +567,7 @@ def show_code_similarity():
 class temperatureRes:
     def __init__(self):
         self.parent_name = None
+        self.parent_handlers = None
         self.desc_mean_sim = None
         self.desc_sim_matrix = None
         self.code_mean_sim = 0
@@ -609,88 +610,109 @@ def run_temperature_exp():
         'Experiments/pop_40_f/ESPopulation_evol_20+14_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208225928/0-6_DynamicPenaltyBOv1_respond.md'
     ]
 
-    is_mutation = False
-    chunk_size = 1 if is_mutation else 2
+    def _get_prompt_msg(num, chunk_size, promptor, current_task):
+        size = num * chunk_size
+        _selected_index = np.random.choice(len(file_paths), size=size, replace=False)
+        _selected_files = [file_paths[i] for i in _selected_index]
 
-    size = 5 * chunk_size
-    _selected_index = np.random.choice(len(file_paths), size=size, replace=False)
-    _selected_files = [file_paths[i] for i in _selected_index]
+        if current_task == GenerationTask.OPTIMIZE_PERFORMANCE:
+            parent_handler_list = []
+            for i, file_path in enumerate(_selected_files):
+                prompt = ""
+                with open(file_path, "r") as f:
+                    prompt = f.read()
 
+                handler = promptor.get_response_handler() 
+                handler.extract_response(prompt, current_task)
+                parent_handler_list.append(handler)
+            parent_handlers = [parent_handler_list[i:i+chunk_size] for i in range(0, len(parent_handler_list), chunk_size)]
+        else:
+            parent_handlers = [[]] * num
+
+        messages_list = []
+        for parent in parent_handlers:
+            role_setting, prompt = promptor.get_prompt(
+                task=current_task,
+                problem_desc=None,
+                candidates=parent,
+                )
+            session_messages = [
+                {"role": "system", "content": role_setting},
+                {"role": "user", "content": prompt},
+            ]
+            messages_list.append(session_messages)
+        return messages_list, parent_handlers
+
+    llmbo = LLaMBO()
+    current_task = GenerationTask.OPTIMIZE_PERFORMANCE
+    llm = get_llm()
     promptor = BaselinePromptGenerator()
     promptor.is_bo = True
     evaluator = get_IOHEvaluator_for_test(problems=[4], _instances=[1], repeat=1, budget=100)
-    problem_description = evaluator.problem_prompt()
-    current_task = GenerationTask.OPTIMIZE_PERFORMANCE
-
-    parent_handler_list = []
-    for i, file_path in enumerate(_selected_files):
-        prompt = ""
-        with open(file_path, "r") as f:
-            prompt = f.read()
-
-        handler = promptor.get_response_handler() 
-        handler.extract_response(prompt, current_task)
-        parent_handler_list.append(handler)
-
-    parent_handlers = [parent_handler_list[i:i+chunk_size] for i in range(0, len(parent_handler_list), chunk_size)]
-
-    llm = get_llm()
-    
-    messages_list = []
-    for parent in parent_handlers:
-        role_setting, prompt = promptor.get_prompt(
-            task=current_task,
-            problem_desc=problem_description,
-            candidates=parent,
-            )
-        session_messages = [
-            {"role": "system", "content": role_setting},
-            {"role": "user", "content": prompt},
-        ]
-        messages_list.append(session_messages)
-
-    temperatures = [0.4, 0.8, 1.2, 1.6, 2.0]
-
-    temperatures = [0]
-    repeat = 1
-
-    llmbo = LLaMBO()
 
     save_dir = 'Experiments/temperature_res'
     time_stamp = datetime.now().strftime("%m%d%H%M%S")
     save_dir = os.path.join(save_dir, time_stamp)
     os.makedirs(save_dir, exist_ok=True)
 
-    def _save_code(file_dir, temperature, prefix, handler, name):
+    def _save_code(file_dir, handler, prefix):
         code = handler.code
-        file_name = f"{temperature}-{name}-{prefix}.py"
+        name = handler.code_name
+        file_name = f"{prefix}_{name}.py"
         file_path = os.path.join(file_dir, file_name)
         with open(file_path, "w") as f:
             f.write(code)
 
         respond = handler.raw_response
-        res_file_name = f"{temperature}-{name}-{prefix}_respond.md"
+        res_file_name = f"{prefix}-{name}_respond.md"
         res_file_path = os.path.join(file_dir, res_file_name)
         with open(res_file_path, "w") as f:
             f.write(respond)
 
+     # initial
+    chunk_size = 0
+    # mutation
+    # chunk_size = 1
+    # crossover
+    # chunk_size = 2
 
-    temperature_res_map = {}
-    for temperature in temperatures:
-        print(f"temperature: {temperature}")
+    current_task = GenerationTask.OPTIMIZE_PERFORMANCE if chunk_size > 0 else GenerationTask.INITIALIZE_SOLUTION
+
+    temperatures = [0.0, 0.4, 0.8, 1.2, 1.6]
+    temperatures = [2.0]
+    params = temperatures
+    param_name = "temperature"
+
+    # top_p_list = [0.4, 0.6, 0.8, 1.0]
+    # top_p_list = [0.4]
+    # params = top_p_list
+    # param_name = "top_p"
+
+    # top_k_list = [4, 10, 20, 40]
+    # top_k_list = [40]
+    # params = top_k_list
+    # param_name = "top_k"
+    
+    num = 1
+    repeat = 2
+
+    messages_list, parent_handlers = _get_prompt_msg(num, chunk_size, promptor, current_task)
+    param_rest_map = {}
+    for param in params:
+        print(f"{param_name}: {param}")
         messages_res_list = []
         options = {
             'llm_params': {
-                'temperature': temperature,
+                f'{param_name}': param,
             }
         }
         for i, messages in enumerate(messages_list):
             parent = parent_handlers[i]
             for j, parent_handler in enumerate(parent):
-                file_name = parent_handler.code_name
-                _save_code(save_dir, temperature, f"0.{j}", parent_handler, file_name)
+                prefix = f"{param_name}-{param}-0.{j}"
+                _save_code(save_dir, parent_handler, prefix)
 
-            print(f"Prompt {file_name}")
+                print(f"Prompt {parent_handler.code_name}")
             
             res_list = []
             for j in range(repeat):
@@ -704,16 +726,16 @@ def run_temperature_exp():
                     response_handler=next_handler,
                     options=options
                 )
-                _save_code(save_dir, temperature, f"1.{j}", next_handler, file_name)
+                prefix = f"{param_name}-{param}-1.{j}"
+                _save_code(save_dir, next_handler, prefix)
                 res_list.append(next_handler)
 
-            comp_res_list = [parent_handler] + res_list
+            comp_res_list = parent + res_list
 
             mean_sim, sim_matrix = desc_similarity_from_handlers(comp_res_list) 
             print('Desc similarity')
             print(mean_sim)
             print(sim_matrix)
-
 
             code_mean_sim, code_sim_matrix = code_diff_similarity_from_handlers(comp_res_list)
             print('Code similarity')
@@ -721,8 +743,8 @@ def run_temperature_exp():
             print(code_sim_matrix)
 
             temp_res = temperatureRes()
-            temp_res.parent_name = file_name
-            temp_res.parent_handler = parent_handler
+            temp_res.parent_name = '_'.join([handler.code_name for handler in parent])
+            temp_res.parent_handlers = parent
             temp_res.res_list = res_list
             temp_res.desc_mean_sim = mean_sim
             temp_res.desc_sim_matrix = sim_matrix
@@ -730,10 +752,11 @@ def run_temperature_exp():
             temp_res.code_sim_matrix = code_sim_matrix
             messages_res_list.append(temp_res)
             
-        temperature_res_map[temperature] = messages_res_list
+        param_rest_map[param] = messages_res_list
         print("")
-    with open(os.path.join(save_dir, "temperature_res.pkl"), "wb") as f:
-        pickle.dump(temperature_res_map, f)
+    file_name = f"{param_name}_res.pkl"
+    with open(os.path.join(save_dir, file_name), "wb") as f:
+        pickle.dump(param_rest_map, f)
 
 def get_search_default_params():
     params = {
@@ -857,6 +880,7 @@ if __name__ == "__main__":
             # 'pop_replaceable_parent_selection': False,
             # 'pop_random_parent_selection': True,
             # 'pop_cross_over_rate': 0.5,
+            # 'pop_exclusive_operations': False,
             # 'pop_cr_light_eval': get_light_IOHEvaluator_for_crossover(),
             # 'pop_cr_light_promptor': get_light_Promptor_for_crossover(),
 
