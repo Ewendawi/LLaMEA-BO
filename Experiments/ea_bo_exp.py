@@ -120,6 +120,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
 
     _max_eval_workers = 0
     _use_multi_process = False
+    _ignore_cls = False
     extra_init_params = {}
     if options is not None:
         is_baseline = options.get("is_baseline", False)
@@ -134,6 +135,12 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
 
         if 'use_multi_process' in options:
             _use_multi_process = options['use_multi_process']
+
+        if 'ignore_cls' in options:
+            _ignore_cls = options['ignore_cls']
+    
+    if _ignore_cls:
+        algo_cls = None
 
     res = evaluator.evaluate(
         code=code,
@@ -493,7 +500,9 @@ def eval_final_algo():
         # 'device': 'cuda',
         'is_baseline': True,
         'save_dir': 'Experiments/final_eval_res',
-        # 'max_eval_workers': 0,
+        # 'max_eval_workers': 4,
+        # 'use_multi_process': True,
+        # 'ignore_cls': True, # sub-process can't find the module with dynamic import
     }
     _bl_file_map = {
         # 'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',
@@ -502,7 +511,8 @@ def eval_final_algo():
         # 'BLMaternVanillaBO': 'Experiments/baselines/bo_baseline.py',
         # 'BLScaledVanillaBO': 'Experiments/baselines/bo_baseline.py',
         # 'BLSKOpt': 'Experiments/baselines/bo_baseline.py',
-        'BLCMAES': 'Experiments/baselines/bo_baseline.py',
+        # 'BLCMAES': 'Experiments/baselines/bo_baseline.py',
+        'BLHEBO': 'Experiments/baselines/bo_baseline.py',
     }
 
     _file_map = {
