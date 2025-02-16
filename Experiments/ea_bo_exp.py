@@ -107,7 +107,7 @@ def baseline_algo_eval_param(dim, budget):
         "budget": budget,
         "dim": dim,
         "bounds": np.array([[-5.0] * 5, [5.0] * 5]),
-        "n_init": min(5 * dim, budget // 2),
+        "n_init": min(2 * dim, budget // 2),
         "seed": None,
         "device": "cpu",
         # "device": "cuda",
@@ -119,6 +119,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
     logging.info("Start evaluating %s on %s", cls_name, evaluator)
 
     _max_eval_workers = 0
+    _use_multi_process = False
     extra_init_params = {}
     if options is not None:
         is_baseline = options.get("is_baseline", False)
@@ -131,12 +132,16 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
         if 'max_eval_workers' in options:
             _max_eval_workers = options['max_eval_workers']
 
+        if 'use_multi_process' in options:
+            _use_multi_process = options['use_multi_process']
+
     res = evaluator.evaluate(
         code=code,
         cls_name=cls_name,
         cls=algo_cls,
         cls_init_kwargs=extra_init_params,
         max_eval_workers=_max_eval_workers,
+        use_multi_process=_use_multi_process
     )
     if save:
         save_dir = 'Experiments/algo_eval_res'
@@ -442,7 +447,7 @@ def debug_algo_eval():
         # 'AdaptiveLocalPenaltyVarianceBOv3':'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208230817/5-40_AdaptiveLocalPenaltyVarianceBOv3_0.0482.py',
     }
 
-    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO 
+    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO, BLCMAES, BLHEBO
     from Experiments.baselines.vanilla_bo import VanillaBO
     from Experiments.test_cands.EnsembleLocalSearchBOv1 import EnsembleLocalSearchBOv1
     from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
@@ -451,7 +456,9 @@ def debug_algo_eval():
     cls_list = [
         # VanillaBO,
         # BLRandomSearch,
-        BLMaternVanillaBO,
+        # BLCMAES,
+        BLHEBO,
+        # BLMaternVanillaBO,
         # BLTuRBO1,
         # BLTuRBOM,
         # BLSKOpt,
@@ -462,8 +469,9 @@ def debug_algo_eval():
 
     options = {
         # 'device': 'cuda',
-        # 'is_baseline': True,
+        'is_baseline': True,
         # 'max_eval_workers': 4,
+        # 'use_multi_process': True,
         # 'time_profile': True,
     }
 
@@ -483,7 +491,7 @@ def eval_final_algo():
 
     options = {
         # 'device': 'cuda',
-        # 'is_baseline': True,
+        'is_baseline': True,
         'save_dir': 'Experiments/final_eval_res',
         # 'max_eval_workers': 0,
     }
@@ -491,9 +499,10 @@ def eval_final_algo():
         # 'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',
         # 'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
         # 'BLTuRBOM': 'Experiments/baselines/bo_baseline.py',
-        'BLMaternVanillaBO': 'Experiments/baselines/bo_baseline.py',
+        # 'BLMaternVanillaBO': 'Experiments/baselines/bo_baseline.py',
         # 'BLScaledVanillaBO': 'Experiments/baselines/bo_baseline.py',
         # 'BLSKOpt': 'Experiments/baselines/bo_baseline.py',
+        'BLCMAES': 'Experiments/baselines/bo_baseline.py',
     }
 
     _file_map = {
@@ -521,7 +530,7 @@ def eval_final_algo():
         # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
     }
 
-    file_map = _file_map
+    file_map = _bl_file_map
 
     run_algo_eval_from_file_map(evaluator, file_map, plot=False, save=True, options=options)
 

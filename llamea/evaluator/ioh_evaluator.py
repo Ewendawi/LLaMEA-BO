@@ -278,7 +278,7 @@ class IOHEvaluator(AbstractEvaluator):
 
         return eval_basic_result
 
-    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, use_multi_process=False, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
         """Evaluate an individual."""
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
@@ -315,17 +315,12 @@ class IOHEvaluator(AbstractEvaluator):
 
         if max_eval_workers is None or max_eval_workers > 0:
             max_workers = min(os.cpu_count() - 1, max_eval_workers)
-
-            # if cuda is available, use thread pool executor
-            # if torch.cuda.is_available() and "cuda" in code:
-            #     logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
-            #     executor_cls = concurrent.futures.ThreadPoolExecutor
-            # else:
-            #     logging.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
-            #     executor_cls = concurrent.futures.ProcessPoolExecutor
-
-            logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
-            executor_cls = concurrent.futures.ThreadPoolExecutor
+            if use_multi_process:
+                logging.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+                executor_cls = concurrent.futures.ProcessPoolExecutor
+            else:
+                logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+                executor_cls = concurrent.futures.ThreadPoolExecutor
 
             executor = executor_cls(max_workers=max_workers)
             futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}

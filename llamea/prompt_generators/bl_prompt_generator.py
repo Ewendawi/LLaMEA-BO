@@ -161,7 +161,8 @@ class BaselinePromptGenerator(PromptGenerator):
         return self.__task_description(task, extra)
 
     def __bo_task_description(self, task, extra = ""):
-        lib_prompt = "As an expert of numpy, scipy, scikit-learn, you are allowed to use these libraries."
+        # lib_prompt = "As an expert of numpy, scipy, scikit-learn, you are allowed to use these libraries."
+        lib_prompt = "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries."
         if torch.cuda.is_available():
             lib_prompt = "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries, and using GPU for acceleration is mandatory."
         # problem_desc = "one noiseless functions:f6-Attractive Sector Function"

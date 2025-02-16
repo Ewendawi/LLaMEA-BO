@@ -26,7 +26,7 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = 0, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = 0, use_multi_process=False, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
         pass
 
     def evaluate_others(self) -> list[EvaluatorResult]:
