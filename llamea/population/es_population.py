@@ -65,6 +65,8 @@ class ESPopulation(Population):
         state = self.__dict__.copy()
         state['light_cross_over_evaluator'] = None
         state['light_cross_over_promptor'] = None
+        state['selection_strategy'] = None
+        state['get_parent_strategy'] = None
         return state
 
     def get_promptor(self, query_item):
@@ -122,15 +124,16 @@ class ESPopulation(Population):
         if self.selection_strategy is None:
             candidates = None
             if self.use_elitism:
-                candidates = last_gen + last_pop
+                _candidates = last_gen + last_pop
+                candidates = sorted(_candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
             else:
-                candidates = last_gen
+                _candidates = last_gen
                 if len(candidates) < self.n_parent:
                     logging.warning("Population size is less than n_parent. Using elitism.")
-                    candidates = candidates + last_pop
+                    _candidates = candidates + last_pop
+                candidates = sorted(_candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
 
-            next_candidates = sorted(candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
-            next_pop = next_candidates[:self.n_parent]
+            next_pop = candidates[:self.n_parent]
             self.selected_generations.append(next_pop)
         else:
             ind_last_gen = [self.individuals[id] for id in last_gen]

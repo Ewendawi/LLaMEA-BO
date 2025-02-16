@@ -10,7 +10,7 @@ import numpy as np
 from llamea import LLaMBO
 from llamea.llm import LLMmanager, LLMS
 from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator, GenerationTask
-from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn, desc_similarity_from_handlers, code_diff_similarity_from_handlers
+from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn, desc_similarity_from_handlers, code_diff_similarity_from_handlers, family_competition_selection_fn
 from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
 from llamea.individual import Individual
@@ -845,16 +845,17 @@ if __name__ == "__main__":
         "options": {
             'pop_debug_save_on_the_fly': True,
             # 'pop_warmstart_handlers': [],
-            # 'pop_load_check_point_path':
+            # 'pop_load_check_point_path': 'Experiments/pop_40_test/ESPopulation_evol_2+4_IOHEvaluator_f2_f4_f8_f14_f15_f23_dim-5_budget-100_instances-[1]_repeat-3_0216054105_b/ESPopulation_gen_checkpoint_0_0216055117.pkl',
+
             'pop_save_check_point_interval': 1,
             'pop_preorder_aware_init': True,
             # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
             # 'pop_selection_strategy': diversity_awarness_selection_fn,
+            # 'pop_selection_strategy': family_competition_selection_fn(parent_size_threshold=1, is_aggressive=True),
             'pop_save_dir': 'Experiments/pop_40_test',
 
             # 'pop_replaceable_parent_selection': False,
             # 'pop_random_parent_selection': True,
-            # 'pop_exclusive_operations': False,
             # 'pop_cross_over_rate': 0.5,
             # 'pop_cr_light_eval': get_light_IOHEvaluator_for_crossover(),
             # 'pop_cr_light_promptor': get_light_Promptor_for_crossover(),
@@ -862,9 +863,10 @@ if __name__ == "__main__":
 
             'eval_inject_critic': False,
             'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
-            'test_eval_problems': [4], # [4, 10],
+            # 'test_eval_problems': [4], # [4, 10],
+            'test_eval_problems': [2, 4, 8, 14, 15, 23],
             'test_eval_instances': [1],
-            'test_eval_repeat': 1,
+            'test_eval_repeat': 3,
             'test_eval_budget': 100,
 
             # 'llm_mocker': mock_res_provider,

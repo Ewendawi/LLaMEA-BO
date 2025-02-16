@@ -171,7 +171,7 @@ class BaselinePromptGenerator(PromptGenerator):
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of {problem_desc}. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
 {lib_prompt} Do not use any other libraries unless they cannot be replaced by the above libraries.  Do not remove the comments from the code.
-Name the class based on the characteristics of the algorithm with a template '<characteristics>BOv<version>'.
+Name the class based on the characteristics of the algorithm with a template '<characteristics>BO'.
 
 Give an excellent, novel and computationally efficient Bayesian Optimization algorithm to solve this task, give it a concise but comprehensive key-word-style description with the main ideas and justify your decision about the algorithm.
 """

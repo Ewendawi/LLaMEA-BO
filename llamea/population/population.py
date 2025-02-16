@@ -255,6 +255,63 @@ def _desc_similarity(descs: list) -> tuple[np.ndarray, np.ndarray]:
 
     return mean_similarity, similarity_matrix
 
+def family_competition_selection_fn(parent_size_threshold=1, is_aggressive=True):
+    def _family_selection(child, all_ind_map, parent_size_threshold):
+        # Check if the individual is selected in the next generation
+        # if child > one of its parents, it will be selected
+        # if parent < child, it will not be selected
+        child_id = child.id
+        if len(child.parent_id) == 0:
+            return [child_id], []
+
+        _ind_ids = [child_id] + child.parent_id       
+        if len(child.parent_id) > parent_size_threshold:
+            return _ind_ids, []
+        
+        sorted_ids = sorted([ind_id for ind_id in _ind_ids], key=lambda x: all_ind_map[x].fitness, reverse=True)
+        child_index = sorted_ids.index(child_id)
+
+        _selected_list = sorted_ids[:child_index+1]
+        _unselected_list = sorted_ids[child_index+1:]
+
+        return _selected_list, _unselected_list
+
+    def _family_competition_selection_fn(ind_last_gen, ind_last_pop, n_parent, is_aggressive=is_aggressive, parent_size_threshold=parent_size_threshold):
+        # Family competition selection
+        # Select n_parent individuals from the last generation and the last population
+        # The selected individuals are the best individuals in the family
+        # The family is the individual and its parents
+
+        all_ind_map = {ind.id: ind for ind in ind_last_gen + ind_last_pop}
+
+        candidate_set = set()
+        substitute_set = set()
+        for ind in ind_last_gen:
+            _selected_list, _unselected_list = _family_selection(ind, all_ind_map, parent_size_threshold)
+            candidate_set.update(_selected_list)
+            substitute_set.update(_unselected_list)
+
+        for ind in ind_last_pop:
+            if ind.id not in substitute_set:
+                candidate_set.add(ind.id)
+
+        intersection = candidate_set.intersection(substitute_set)
+        if len(intersection) > 0:
+            if is_aggressive:
+                # aggressive strategy
+                candidate_set = candidate_set - intersection
+            else:
+                # conservative strategy
+                substitute_set = substitute_set - intersection
+            
+        _candidates = sorted(candidate_set, key=lambda x: all_ind_map[x].fitness, reverse=True)
+        _substitutes = sorted(substitute_set, key=lambda x: all_ind_map[x].fitness, reverse=True)
+        candidates = _candidates + _substitutes
+        ind_candidates = [all_ind_map[ind_id] for ind_id in candidates]
+        return ind_candidates[:n_parent]
+
+    return _family_competition_selection_fn
+
 def diversity_awarness_selection_fn(next_inds: list[Individual], last_inds: list[Individual], n_parent: int, fitness_threshold: float = None) -> list[Individual]:
     candidates = []
     if last_inds:

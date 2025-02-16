@@ -113,7 +113,9 @@ class LLaMBO:
         if handler.code is None or handler.code_name is None:
             return
         
-        parent_ids = query_item.parent
+        parent_ids = []
+        if not query_item.is_initialized:
+            parent_ids = [p.id for p in query_item.parent if p is not None]
         ind = query_item.offspring
         ind.description = getattr(handler , "desc", "")
         ind.solution = handler.code
