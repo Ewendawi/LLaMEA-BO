@@ -82,9 +82,8 @@ def get_IOHEvaluator_for_light_evol():
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
     return evaluator
 
-def get_IOHEvaluator_for_test(problems=[3], _instances=[1], repeat=1, budget=100):
+def get_IOHEvaluator_for_test(problems=[3], _instances=[1], repeat=1, budget=100, dim=5):
     budget = budget
-    dim = 5
     problems = problems
     instances = [_instances] * len(problems)
     repeat = repeat
@@ -204,8 +203,9 @@ def run_algo_eval_from_file_map(evaluator, file_map=None, cls_list=None, plot=Fa
     if plot:
         plot_algo_result(res_list)
 
-        # _res = res_list[0].result[0].x_hist
-        # plot_contour(2, _res)
+    return res_list
+
+        
 
 
 # EA Experiments
@@ -442,13 +442,14 @@ def tune_vanilla_bo(params):
     tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
 
 def debug_algo_eval():
-    problems = [4]
+    problems = [2]
     # problems = list(range(1, 25))
     instances = [8]
     repeat = 3
+    dim=5
     budget = 100
 
-    evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
+    evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget, dim=dim)
     evaluator.inject_critic = True
     evaluator.ignore_over_budget = True
 
@@ -470,7 +471,7 @@ def debug_algo_eval():
         # VanillaBO,
         # BLRandomSearch,
         # BLCMAES,
-        BLHEBO,
+        # BLHEBO,
         # BLMaternVanillaBO,
         # BLTuRBO1,
         # BLTuRBOM,
@@ -488,7 +489,20 @@ def debug_algo_eval():
         # 'time_profile': True,
     }
 
-    run_algo_eval_from_file_map(evaluator, file_map, cls_list=cls_list, plot=True, save=False, options=options)
+    plot = True
+    res_list = run_algo_eval_from_file_map(evaluator, file_map, cls_list=cls_list, plot=plot, save=False, options=options)
+
+    for res in res_list:
+        for i, r in enumerate(res.result):
+            r_id = r.id
+            r_split = r_id.split("-")
+            problem_id = int(r_split[0])
+            instance_id = int(r_split[1])
+            repeat_id = int(r_split[2])
+            title = f'{res.name} on F{problem_id} instance {instance_id} repeat {repeat_id}'
+            _x_hist = r.x_hist
+            if _x_hist.shape[1] == 2:
+                plot_contour(problem_id=problem_id, instance=instance_id, title=title, points=_x_hist)
 
 def eval_final_algo():
     evaluator = get_IOHEvaluator_for_final_eval()

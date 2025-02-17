@@ -110,14 +110,13 @@ def fill_nan_with_left(arr):
     return filled_arr
 
 # plot contour 
-def plot_contour(problem_id, points, x1_range=None, x2_range=None, levels=50, figsize=(15, 9)):
+def plot_contour(problem_id, instance, points, x1_range=None, x2_range=None, levels=200, figsize=(15, 9), title=None):
     if x1_range is None:
-        x1_range = [-5, 5, 100]
+        x1_range = [-5, 5, 300]
 
     if x2_range is None:
-        x2_range = [-5, 5, 100]
+        x2_range = [-5, 5, 300]
     
-    instance = 1
     func = get_problem(problem_id, instance, 2)
 
     optimal_point = func.optimum.x
@@ -152,27 +151,28 @@ def plot_contour(problem_id, points, x1_range=None, x2_range=None, levels=50, fi
 
     sm = ScalarMappable(norm=norm, cmap=cmap)
     sm.set_array([])  
-    cbar = fig.colorbar(sm,
-                        orientation='vertical',
-                        fraction=0.05,
-                        shrink=1.0,
-                        aspect=30,
+    cbar = fig.colorbar(sm, label='points',
+                        orientation='vertical', location='right',
+                        fraction=0.05, shrink=1.0, aspect=30,
                         ax=ax)
     ticks = np.linspace(0, len(points)-1, min(10 , len(points)-1))  
-    ticks = np.round(ticks).astype(int)  #Ensures integer ticks
+    ticks = np.round(ticks).astype(int)  
     cbar.set_ticks(ticks)
     cbar.set_ticklabels(ticks)
 
-    cbar_z = fig.colorbar(contour, orientation='vertical', 
-                            fraction=0.05,
-                          shrink=1.0, aspect=30, ax=ax)
+    cbar_z = fig.colorbar(contour, orientation='vertical', location='left', label='fx',
+                          fraction=0.05, shrink=1.0, aspect=30, ax=ax)
 
     ax.set_xlabel("x1")
     ax.set_ylabel("x2")
+    if title is None:
+        title = f"F{problem_id}"
+    ax.set_title(title)
+        
 
     plt.show()
 
-# plot_contour(2, [(0, 0), (1, 1), (-1, -1)])
+# plot_contour(2, 1, [(0, 0), (1, 1), (-1, -1)])
         
 # plot_search_result
 def _process_search_result(results:list[tuple[str,Population]], save=False, file_name=None):
@@ -1549,7 +1549,7 @@ if __name__ == "__main__":
     dir_path = None
     pop_path = None
 
-    plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
+    # plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
 
     # plot_light_evol_and_final()
     
