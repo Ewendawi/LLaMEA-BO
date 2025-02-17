@@ -239,6 +239,9 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "eval_inject_critic" in options:
             evaluator.inject_critic = options["eval_inject_critic"]
 
+        if 'prompt_problem_desc' in options:
+            prompt_generator.problem_desc = options['prompt_problem_desc']
+
         if "pop_load_check_point_path" in options:
             check_point_path = options["pop_load_check_point_path"]
             if os.path.exists(check_point_path):
@@ -892,6 +895,7 @@ if __name__ == "__main__":
             'test_eval_instances': [1],
             'test_eval_repeat': 3,
             'test_eval_budget': 100,
+            'prompt_problem_desc': 'one noiseless function:F2 Ellipsoid Separable Function',
 
             # 'llm_mocker': mock_res_provider,
         }

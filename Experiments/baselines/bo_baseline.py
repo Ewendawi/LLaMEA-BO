@@ -70,6 +70,9 @@ class BLHEBO:
         from hebo.optimizers.hebo import HEBO
         from hebo.design_space.design_space import DesignSpace
 
+        critic = getattr(self, "_injected_critic", None)
+        X_hist = None
+        y_hist = None
 
         _space = []
         for i in range(self.dim):
@@ -79,11 +82,26 @@ class BLHEBO:
                    rand_sample=self.n_init,
                    scramble_seed=self.seed)
 
-        for i in range(self.budget):
-            x_df = opt.suggest(n_suggestions=1)
+        batch_size = 1
+        n_evals = 0
+        while n_evals < self.budget:
+            _bs = min(batch_size, self.budget - n_evals)
+            
+            x_df = opt.suggest(n_suggestions=_bs)
             x = x_df.to_numpy()
             fx = func(x)
             opt.observe(x_df, fx)
+
+            n_evals += _bs
+            if critic is not None:
+                if X_hist is None:
+                    X_hist = x
+                    y_hist = fx
+                else:
+                    X_hist = np.vstack((X_hist, x))
+                    y_hist = np.vstack((y_hist, fx))
+                critic.update_after_eval(X_hist, y_hist, x, fx, n_evals)
+
 
         f_opt = opt.best_y
         x_opt = opt.best_x

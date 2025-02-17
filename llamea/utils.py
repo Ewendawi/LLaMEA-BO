@@ -407,7 +407,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
     fig.tight_layout()
 
     if show:
-        plt.show(block=False)
+        plt.show()
 
 def _plot_get_element_from_list(data, index, default=None):
     if isinstance(data, list) and len(data) > index:

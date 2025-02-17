@@ -109,7 +109,7 @@ class LLaMBO:
 
         return response_handler
 
-    def _update_individual(self, population:Population, query_item:PopulationQueryItem, handler:ResponseHandler, current_generation:int, promptor:PromptGenerator):
+    def _update_individual(self, query_item:PopulationQueryItem, handler:ResponseHandler, current_generation:int, promptor:PromptGenerator):
         if handler.code is None or handler.code_name is None:
             return
         
@@ -247,7 +247,7 @@ class LLaMBO:
                             handler = future.result()
 
 
-                            self._update_individual(population, _query_item, handler, current_generation, _promptor)
+                            self._update_individual(_query_item, handler, current_generation, _promptor)
 
                             _following_query_items = population.get_next_queryitems([_query_item])
                             if _following_query_items:
@@ -260,7 +260,7 @@ class LLaMBO:
                         kwargs, _query_item = param
                         next_handler = self.evalution_func(**kwargs)
 
-                        self._update_individual(population, _query_item, next_handler, current_generation, _promptor)
+                        self._update_individual(_query_item, next_handler, current_generation, _promptor)
                         _following_query_items = population.get_next_queryitems([_query_item])
                         if _following_query_items:
                             _next_query_items.extend(_following_query_items)
