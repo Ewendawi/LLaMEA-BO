@@ -5,7 +5,10 @@ from datetime import datetime
 import numpy as np
 from pandas.api.types import is_numeric_dtype
 import pandas as pd
+from ioh import get_problem 
 from matplotlib import pyplot as plt
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
 from llamea.utils import IndividualLogger
 from llamea.population.es_population import ESPopulation
 from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
@@ -106,6 +109,70 @@ def fill_nan_with_left(arr):
             last_valid = val
     return filled_arr
 
+# plot contour 
+def plot_contour(problem_id, points, x1_range=None, x2_range=None, levels=50, figsize=(15, 9)):
+    if x1_range is None:
+        x1_range = [-5, 5, 100]
+
+    if x2_range is None:
+        x2_range = [-5, 5, 100]
+    
+    instance = 1
+    func = get_problem(problem_id, instance, 2)
+
+    optimal_point = func.optimum.x
+    optimal_value = func.optimum.y 
+    
+    x1 = np.linspace(*x1_range)
+    x2 = np.linspace(*x2_range)
+    X1, X2 = np.meshgrid(x1, x2)
+    Z = np.zeros_like(X1)
+    for i in range(X1.shape[0]):
+        for j in range(X1.shape[1]):
+            Z[i, j] = func(np.array([X1[i, j], X2[i, j]]))
+
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    contour = ax.contourf(X1, X2, Z, 
+                           levels=levels, 
+                           cmap=plt.cm.PuBu_r)
+                        #    viridis')
+    # contour = plt.contour(X1, X2, Z, levels=levels, cmap='viridis')
+
+
+    cmap_points='magma'
+    norm = Normalize(vmin=0, vmax=len(points) - 1)
+    cmap = plt.get_cmap(cmap_points)  
+    for i, point in enumerate(points):
+        color = cmap(norm(i))
+        ax.plot(point[0], point[1], marker='o', markersize=6, color=color)  
+
+    # red star for optimal point
+    ax.plot(optimal_point[0], optimal_point[1], 'r*', markersize=12)
+
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array([])  
+    cbar = fig.colorbar(sm,
+                        orientation='vertical',
+                        fraction=0.05,
+                        shrink=1.0,
+                        aspect=30,
+                        ax=ax)
+    ticks = np.linspace(0, len(points)-1, min(10 , len(points)-1))  
+    ticks = np.round(ticks).astype(int)  #Ensures integer ticks
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels(ticks)
+
+    cbar_z = fig.colorbar(contour, orientation='vertical', 
+                            fraction=0.05,
+                          shrink=1.0, aspect=30, ax=ax)
+
+    ax.set_xlabel("x1")
+    ax.set_ylabel("x2")
+
+    plt.show()
+
+# plot_contour(2, [(0, 0), (1, 1), (-1, -1)])
         
 # plot_search_result
 def _process_search_result(results:list[tuple[str,Population]], save=False, file_name=None):

@@ -15,7 +15,7 @@ from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
 from llamea.individual import Individual
 from llamea.evaluator.injected_critic import FunctionProfiler
-from Experiments.plot import plot_algo_result
+from Experiments.plot import plot_algo_result, plot_contour
 
 # Utils
 def dynamic_import_and_get_class(module_path, class_name):
@@ -106,7 +106,7 @@ def baseline_algo_eval_param(dim, budget):
     bl_init_params = {
         "budget": budget,
         "dim": dim,
-        "bounds": np.array([[-5.0] * 5, [5.0] * 5]),
+        "bounds": np.array([[-5.0] * dim, [5.0] * dim]),
         "n_init": min(2 * dim, budget // 2),
         "seed": None,
         "device": "cpu",
@@ -203,6 +203,9 @@ def run_algo_eval_from_file_map(evaluator, file_map=None, cls_list=None, plot=Fa
 
     if plot:
         plot_algo_result(res_list)
+
+        # _res = res_list[0].result[0].x_hist
+        # plot_contour(2, _res)
 
 
 # EA Experiments
