@@ -305,6 +305,9 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "pop_selection_strategy" in options:
             population.selection_strategy = options["pop_selection_strategy"]
 
+        if 'es_pop_is_elitism' in options:
+            population.use_elitism = options['es_pop_is_elitism']
+
         if "pop_save_dir" in options:
             population.save_dir = options["pop_save_dir"]
 
@@ -903,6 +906,7 @@ if __name__ == "__main__":
             # 'pop_exclusive_operations': False,
             # 'pop_cr_light_eval': get_light_IOHEvaluator_for_crossover(),
             # 'pop_cr_light_promptor': get_light_Promptor_for_crossover(),
+            'es_pop_is_elitism': False,
 
 
             'eval_inject_critic': False,
