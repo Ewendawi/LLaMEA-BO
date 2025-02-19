@@ -128,9 +128,9 @@ class ESPopulation(Population):
                 candidates = sorted(_candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
             else:
                 _candidates = last_gen
-                if len(candidates) < self.n_parent:
+                if len(_candidates) < self.n_parent:
                     logging.warning("Population size is less than n_parent. Using elitism.")
-                    _candidates = candidates + last_pop
+                    _candidates = _candidates + last_pop
                 candidates = sorted(_candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
 
             next_pop = candidates[:self.n_parent]
