@@ -126,8 +126,11 @@ class Population(ABC):
                 f.write(code)
 
             handler_path = f'{_save_dir}/{generation}-{index}_{name}_handler.pkl'
-            with open(handler_path, 'wb') as f:
-                pickle.dump(handler, f)
+            try:
+                with open(handler_path, 'wb') as f:
+                    pickle.dump(handler, f)
+            except Exception as e:
+                logging.error("Error saving handler: %s", e)
 
             prompt = handler.sys_prompt + '\n\n' + handler.prompt
             prompt_path = f'{_save_dir}/{generation}-{index}_{name}_prompt.md'
@@ -160,8 +163,11 @@ class Population(ABC):
             filename = '_' + filename
         time_stamp = datetime.now().strftime("%m%d%H%M%S")
         file_path = os.path.join(dirname, f"{self.__class__.__name__}{filename}_{time_stamp}.pkl")
-        with open(file_path, "wb") as f:
-            pickle.dump(self, f)
+        try:
+            with open(file_path, "wb") as f:
+                pickle.dump(self, f)
+        except Exception as e:
+            logging.error("Error saving population: %s", e)
     
     @classmethod
     def load(cls, filepath=None):
