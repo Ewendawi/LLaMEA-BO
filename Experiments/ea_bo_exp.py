@@ -878,7 +878,7 @@ if __name__ == "__main__":
 
     _params = get_search_default_params()
     _new_params = {
-        "n_population": 4,
+        "n_population": 40,
         "n_query_threads": 0,
 
         # Choose time_out_per_eval carefully when running multiple evaluations of expriments in parallel due to OS's dispatching mechanism
@@ -910,13 +910,13 @@ if __name__ == "__main__":
 
 
             'eval_inject_critic': False,
-            'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
+            'eval_overwrite_type': 'light_evol', # 'test', 'light_evol', 'evol', 'final_eval' 
             # 'test_eval_problems': [4], # [4, 10],
             'test_eval_problems': [2, 4, 8, 14, 15, 23],
             'test_eval_instances': [1],
             'test_eval_repeat': 3,
             'test_eval_budget': 100,
-            'prompt_problem_desc': 'one noiseless function:F2 Ellipsoid Separable Function',
+            # 'prompt_problem_desc': 'one noiseless function:F2 Ellipsoid Separable Function',
 
             # 'llm_mocker': mock_res_provider,
         }
