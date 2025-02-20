@@ -322,7 +322,7 @@ def _run_exp(prompt_generator:PromptGenerator,
 
     llambo.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,
-                        n_retry=3,
+                        n_retry=5,
                         time_out_per_eval=time_out_per_eval,
                         n_query_threads=n_query_threads,
                         n_eval_workers=n_eval_workers,

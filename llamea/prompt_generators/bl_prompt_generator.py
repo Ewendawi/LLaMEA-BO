@@ -44,8 +44,7 @@ class BaselineResponseHandler(ResponseHandler):
         res = ""
         if pattern is None:
             if section == "class_name":
-                pattern = r"```(?:python)?[\s\S]*?class\s+(\w+BOv?\d*?.?\d*?):"
-                # pattern = r"```(?:python)?[\s\S]*?class\s+(\w+v?\d*?.?\d*?):"
+                pattern = r"```(?:python)?[\s\S]*?class\s+(\w+BO\w*):"
             elif section == "Code":
                 pattern = r"#\s*Code[\s\S]*```(?:python)?\s([\s\S]*?)```"
                 # pattern = r"```(?:python)?\s([\s\S]*?)```"
