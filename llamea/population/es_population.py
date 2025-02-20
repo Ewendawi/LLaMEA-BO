@@ -39,6 +39,9 @@ class ESPopulation(Population):
         if not self.use_elitism and self.n_parent > self.n_offspring:
             raise ValueError("n_parent should be less than or equal to n_offspring when not using elitism.")
 
+        if self.n_parent_per_offspring > self.n_parent:
+            raise ValueError("n_parent_per_offspring should be less than or equal to n_parent.")
+
         # if math.comb(n_parent, n_parent_per_offspring) < self.n_offspring:
         #     raise ValueError(f"n_parent({n_parent}) choose n_parent_per_offspring({n_parent_per_offspring}) is {math.comb(n_parent, n_parent_per_offspring)}. It should be greater than or equal to n_offspring({n_offspring}).")
 

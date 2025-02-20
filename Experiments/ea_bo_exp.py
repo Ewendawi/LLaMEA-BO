@@ -390,17 +390,26 @@ def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=Fal
         **params
     )
 
-def run_mu_plus_lambda_exp(
+def run_mu_lambda_exp(
                     n_parent:int=2,
                     n_offspring:int=1,
-                    n_parent_per_offspring:int=2,
+                    options:dict=None,
                     **kwargs
                     ):
+    n_parent_per_offspring = 2
+    if n_parent < 2:
+        n_parent_per_offspring = 1
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
-    population.name = f"evol_{n_parent}+{n_offspring}"
+
+    p_name = f"{n_parent}+{n_offspring}"
+    if options is not None:
+        if 'es_pop_is_elitism' in options:
+            p_name = f'{n_parent}-{n_offspring}'
+    population.name = f"evol_{p_name}"
 
     _run_exp(
         population=population,
+        options=options,
         **kwargs
     )
 
@@ -927,7 +936,7 @@ if __name__ == "__main__":
     N_PARENT = 2
     N_OFFSPRING = 1
 
-    # run_mu_plus_lambda_exp(
+    # run_mu_lambda_exp(
     #     n_parent=N_PARENT,
     #     n_offspring=N_OFFSPRING,
     #     **_params)
