@@ -121,11 +121,13 @@ class Population(ABC):
             name = handler.code_name
             index = self.get_population_size()
             fitness = individual.fitness
-            code_path = f'{_save_dir}/{generation}-{index}_{name}_{fitness:.4f}.py'
+            file_name = f'{generation}-{index}_{name}_{fitness:.4f}'
+
+            code_path = f'{_save_dir}/{file_name}.py'
             with open(code_path, 'w', encoding='utf-8') as f:
                 f.write(code)
 
-            handler_path = f'{_save_dir}/{generation}-{index}_{name}_handler.pkl'
+            handler_path = f'{_save_dir}/{file_name}_handler.pkl'
             try:
                 with open(handler_path, 'wb') as f:
                     pickle.dump(handler, f)
@@ -133,7 +135,7 @@ class Population(ABC):
                 logging.error("Error saving handler: %s", e)
 
             prompt = handler.sys_prompt + '\n\n' + handler.prompt
-            prompt_path = f'{_save_dir}/{generation}-{index}_{name}_prompt.md'
+            prompt_path = f'{_save_dir}/{file_name}_prompt.md'
             with open(prompt_path, 'w', encoding='utf-8') as f:
                 f.write(prompt)
 
@@ -142,7 +144,7 @@ class Population(ABC):
                 raw_res += f'\n## Feedback\n {individual.feedback}'
             elif individual.error:
                 raw_res += f'\n## Error\n {individual.error}'
-            res_path = f'{_save_dir}/{generation}-{index}_{name}_respond.md'
+            res_path = f'{_save_dir}/{file_name}_respond.md'
             with open(res_path, 'w', encoding='utf-8') as f:
                 f.write(raw_res)
 

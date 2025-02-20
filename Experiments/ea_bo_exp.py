@@ -883,7 +883,7 @@ if __name__ == "__main__":
 
         # Choose time_out_per_eval carefully when running multiple evaluations of expriments in parallel due to OS's dispatching mechanism
         "n_eval_workers": 0,
-        "time_out_per_eval": 60 * 20,
+        "time_out_per_eval": 60 * 30,
 
         # "gpu_name": "cuda:7",
         "gpu_name": None,
