@@ -13,7 +13,7 @@ from llamea.utils import IndividualLogger
 from llamea.population.es_population import ESPopulation
 from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
 from llamea.evaluator.evaluator_result import EvaluatorResult
-from llamea.utils import plot_group_bar, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
+from llamea.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
 from llamea.population.population import Population, desc_similarity
 
 
@@ -796,11 +796,135 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame):
     #     figsize=(15, 9)
     #     )
 
+def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strategies:list[str]):
+    column_names = [
+    'strategy',
+    'n_gen',
+    'n_repeat',
+    'n_iter',
+    'query_time',
+    'prompt_token_count',
+    'response_token_count',
+    'total_token_count',
+    ]
+    _token_df = pd.DataFrame(columns=column_names)
+    _strategy_count = {}
+    for strategy_name, pop in results:
+        if strategy_name not in _strategy_count:
+            _strategy_count[strategy_name] = 0
+        _strategy_count[strategy_name] += 1
+
+        n_generation = pop.get_current_generation()
+        n_iter = 0
+        for gen in range(n_generation):
+            # offspring generated in this generation
+            gen_offsprings = pop.get_offsprings(generation=gen)
+            n_iter += len(gen_offsprings)
+            # offspring selected in this generation
+            for ind in gen_offsprings:
+                handler = Population.get_handler_from_individual(ind)
+                res = {
+                    'strategy': strategy_name,
+                    'n_gen': gen+1,
+                    'n_iter': n_iter,
+                    'n_repeat': _strategy_count[strategy_name],
+                    'query_time': handler.query_time,
+                    'prompt_token_count': handler.prompt_token_count,
+                    'response_token_count': handler.response_token_count,
+                    'total_token_count': handler.prompt_token_count + handler.response_token_count,
+                }
+                _token_df.loc[len(_token_df)] = res
+
+        _all_token_df = _token_df.groupby(['strategy', 'n_repeat'])[['total_token_count', 'prompt_token_count', 'response_token_count', 'query_time']].agg(np.sum).reset_index()
+
+        y_total_token_count = []
+        y_prompt_token_count = []
+        y_response_token_count = []
+        y_query_time = []
+
+        for strategy in unique_strategies:
+            _strategy_error_df = _all_token_df[_all_token_df['strategy'] == strategy]
+            _total_token_count = _strategy_error_df['total_token_count'].to_list()
+            y_total_token_count.append(_total_token_count)
+
+            _prompt_token_count = _strategy_error_df['prompt_token_count'].to_list()
+            y_prompt_token_count.append(_prompt_token_count)
+
+            _response_token_count = _strategy_error_df['response_token_count'].to_list()
+            y_response_token_count.append(_response_token_count)
+
+            _mean_query_time = np.mean(_strategy_error_df['query_time'].to_list())
+            y_query_time.append(_mean_query_time)
+
+
+        plot_y = [y_total_token_count, y_prompt_token_count, y_response_token_count]
+        labels = [unique_strategies, unique_strategies, unique_strategies]
+        sub_titles = ["Total token count", "Prompt token count", "Response token count"]
+
+        # plot_box_violin(
+        #     data=plot_y,
+        #     labels=labels,
+        #     sub_titles=sub_titles,
+        #     plot_type="violin",
+        #     n_cols=4,
+        #     label_fontsize=10,
+        #     title="Token usage",
+        #     figsize=(15, 9),
+        #     )
+
+        prices = {
+            'o3-mini': (1.1, 4.4),
+            'GPT-4o': (2.5, 10.0),
+            'Claude-3.5': (3.0, 15.0),
+            'DeepSeek-R1': (0.8, 2.4),
+            'Gemini-Flash-2.0': (0.1, 0.4),
+        }
+
+        mean_prompt_token_count = np.mean(y_prompt_token_count, axis=1)
+        mean_response_token_count = np.mean(y_response_token_count, axis=1)
+
+        _group = []
+        _group_name = []
+        _labels = list(prices.keys())
+        for i, strategy in enumerate(unique_strategies):
+            _prompt_count = mean_prompt_token_count[i] / 1000000
+            _response_count = mean_response_token_count[i] / 1000000
+
+            _sub_group = []
+            for _modle in _labels:
+                _price = prices[_modle]
+                _prompt_price = _price[0] * _prompt_count
+                _response_price = _price[1] * _response_count
+                _sub_group.append([_prompt_price, _response_price, _prompt_price + _response_price])
+
+            _group.append(_sub_group) 
+            _group_name.append(strategy) 
+
+        _numpy_group = np.array(_group)
+        y_data = [_numpy_group[:,:,i] for i in range(_numpy_group.shape[2])]
+        x_labels = [_labels] * len(y_data)
+        y_labels = ['Price($)'] * len(y_data)
+        group_labels = [_group_name] * len(y_data)
+        sub_titles = ['Prompt', 'Response', 'Total']
+        plot_group_bars(y_data,
+                   x_labels,
+                   y_label=y_labels,
+                   group_labels=group_labels,
+                   sub_titles=sub_titles,
+                   n_cols=3,
+                   title="Token usage",
+                   fig_size=(15,9))
+
+
+
+
 def plot_search_result(results:list[tuple[str,Population]], save=False, file_name=None):
     res_df = _process_search_result(results, save=save, file_name=file_name)
     
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
+
+    _plot_search_token_usage(results, unique_strategies)
 
     # _plot_search_aoc(res_df, unique_strategies)
     # _plot_search_group_aoc(res_df, unique_strategies)
@@ -1437,10 +1561,10 @@ def plot_light_evol_and_final():
         group_names.append(group_name)
         groups.append(_temp)
     
-    y_data = np.array(groups)
-    x_labels = ['Partial Eval', 'ALL Eval']
+    y_data = [np.array(groups)]
+    x_labels = [['Partial Eval', 'ALL Eval']]
 
-    plot_group_bar(y_data, 
+    plot_group_bars(y_data, 
                    x_labels, 
                    group_names, 
                    title='Comparison of Partial and All Evaluations',
@@ -1450,7 +1574,9 @@ def plot_light_evol_and_final():
 def plot_search_0209():
     file_paths = [
         # "Experiments/pop_40_f/ESPopulation_evol_1+1_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210035334/ESPopulation_final_0210065735.pkl",
-        'Experiments/pop_40_temp/ESPopulation_evol_10+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208164605/ESPopulation_final_0208204450.pkl',
+        # 'Experiments/pop_40_temp/ESPopulation_evol_10+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208164605/ESPopulation_final_0208204450.pkl',
+
+        # 'Experiments/pop_40_test/ESPopulation_evol_3+5_IOHEvaluator_f4_dim-5_budget-100_instances-[1]_repeat-1_0214010030/ESPopulation_final_0214010239.pkl',
     ]
     file_name = None
     if len(file_paths) == 0:
@@ -1552,7 +1678,7 @@ if __name__ == "__main__":
     # plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
 
     # plot_light_evol_and_final()
-    
+
     # plot_search_0209()
 
     pass

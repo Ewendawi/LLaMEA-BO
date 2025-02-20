@@ -414,29 +414,56 @@ def _plot_get_element_from_list(data, index, default=None):
         return data[index]
     return default
 
-def plot_group_bar(
-    data:np.ndarray,
-    labels: list[str],
-    group_labels: list[str] = None,
+def plot_group_bars(
+    data:list[np.ndarray],
+    labels: list[list[str]],
+    group_labels: list[list[str]] = None,
+    y_label: list[str] = None,
+    sub_titles: list[str] = None,
+    title:str = None,
     label_fontsize:int = 10,
+    n_cols:int = 1,
     fig_size:tuple[int,int] = (10, 6),
-    title = ""):
+    ):
 
-    data = data.T
+    n_plots = len(data)
+    n_cols = min(n_cols, n_plots)
+    n_rows = n_plots // n_cols 
+    if n_plots % n_cols != 0:
+        n_rows += 1
 
-    group_labels = [_label[:10] for _label in group_labels]
+    axs_ids = []
+    for row in range(n_rows):
+        row_ids = []
+        for col in range(n_cols):
+            row_ids.append(row * n_cols + col)
+        axs_ids.append(row_ids)
+    fig, axs = plt.subplot_mosaic(axs_ids, figsize=fig_size)
+    for i in range(n_plots):
+        row = i // n_cols
+        col = i % n_cols
+        ax = axs[i]
+        _sub_title = sub_titles[i] if sub_titles is not None else ""
+        _y_label = y_label[i] if y_label is not None else ""
+        _group_labels = group_labels[i] if group_labels is not None else None
+        _group_labels = [_label[:10] for _label in _group_labels]
+        _labels = labels[i]
+        _data = data[i].T
 
-    n_groups = data.shape[0]
-    n_bars = data.shape[1]
-    x = np.arange(n_bars)
-    width = 1/(n_groups+1)
-    fig, ax = plt.subplots(figsize=fig_size)
-    for i in range(n_groups):
-        ax.bar(x + i * width, data[i], width, label=labels[i])
-    ax.set_xticks(x + width * (n_groups - 1) / 2, labels=group_labels, fontsize=label_fontsize)
-    ax.legend()
-    ax.set_title(title)
-    plt.show(block=False)
+        n_groups = _data.shape[0]
+        n_bars = _data.shape[1]
+        x = np.arange(n_bars)
+        width = 1/(n_groups+1)
+        for i in range(n_groups):
+            ax.bar(x + i * width, _data[i], width, label=_labels[i])
+        ax.set_xticks(x + width * (n_groups - 1) / 2, labels=_group_labels, fontsize=label_fontsize)
+        ax.legend()
+        ax.set_title(_sub_title)
+        ax.set_ylabel(_y_label)
+    
+    fig.suptitle(title)
+    fig.tight_layout()
+    plt.show()
 
 def test_group_bar():
     n_groups = 3
@@ -447,7 +474,7 @@ def test_group_bar():
         
     group_labels = ["A", "B", "C"]
     labels = ["G1", "G2", "G3", "G4"]
-    plot_group_bar(data, labels, group_labels)
+    plot_group_bars(data, labels, group_labels)
 
 def plot_box_violin(
     data:list[np.ndarray],
