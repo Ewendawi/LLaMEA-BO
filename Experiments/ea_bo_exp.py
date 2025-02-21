@@ -156,7 +156,8 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
         dir_path = save_dir
         os.makedirs(dir_path, exist_ok=True)
         time_stamp = datetime.now().strftime("%m%d%H%M%S")
-        file_path = os.path.join(dir_path, f"{cls_name}_{evaluator}_{time_stamp}.pkl")
+        score = res.score
+        file_path = os.path.join(dir_path, f"{cls_name}_{score:.4f}_{evaluator}_{time_stamp}.pkl")
         with open(file_path, "wb") as f:
             pickle.dump(res, f)
     return res
