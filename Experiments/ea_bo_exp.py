@@ -246,33 +246,6 @@ def _run_exp(prompt_generator:PromptGenerator,
         if 'prompt_problem_desc' in options:
             prompt_generator.problem_desc = options['prompt_problem_desc']
 
-        if "pop_load_check_point_path" in options:
-            check_point_path = options["pop_load_check_point_path"]
-            if os.path.exists(check_point_path):
-                population = Population.load(check_point_path)
-                logging.info("Load population from check point: %s", check_point_path)
-            else:
-                logging.warning("Check point path not exist: %s", check_point_path)
-        elif "pop_warmstart_handlers" in options:
-            warmstart_handlers = options["pop_warmstart_handlers"]
-            warmstart_inds = []
-            for _handler in warmstart_handlers:
-                handler = _handler
-                if isinstance(_handler, str):
-                    if not os.path.exists(_handler):
-                        logging.warning("Warmstart handler path not exist: %s", _handler)
-                        continue
-                    with open(_handler, "rb") as f:
-                        handler = pickle.load(f)
-                ind = Individual()
-                Population.set_handler_to_individual(ind, handler)
-                ind.fitness = handler.eval_result.score
-                population.add_individual(ind, generation=0)
-                warmstart_inds.append(ind)
-            if len(warmstart_inds) > 0:
-                population.select_next_generation()
-                logging.info("Warmstart %d individuals", len(warmstart_inds))
-
         if "pop_debug_save_on_the_fly" in options:
             population.debug_save_on_the_fly = options["pop_debug_save_on_the_fly"]
 
@@ -311,6 +284,33 @@ def _run_exp(prompt_generator:PromptGenerator,
 
         if "pop_save_dir" in options:
             population.save_dir = options["pop_save_dir"]
+
+        if "pop_load_check_point_path" in options:
+            check_point_path = options["pop_load_check_point_path"]
+            if os.path.exists(check_point_path):
+                population = Population.load(check_point_path)
+                logging.info("Load population from check point: %s", check_point_path)
+            else:
+                logging.warning("Check point path not exist: %s", check_point_path)
+        elif "pop_warmstart_handlers" in options:
+            warmstart_handlers = options["pop_warmstart_handlers"]
+            warmstart_inds = []
+            for _handler in warmstart_handlers:
+                handler = _handler
+                if isinstance(_handler, str):
+                    if not os.path.exists(_handler):
+                        logging.warning("Warmstart handler path not exist: %s", _handler)
+                        continue
+                    with open(_handler, "rb") as f:
+                        handler = pickle.load(f)
+                ind = Individual()
+                Population.set_handler_to_individual(ind, handler)
+                ind.fitness = handler.eval_result.score
+                population.add_individual(ind, generation=0)
+                warmstart_inds.append(ind)
+            if len(warmstart_inds) > 0:
+                population.select_next_generation()
+                logging.info("Warmstart %d individuals", len(warmstart_inds))
 
         if 'llm_mocker' in options:
             llm.mock_res_provider = options['llm_mocker']
@@ -901,7 +901,7 @@ if __name__ == "__main__":
         "options": {
             'pop_debug_save_on_the_fly': True,
             # 'pop_warmstart_handlers': [],
-            # 'pop_load_check_point_path': 'Experiments/pop_40_test/ESPopulation_evol_2+4_IOHEvaluator_f2_f4_f8_f14_f15_f23_dim-5_budget-100_instances-[1]_repeat-3_0216054105_b/ESPopulation_gen_checkpoint_0_0216055117.pkl',
+            # 'pop_load_check_point_path': '',
 
             'pop_save_check_point_interval': 1,
             'pop_preorder_aware_init': True,
