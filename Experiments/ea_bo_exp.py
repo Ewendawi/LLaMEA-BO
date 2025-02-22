@@ -285,6 +285,12 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "pop_save_dir" in options:
             population.save_dir = options["pop_save_dir"]
 
+        if population.get_current_generation() == 0:
+            # population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
+            population.name += f"_{evaluator}"
+            if torch.cuda.is_available():
+                population.name += "_gpu"
+
         if "pop_load_check_point_path" in options:
             check_point_path = options["pop_load_check_point_path"]
             if os.path.exists(check_point_path):
@@ -315,11 +321,7 @@ def _run_exp(prompt_generator:PromptGenerator,
         if 'llm_mocker' in options:
             llm.mock_res_provider = options['llm_mocker']
 
-    if population.get_current_generation() == 0:
-        # population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
-        population.name += f"_{evaluator}"
-        if torch.cuda.is_available():
-            population.name += "_gpu"
+    
 
     llambo.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,
