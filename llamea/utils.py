@@ -359,7 +359,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
             _color = _color if _color is not None else ax.get_lines()[-1].get_color()
             if _filling is not None:
                 upper, lower = _filling[j]
-                ax.fill_between(_x, lower, upper, alpha=0.3, color=_color)
+                ax.fill_between(_x, lower, upper, alpha=0.2, color=_color)
 
             if _x_dot is not None and len(_x_dot) > j:
                 _dot_x = _x_dot[j]

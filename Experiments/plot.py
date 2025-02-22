@@ -56,9 +56,18 @@ def combine_acc(column='y_aoc', maximum=True, max_n_iter=None):
     return _inner_combine_acc
 
 def compare_expressions(expr1, expr2):
-    a1, b1 = map(int, expr1.split('+'))
-    a2, b2 = map(int, expr2.split('+'))
+    def _split_expr(expr):
+        if '+' in expr: 
+            a, b = map(int, expr.split('+'))
+        elif ',' in expr:
+            a, b = map(int, expr.split(','))
+        else:
+            return 0, 0
+        return a, b
 
+    a1, b1 = _split_expr(expr1)
+    a2, b2 = _split_expr(expr2)
+    
     if a1 == a2:
         return b1 - b2
     else:
@@ -266,7 +275,51 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
         figsize=(14, 8),
         )
         
-def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
+def _group_plus_aoc(strategy_group:dict, strategy:str, y_aoc:np.ndarray, log_y_aoc:np.ndarray, std_y_aoc:np.ndarray, std_log_y_aoc:np.ndarray):
+    # same n_parent: 4, 8, 12, 20
+    # n_offspring: mu > lambda, mu <= lambda
+    gruoup_name_map = {
+        '4': '4+*',
+        '8': '8+*',
+        '12': '12+*',
+        '20': '20+*',
+        'mu': '$\mu$ > $\lambda$',
+        'lambda': '$\mu$ <= $\lambda$',
+    }
+
+    mu, lam = strategy.split('+') 
+    int_mu, int_lam = int(mu), int(lam)
+
+    if int_mu == 1 or mu in strategy_group:
+        _keys = []
+        if int_mu == 1:
+            _keys.extend(gruoup_name_map.keys())
+        else:
+            _keys.append(mu)
+            if int_mu > int_lam:
+                _keys.append('mu')
+            else:
+                _keys.append('lambda')
+        
+        for _key in _keys:
+            if _key not in strategy_group:
+                _temp = {
+                    'aoc': [],
+                    'aoc_filling': [],
+                    'log_aoc': [],
+                    'log_aoc_filling': [],
+                    'labels': [], 
+                }
+                strategy_group[_key] = _temp
+                strategy_group[_key]['name'] = gruoup_name_map[_key]
+            
+            strategy_group[_key]['aoc'].append(y_aoc)
+            strategy_group[_key]['aoc_filling'].append((y_aoc + std_y_aoc, y_aoc - std_y_aoc))
+            strategy_group[_key]['log_aoc'].append(log_y_aoc)
+            strategy_group[_key]['log_aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
+            strategy_group[_key]['labels'].append(strategy)
+        
+def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], group_fn=None):
     max_n_iter = res_df['n_iter'].max()
     aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_iter', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
     aoc_df = aoc_df.groupby(['strategy', 'n_strategy', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
@@ -278,16 +331,6 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
     aoc_df = aoc_df.groupby(['strategy'])[['acc_y_aoc', 'acc_log_y_aoc']].agg(list).reset_index()
 
     strategy_group = {}
-    # same n_parent: 4, 8, 12, 20
-    # n_offspring: mu > lambda, mu <= lambda
-    gruoup_name_map = {
-        '4': '4+*',
-        '8': '8+*',
-        '12': '12+*',
-        '20': '20+*',
-        'mu': '$\mu$ > $\lambda$',
-        'lambda': '$\mu$ <= $\lambda$',
-    }
 
     strategy_aoc = [] 
     strategy_filling = []
@@ -314,54 +357,29 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
 
         labels.append(strategy)
 
-        mu, lam = strategy.split('+') 
-        int_mu, int_lam = int(mu), int(lam)
-
-        if int_mu == 1 or mu in strategy_group:
-            _keys = []
-            if int_mu == 1:
-                _keys.extend(gruoup_name_map.keys())
-            else:
-                _keys.append(mu)
-                if int_mu > int_lam:
-                    _keys.append('mu')
-                else:
-                    _keys.append('lambda')
-            
-            for _key in _keys:
-                if _key not in strategy_group:
-                    _temp = {
-                        'aoc': [],
-                        'aoc_filling': [],
-                        'log_aoc': [],
-                        'log_aoc_filling': [],
-                        'labels': [], 
-                    }
-                    strategy_group[_key] = _temp
-                
-                strategy_group[_key]['aoc'].append(y_aoc)
-                strategy_group[_key]['aoc_filling'].append((y_aoc + std_y_aoc, y_aoc - std_y_aoc))
-                strategy_group[_key]['log_aoc'].append(log_y_aoc)
-                strategy_group[_key]['log_aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
-                strategy_group[_key]['labels'].append(strategy)
+        if group_fn is not None:
+            group_fn(strategy_group, strategy, y_aoc, log_y_aoc, std_y_aoc, std_log_y_aoc)
     
     plot_y = []
     sub_titles = []
     fillings = []
     plot_labels = []
-    for group_key, group_ele in strategy_group.items():
-        # plot_y.append(np.array(group_ele['aoc']))
-        # fillings.append(group_ele['aoc_filling'])
+    y_scale = []
 
-        plot_y.append(np.array(group_ele['log_aoc']))
-        fillings.append(group_ele['log_aoc_filling'])
-        sub_titles.append(gruoup_name_map[group_key])
-        plot_labels.append(group_ele['labels'])
+    if len(strategy_group) > 0:
+        for group_key, group_ele in strategy_group.items():
+            # plot_y.append(np.array(group_ele['aoc']))
+            # fillings.append(group_ele['aoc_filling'])
 
-    # plot_y = [np.array(strategy_log_aoc)]
-    # sub_titles = ["AOC"]
-    # filling = [strategy_log_filling]
-    # plot_labels = [labels]
+            plot_y.append(np.array(group_ele['log_aoc']))
+            fillings.append(group_ele['log_aoc_filling'])
+            sub_titles.append(group_ele['name'])
+            plot_labels.append(group_ele['labels'])
+    else:
+        plot_y = [np.array(strategy_log_aoc)]
+        fillings = [strategy_log_filling]
+        plot_labels = [labels]
+        # y_scale = [("log", {})]
 
     x_base = np.arange(len(strategy_aoc[0]), dtype=np.int16)
     x = np.tile(x_base, (len(plot_y), 1))
@@ -371,11 +389,12 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
         labels = plot_labels,
         filling= fillings,
         sub_titles=sub_titles,
+        y_scales=y_scale,
+        linewidth=2,
         n_cols=3,
         label_fontsize=10,
         figsize=(15, 9),
         title="AOC",
-        # y_scales=[("log", {})],
         )
 
 def _plot_serach_pop_similarity(results:list[tuple[str,Population]]):
@@ -514,7 +533,53 @@ def _plot_search_error_type(err_df:pd.DataFrame):
             )
     ax.set_title(_title)
 
-def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies:list[str]):
+
+def _group_plus_error_rate(strategy_group:dict, strategy:str, mean_err_rate:float, std_err_rate:float):
+    # same n_parent: 4, 8, 12, 20
+    # n_offspring: mu > lambda, mu <= lambda
+    gruoup_name_map = {
+        '4': '4+*',
+        '8': '8+*',
+        '12': '12+*',
+        '20': '20+*',
+        'mu': '$\mu$ > $\lambda$',
+        'lambda': '$\mu$ <= $\lambda$',
+    }
+
+    mu, lam = strategy.split('+') 
+    int_mu, int_lam = int(mu), int(lam)
+
+    if int_mu == 1:
+        return
+
+    _keys = []
+    if int_mu == 1:
+        _keys.extend(gruoup_name_map.keys())
+    else:
+        _keys.append(mu)
+        if int_mu > int_lam:
+            _keys.append('mu')
+        else:
+            _keys.append('lambda')
+    
+    for _key in _keys:
+        if _key not in strategy_group:
+            _temp = {
+                'err_rate': [],
+                'err_rate_filling': [],
+                'labels': [],
+            }
+            strategy_group[_key] = _temp
+        
+        strategy_group[_key]['err_rate'].append(mean_err_rate)
+        if int_mu == 1:
+            strategy_group[_key]['err_rate_filling'].append((mean_err_rate, mean_err_rate))
+        else:
+            strategy_group[_key]['err_rate_filling'].append((mean_err_rate + std_err_rate, mean_err_rate - std_err_rate))
+        strategy_group[_key]['labels'].append(strategy)
+    
+
+def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies:list[str], group_fn=None):
     def _combine_err_rate(df_series):
         _n_iters = df_series['n_iter']
         _contents = []
@@ -533,24 +598,6 @@ def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies
     _gen_error_df['evol_err_rate'] = _gen_error_df.apply(_combine_err_rate, axis=1)
 
     strategy_group = {}
-    # same n_parent: 4, 8, 12, 20
-    # n_offspring: mu > lambda, mu <= lambda
-    gruoup_name_map = {
-        '4': '4+*',
-        '8': '8+*',
-        '12': '12+*',
-        '20': '20+*',
-        'mu': '$\mu$ > $\lambda$',
-        'lambda': '$\mu$ <= $\lambda$',
-    }
-
-    for _key in gruoup_name_map.keys():
-        strategy_group[_key] = {
-            'err_rate': [],
-            'err_rate_filling': [],
-            'labels': [],
-        }
-
     y_err_rates = []
     y_err_rates_filling = []
     labels = []
@@ -566,49 +613,23 @@ def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies
 
         labels.append(strategy)
 
-        mu, lam = strategy.split('+') 
-        int_mu, int_lam = int(mu), int(lam)
-
-        if int_mu == 1:
-            continue 
-
-        _keys = []
-        if int_mu == 1:
-            _keys.extend(gruoup_name_map.keys())
-        else:
-            _keys.append(mu)
-            if int_mu > int_lam:
-                _keys.append('mu')
-            else:
-                _keys.append('lambda')
-        
-        for _key in _keys:
-            if _key not in strategy_group:
-                _temp = {
-                    'err_rate': [],
-                    'err_rate_filling': [],
-                    'labels': [],
-                }
-                strategy_group[_key] = _temp
-            
-            strategy_group[_key]['err_rate'].append(_mean_err_rate)
-            if int_mu == 1:
-                strategy_group[_key]['err_rate_filling'].append((_mean_err_rate, _mean_err_rate))
-            else:
-                strategy_group[_key]['err_rate_filling'].append((_mean_err_rate + _std_err_rate, _mean_err_rate - _std_err_rate))
-            strategy_group[_key]['labels'].append(strategy)
+        if group_fn is not None:
+            group_fn(strategy_group, strategy, _mean_err_rate, _std_err_rate)
 
     plot_y = []
     sub_titles = []
     fillings = []
     plot_labels = []
-    for group_key, group_ele in strategy_group.items():
-        plot_y.append(np.array(group_ele['err_rate']))
-        fillings.append(group_ele['err_rate_filling'])
-        sub_titles.append(gruoup_name_map[group_key])
-        plot_labels.append(group_ele['labels']) 
-        
-    # plot_y = [np.array(y_err_rates)]
+    if len(strategy_group) > 0:
+        for group_key, group_ele in strategy_group.items():
+            plot_y.append(np.array(group_ele['err_rate']))
+            fillings.append(group_ele['err_rate_filling'])
+            sub_titles.append(group_ele['name'])
+            plot_labels.append(group_ele['labels']) 
+    else:
+        plot_y = [np.array(y_err_rates)]
+        plot_labels = [labels]
+        fillings = [y_err_rates_filling]
 
     x_base = np.arange(len(y_err_rates[0]), dtype=np.int16)
     x = np.tile(x_base, (len(plot_y), 1))
@@ -624,9 +645,53 @@ def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies
         figsize=(15, 9),
         )  
 
-def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame):
+def _group_plus_aoc_loss(strategy_group_in_problem:dict, strategy:str, y_aoc:np.ndarray, log_y_aoc:np.ndarray, std_y_aoc:np.ndarray, std_log_y_aoc:np.ndarray, loss:np.ndarray, std_loss:np.ndarray):
+    # same n_parent: 4, 8, 12, 20
+    # n_offspring: mu > lambda, mu <= lambda
+    gruoup_name_map = {
+        '4': '4+*',
+        '8': '8+*',
+        '12': '12+*',
+        '20': '20+*',
+        'mu': '$\mu$ > $\lambda$',
+        'lambda': '$\mu$ <= $\lambda$',
+    }
+
+    mu, lam = strategy.split('+') 
+    int_mu, int_lam = int(mu), int(lam)
+
+    if int_mu == 1 or mu in strategy_group_in_problem:
+        _keys = []
+        if int_mu == 1:
+            _keys.extend(gruoup_name_map.keys())
+        else:
+            _keys.append(mu)
+            if int_mu > int_lam:
+                _keys.append('mu')
+            else:
+                _keys.append('lambda')
+        
+        for _key in _keys:
+            if _key not in strategy_group_in_problem:
+                _temp = {
+                    'aoc': [],
+                    'aoc_filling': [],
+                    'loss': [],
+                    'loss_filling': [],
+                    'labels': [], 
+                }
+                strategy_group_in_problem[_key] = _temp
+                strategy_group_in_problem[_key]['name'] = gruoup_name_map[_key]
+
+            strategy_group_in_problem[_key]['aoc'].append(log_y_aoc)
+            strategy_group_in_problem[_key]['aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
+            strategy_group_in_problem[_key]['loss'].append(loss)
+            strategy_group_in_problem[_key]['loss_filling'].append((loss + std_loss, loss - std_loss))
+            strategy_group_in_problem[_key]['labels'].append(strategy)
+    
+def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
     def _min_max_agg(x):
-        if 'log' in x.name:
+        if 'aoc' in x.name:
             return np.max(x)
         return np.min(x)
 
@@ -642,16 +707,6 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame):
     problem_loss_filling = []
     labels = []
 
-    # same n_parent: 4, 8, 12, 20
-    # n_offspring: mu > lambda, mu <= lambda
-    gruoup_name_map = {
-        '4': '4+*',
-        '8': '8+*',
-        '12': '12+*',
-        '20': '20+*',
-        'mu': '$\mu$ > $\lambda$',
-        'lambda': '$\mu$ <= $\lambda$',
-    }
     problem_group = {}
 
     unique_problems = aoc_df['problem_id'].unique()
@@ -681,120 +736,93 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame):
 
             _labels.append(strategy)
 
-            mu, lam = strategy.split('+') 
-            int_mu, int_lam = int(mu), int(lam)
+            if group_fn is not None:
+                group_fn(strategy_group_in_problem, strategy, log_y_aoc, log_y_aoc, std_log_y_aoc, std_log_y_aoc, loss, std_loss)
 
-            if int_mu == 1 or mu in strategy_group_in_problem:
-                _keys = []
-                if int_mu == 1:
-                    _keys.extend(gruoup_name_map.keys())
-                else:
-                    _keys.append(mu)
-                    if int_mu > int_lam:
-                        _keys.append('mu')
-                    else:
-                        _keys.append('lambda')
-                
-                for _key in _keys:
-                    if _key not in strategy_group_in_problem:
-                        _temp = {
-                            'aoc': [],
-                            'aoc_filling': [],
-                            'loss': [],
-                            'loss_filling': [],
-                            'labels': [], 
-                        }
-                        strategy_group_in_problem[_key] = _temp
-
-                    strategy_group_in_problem[_key]['aoc'].append(log_y_aoc)
-                    strategy_group_in_problem[_key]['aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
-                    strategy_group_in_problem[_key]['loss'].append(loss)
-                    strategy_group_in_problem[_key]['loss_filling'].append((loss + std_loss, loss - std_loss))
-                    strategy_group_in_problem[_key]['labels'].append(strategy)
-
-        problem_group[problem] = strategy_group_in_problem
+        if len(strategy_group_in_problem) > 0:
+            problem_group[problem] = strategy_group_in_problem
         problem_log_aoc.append(_log_aoc)
         problem_log_aoc_filling.append(_log_aoc_filling)
         problem_loss.append(_loss)
         problem_loss_filling.append(_loss_filling)
         labels.append(_labels) 
 
-    for problem, strategy_group in problem_group.items():
-        plot_y = []
-        sub_titles = []
-        fillings = []
-        plot_labels = []
-        y_scale = []
-        title = f"F{problem}"
-        for group_key, group_ele in strategy_group.items():
-            plot_y.append(np.array(group_ele['aoc']))
-            fillings.append(group_ele['aoc_filling'])
-            sub_titles.append(f"{gruoup_name_map[group_key]}(AOC)")
-            plot_labels.append(group_ele['labels'])
-            y_scale.append(("log", {}))
+    if len(problem_group) > 0:
+        for problem, strategy_group in problem_group.items():
+            plot_y = []
+            sub_titles = []
+            fillings = []
+            plot_labels = []
+            y_scale = []
+            title = f"F{problem}"
+            for group_key, group_ele in strategy_group.items():
+                plot_y.append(np.array(group_ele['aoc']))
+                fillings.append(group_ele['aoc_filling'])
+                sub_titles.append(f"{group_ele['name']}(AOC)")
+                plot_labels.append(group_ele['labels'])
+                y_scale.append(("log", {}))
 
-            plot_y.append(np.array(group_ele['loss']))
-            fillings.append(group_ele['loss_filling'])
-            sub_titles.append(f"{gruoup_name_map[group_key]}(Loss)")
-            plot_labels.append(group_ele['labels'])
-            y_scale.append(("linear", {}))
+                plot_y.append(np.array(group_ele['loss']))
+                fillings.append(group_ele['loss_filling'])
+                sub_titles.append(f"{group_ele['name']}(Loss)")
+                plot_labels.append(group_ele['labels'])
+                y_scale.append(("linear", {}))
+
+            x_base = np.arange(len(problem_log_aoc[0][0]), dtype=np.int16)
+            x = np.tile(x_base, (len(plot_y), 1))
+            plot_lines(
+                y = plot_y,
+                x = x,
+                labels = plot_labels,
+                filling=fillings,
+                sub_titles=sub_titles,
+                # y_scales=y_scale,
+                title=title,
+                n_cols=4,
+                figsize=(15, 9),
+                )
+    else:
+        aoc_and_loss = []
+        subtitles = []
+        filling = []
+        n_cols = 5
+
+        # step n_cols
+        for i in range(0, len(unique_problems), n_cols):
+            aoc_and_loss.extend(problem_log_aoc[i:i+n_cols])
+            subtitles.extend([f"F{problem}-AOC" for problem in unique_problems[i:i+n_cols]])
+            filling.extend(problem_log_aoc_filling[i:i+n_cols])
+            
+            aoc_and_loss.extend(problem_loss[i:i+n_cols])
+            subtitles.extend([f"F{problem}-Loss" for problem in unique_problems[i:i+n_cols]])
+            filling.extend(problem_loss_filling[i:i+n_cols])
+
+        # for i, problem in enumerate(unique_problems):
+        #     aoc_and_loss.append(problem_log_aoc[i])
+        #     subtitles.append(f"F{problem}-AOC")
+        #     filling.append(problem_log_aoc_filling[i])
+            
+        #     aoc_and_loss.append(problem_loss[i])
+        #     subtitles.append(f"F{problem}-Loss")
+        #     filling.append(problem_loss_filling[i])
+
+    
+        labels = labels * 2
+
+        plot_y = np.array(aoc_and_loss)
 
         x_base = np.arange(len(problem_log_aoc[0][0]), dtype=np.int16)
         x = np.tile(x_base, (len(plot_y), 1))
+
         plot_lines(
             y = plot_y,
             x = x,
-            labels = plot_labels,
-            filling=fillings,
-            sub_titles=sub_titles,
-            # y_scales=y_scale,
-            title=title,
-            n_cols=4,
-            figsize=(15, 9),
+            labels = labels,
+            filling=filling,
+            sub_titles=subtitles, 
+            n_cols=5,
+            figsize=(15, 9)
             )
-        
-
-    aoc_and_loss = []
-    subtitles = []
-    filling = []
-    n_cols = 5
-
-    # step n_cols
-    for i in range(0, len(unique_problems), n_cols):
-        aoc_and_loss.extend(problem_log_aoc[i:i+n_cols])
-        subtitles.extend([f"F{problem}-AOC" for problem in unique_problems[i:i+n_cols]])
-        filling.extend(problem_log_aoc_filling[i:i+n_cols])
-        
-        aoc_and_loss.extend(problem_loss[i:i+n_cols])
-        subtitles.extend([f"F{problem}-Loss" for problem in unique_problems[i:i+n_cols]])
-        filling.extend(problem_loss_filling[i:i+n_cols])
-
-    # for i, problem in enumerate(unique_problems):
-    #     aoc_and_loss.append(problem_log_aoc[i])
-    #     subtitles.append(f"F{problem}-AOC")
-    #     filling.append(problem_log_aoc_filling[i])
-        
-    #     aoc_and_loss.append(problem_loss[i])
-    #     subtitles.append(f"F{problem}-Loss")
-    #     filling.append(problem_loss_filling[i])
-
-    
-    labels = labels * 2
-
-    plot_y = np.array(aoc_and_loss)
-
-    x_base = np.arange(len(problem_log_aoc[0][0]), dtype=np.int16)
-    x = np.tile(x_base, (len(plot_y), 1))
-
-    # plot_lines(
-    #     y = plot_y,
-    #     x = x,
-    #     labels = labels,
-    #     filling=filling,
-    #     sub_titles=subtitles, 
-    #     n_cols=5,
-    #     figsize=(15, 9)
-    #     )
 
 def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strategies:list[str]):
     column_names = [
@@ -835,87 +863,85 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
                 }
                 _token_df.loc[len(_token_df)] = res
 
-        _all_token_df = _token_df.groupby(['strategy', 'n_repeat'])[['total_token_count', 'prompt_token_count', 'response_token_count', 'query_time']].agg(np.sum).reset_index()
+    _all_token_df = _token_df.groupby(['strategy', 'n_repeat'])[['total_token_count', 'prompt_token_count', 'response_token_count', 'query_time']].agg(np.sum).reset_index()
 
-        y_total_token_count = []
-        y_prompt_token_count = []
-        y_response_token_count = []
-        y_query_time = []
+    y_total_token_count = []
+    y_prompt_token_count = []
+    y_response_token_count = []
+    y_query_time = []
 
-        for strategy in unique_strategies:
-            _strategy_error_df = _all_token_df[_all_token_df['strategy'] == strategy]
-            _total_token_count = _strategy_error_df['total_token_count'].to_list()
-            y_total_token_count.append(_total_token_count)
+    for strategy in unique_strategies:
+        _strategy_token_df = _all_token_df[_all_token_df['strategy'] == strategy]
+        _total_token_count = _strategy_token_df['total_token_count'].to_list()
+        y_total_token_count.append(_total_token_count)
 
-            _prompt_token_count = _strategy_error_df['prompt_token_count'].to_list()
-            y_prompt_token_count.append(_prompt_token_count)
+        _prompt_token_count = _strategy_token_df['prompt_token_count'].to_list()
+        y_prompt_token_count.append(_prompt_token_count)
 
-            _response_token_count = _strategy_error_df['response_token_count'].to_list()
-            y_response_token_count.append(_response_token_count)
+        _response_token_count = _strategy_token_df['response_token_count'].to_list()
+        y_response_token_count.append(_response_token_count)
 
-            _mean_query_time = np.mean(_strategy_error_df['query_time'].to_list())
-            y_query_time.append(_mean_query_time)
-
-
-        plot_y = [y_total_token_count, y_prompt_token_count, y_response_token_count]
-        labels = [unique_strategies, unique_strategies, unique_strategies]
-        sub_titles = ["Total token count", "Prompt token count", "Response token count"]
-
-        # plot_box_violin(
-        #     data=plot_y,
-        #     labels=labels,
-        #     sub_titles=sub_titles,
-        #     plot_type="violin",
-        #     n_cols=4,
-        #     label_fontsize=10,
-        #     title="Token usage",
-        #     figsize=(15, 9),
-        #     )
-
-        prices = {
-            'o3-mini': (1.1, 4.4),
-            'GPT-4o': (2.5, 10.0),
-            'Claude-3.5': (3.0, 15.0),
-            'DeepSeek-R1': (0.8, 2.4),
-            'Gemini-Flash-2.0': (0.1, 0.4),
-        }
-
-        mean_prompt_token_count = np.mean(y_prompt_token_count, axis=1)
-        mean_response_token_count = np.mean(y_response_token_count, axis=1)
-
-        _group = []
-        _group_name = []
-        _labels = list(prices.keys())
-        for i, strategy in enumerate(unique_strategies):
-            _prompt_count = mean_prompt_token_count[i] / 1000000
-            _response_count = mean_response_token_count[i] / 1000000
-
-            _sub_group = []
-            for _modle in _labels:
-                _price = prices[_modle]
-                _prompt_price = _price[0] * _prompt_count
-                _response_price = _price[1] * _response_count
-                _sub_group.append([_prompt_price, _response_price, _prompt_price + _response_price])
-
-            _group.append(_sub_group) 
-            _group_name.append(strategy) 
-
-        _numpy_group = np.array(_group)
-        y_data = [_numpy_group[:,:,i] for i in range(_numpy_group.shape[2])]
-        x_labels = [_labels] * len(y_data)
-        y_labels = ['Price($)'] * len(y_data)
-        group_labels = [_group_name] * len(y_data)
-        sub_titles = ['Prompt', 'Response', 'Total']
-        plot_group_bars(y_data,
-                   x_labels,
-                   y_label=y_labels,
-                   group_labels=group_labels,
-                   sub_titles=sub_titles,
-                   n_cols=3,
-                   title="Token usage",
-                   fig_size=(15,9))
+        _mean_query_time = np.mean(_strategy_token_df['query_time'].to_list())
+        y_query_time.append(_mean_query_time)
 
 
+    plot_y = [y_total_token_count, y_prompt_token_count, y_response_token_count]
+    labels = [unique_strategies, unique_strategies, unique_strategies]
+    sub_titles = ["Total token count", "Prompt token count", "Response token count"]
+
+    plot_box_violin(
+        data=plot_y,
+        labels=labels,
+        sub_titles=sub_titles,
+        plot_type="violin",
+        n_cols=4,
+        label_fontsize=10,
+        title="Token usage per Experiment",
+        figsize=(15, 9),
+        )
+
+    prices = {
+        'o3-mini': (1.1, 4.4),
+        'GPT-4o': (2.5, 10.0),
+        'Claude-3.5': (3.0, 15.0),
+        'DeepSeek-R1': (0.8, 2.4),
+        'Gemini-Flash-2.0': (0.1, 0.4),
+    }
+
+    mean_prompt_token_count = [np.mean(ele) for ele in y_prompt_token_count]
+    mean_response_token_count = [np.mean(ele) for ele in y_response_token_count]
+
+    _group = []
+    _group_name = []
+    _labels = list(prices.keys())
+    for i, strategy in enumerate(unique_strategies):
+        _prompt_count = mean_prompt_token_count[i] / 1000000
+        _response_count = mean_response_token_count[i] / 1000000
+
+        _sub_group = []
+        for _modle in _labels:
+            _price = prices[_modle]
+            _prompt_price = _price[0] * _prompt_count
+            _response_price = _price[1] * _response_count
+            _sub_group.append([_prompt_price, _response_price, _prompt_price + _response_price])
+
+        _group.append(_sub_group) 
+        _group_name.append(strategy) 
+
+    _numpy_group = np.array(_group)
+    y_data = [_numpy_group[:,:,i] for i in range(_numpy_group.shape[2])]
+    x_labels = [_labels] * len(y_data)
+    y_labels = ['Price($)'] * len(y_data)
+    group_labels = [_group_name] * len(y_data)
+    sub_titles = ['Prompt', 'Response', 'Total']
+    plot_group_bars(y_data,
+                x_labels,
+                y_label=y_labels,
+                group_labels=group_labels,
+                sub_titles=sub_titles,
+                n_cols=3,
+                title="Price per Experiment",
+                fig_size=(15,9))
 
 
 def plot_search_result(results:list[tuple[str,Population]], save=False, file_name=None):
@@ -1580,7 +1606,7 @@ def plot_search_0209():
     ]
     file_name = None
     if len(file_paths) == 0:
-        dir_path = 'Experiments/pop_40_f'
+        dir_path = 'Experiments/pop_40_f_0220'
         for dir_name in os.listdir(dir_path):
             if not os.path.isdir(os.path.join(dir_path, dir_name)):
                 continue
@@ -1596,10 +1622,12 @@ def plot_search_0209():
     best_pop_map = {}
     for file_path in file_paths:
         pop = pickle.load(open(file_path, "rb"))
-
         n_parent = pop.n_parent
         n_offspring = pop.n_offspring
-        name = f"{n_parent}+{n_offspring}"
+
+        name = f"{n_parent},{n_offspring}"
+        if pop.use_elitism:
+            name = f"{n_parent}+{n_offspring}"
 
         pop_list.append((name, pop))
 
