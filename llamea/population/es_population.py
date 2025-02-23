@@ -88,7 +88,10 @@ class ESPopulation(Population):
     def get_population_size(self):
         return len(self.individuals)
     
-    def add_individual(self, individual: Individual, generation: int = 0):
+    def add_individual(self, individual: Individual, generation: int = -1):
+        if generation < 0:
+            generation = self.get_current_generation()
+
         if generation >= len(self.generations):
             while len(self.generations) <= generation:
                 self.generations.append([])
@@ -111,6 +114,11 @@ class ESPopulation(Population):
                     if individual.id in gen:
                         gen.remove(individual.id)
 
+    def revert_last_generation(self):
+        if self.get_current_generation() == 0:
+            return
+        self.selected_generations.pop()
+
     def select_next_generation(self):
         if len(self.generations) == 0 or len(self.generations[-1]) == 0:
             return
@@ -129,14 +137,16 @@ class ESPopulation(Population):
             if self.use_elitism:
                 _candidates = last_gen + last_pop
                 candidates = sorted(_candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
+                next_pop = candidates[:self.n_parent]
             else:
                 _candidates = last_gen
                 if len(_candidates) < self.n_parent:
-                    logging.warning("Population size is less than n_parent. Using elitism.")
-                    _candidates = _candidates + last_pop
-                candidates = sorted(_candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
+                    logging.warning("Population size is less than n_parent when selecting next generation.")
+                    next_pop = last_pop
+                else:
+                    candidates = sorted(_candidates, key=lambda x: self.individuals[x].fitness, reverse=True)
+                    next_pop = candidates[:self.n_parent]
 
-            next_pop = candidates[:self.n_parent]
             self.selected_generations.append(next_pop)
         else:
             ind_last_gen = [self.individuals[id] for id in last_gen]

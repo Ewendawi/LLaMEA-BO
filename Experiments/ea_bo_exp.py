@@ -296,9 +296,14 @@ def _run_exp(prompt_generator:PromptGenerator,
             if os.path.exists(check_point_path):
                 population = Population.load(check_point_path)
                 logging.info("Load population from check point: %s", check_point_path)
+                inds = population.get_individuals()
+                if len(inds) < population.n_offspring:
+                    population.revert_last_generation()
+                    logging.info("Revert to last generation")
             else:
                 logging.warning("Check point path not exist: %s", check_point_path)
-        elif "pop_warmstart_handlers" in options:
+
+        if "pop_warmstart_handlers" in options:
             warmstart_handlers = options["pop_warmstart_handlers"]
             warmstart_inds = []
             for _handler in warmstart_handlers:
@@ -312,11 +317,16 @@ def _run_exp(prompt_generator:PromptGenerator,
                 ind = Individual()
                 Population.set_handler_to_individual(ind, handler)
                 ind.fitness = handler.eval_result.score
-                population.add_individual(ind, generation=0)
+                population.add_individual(ind)
                 warmstart_inds.append(ind)
             if len(warmstart_inds) > 0:
-                population.select_next_generation()
                 logging.info("Warmstart %d individuals", len(warmstart_inds))
+                if population.get_current_generation() == 0:
+                    if len(warmstart_inds) > population.n_parent:
+                        population.select_next_generation()
+                else:
+                    if len(warmstart_inds) > population.n_offspring:
+                        population.select_next_generation()
 
         if 'llm_mocker' in options:
             llm.mock_res_provider = options['llm_mocker']
