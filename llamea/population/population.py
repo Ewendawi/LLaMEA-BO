@@ -4,6 +4,7 @@ import pickle
 import math
 import difflib
 import itertools
+import concurrent.futures
 from abc import ABC, abstractmethod
 from datetime import datetime
 from collections.abc import Callable
@@ -194,38 +195,53 @@ from sentence_transformers import SentenceTransformer, util
 # disable sentence transformer logging
 logging.getLogger('sentence_transformers').setLevel(logging.WARNING)
 
-def code_diff_similarity(inds:list[Individual]) -> tuple[np.ndarray, np.ndarray]:
+def code_diff_similarity(inds:list[Individual], max_workers=0) -> tuple[np.ndarray, np.ndarray]:
     if not inds:
         return np.array([]), np.array([])
 
     codes = [Population.get_handler_from_individual(ind).code for ind in inds]
-    return _code_diff_similarity(codes)
+    return _code_diff_similarity(codes, max_workers)
 
-def code_diff_similarity_from_handlers(handlers: list) -> tuple[np.ndarray, np.ndarray]:
+def code_diff_similarity_from_handlers(handlers: list, max_workers=0) -> tuple[np.ndarray, np.ndarray]:
     if not handlers:
         return np.array([]), np.array([])
 
     codes = [handler.code for handler in handlers]
-    return _code_diff_similarity(codes)
+    return _code_diff_similarity(codes, max_workers)
 
-def _code_diff_similarity(codes: list) -> tuple[np.ndarray, np.ndarray]:
+def code_compare(code1, code2):
+    diff = difflib.ndiff(code1.splitlines(), code2.splitlines())
+    diffs = sum(1 for x in diff if x.startswith("- ") or x.startswith("+ "))
+    total_lines = max(len(code1.splitlines()), len(code2.splitlines()))
+    similarity_ratio = (total_lines - diffs) / total_lines if total_lines else 1
+    return similarity_ratio
+
+def _code_diff_similarity(codes: list, max_workers=0) -> tuple[np.ndarray, np.ndarray]:
     if not codes:
         return np.array([]), np.array([])
 
     logging.info("Calculating code diversity of %s", len(codes))
 
-    def code_compare(code1, code2):
-        diff = difflib.ndiff(code1.splitlines(), code2.splitlines())
-        diffs = sum(1 for x in diff if x.startswith("- ") or x.startswith("+ "))
-        total_lines = max(len(code1.splitlines()), len(code2.splitlines()))
-        similarity_ratio = (total_lines - diffs) / total_lines if total_lines else 1
-        return similarity_ratio
-    
-    similarity_matrix = np.zeros((len(codes), len(codes)))
-    for i, code1 in enumerate(codes):
-        for j, code2 in enumerate(codes):
-            similarity_matrix[i,j] = code_compare(code1, code2)
-            similarity_matrix[j,i] = similarity_matrix[i,j]
+    if max_workers > 0:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            params = {}
+            for i, code1 in enumerate(codes):
+                for j, code2 in enumerate(codes):
+                    params[(i,j)] = (code1, code2)
+
+            similarity_matrix = np.zeros((len(codes), len(codes)))
+
+            futures = {executor.submit(code_compare, *params[key]): key for key in params}
+            for future in concurrent.futures.as_completed(futures):
+                i, j = futures[future]
+                similarity_matrix[i,j] = future.result()
+                similarity_matrix[j,i] = similarity_matrix[i,j]
+    else:
+        similarity_matrix = np.zeros((len(codes), len(codes)))
+        for i, code1 in enumerate(codes):
+            for j, code2 in enumerate(codes):
+                similarity_matrix[i,j] = code_compare(code1, code2)
+                similarity_matrix[j,i] = similarity_matrix[i,j]
 
     # Calculate mean similarity excluding diagonal (self-similarity)
     mean_similarity = np.array([

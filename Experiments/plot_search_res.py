@@ -1,7 +1,9 @@
 import pickle
 import os
+import logging
 from functools import cmp_to_key
 from datetime import datetime
+import concurrent.futures
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -9,9 +11,10 @@ from matplotlib import pyplot as plt
 from llamea.utils import IndividualLogger
 from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
 from llamea.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
-from llamea.population.population import Population, desc_similarity
+from llamea.population.population import Population, desc_similarity, code_diff_similarity
 from llamea.population.es_population import ESPopulation
 from llamea.evaluator.evaluator_result import EvaluatorResult
+from llamea.utils import setup_logger
 
 
 # utils
@@ -63,7 +66,7 @@ def compare_expressions(expr1, expr2):
             return 1
         if a == b:
             return 0
-        return a > b
+        return 1 if a > b else -1
 
     # 1. split the expression by '_'
     # 2. if sub-expression has '+' or ',', split it by '+' or ','
@@ -97,10 +100,10 @@ def compare_expressions(expr1, expr2):
                     return _cmp(b1, b2)
                 else:
                     return _cmp(a1, a2)
-            
+    return 0
 
 # plot_search_result
-def _process_search_result(results:list[tuple[str,Population]], save=False, file_name=None):
+def _process_search_result(results:list[tuple[str,Population]], save_name=None):
     column_names = [
         'strategy',
         'n_strategy',
@@ -139,8 +142,15 @@ def _process_search_result(results:list[tuple[str,Population]], save=False, file
         return row
 
     res_df = None
-    if not save and file_name is not None:
-        res_df = pd.read_pickle(file_name)
+    _save = False
+    _load = False
+    if save_name is not None: 
+        if os.path.exists(save_name):
+            _load = True
+        else:
+            _save = True
+    if _load:
+        res_df = pd.read_pickle(save_name)
     else: 
         _strategy_count = {}
         res_df = pd.DataFrame(columns=column_names)
@@ -168,8 +178,8 @@ def _process_search_result(results:list[tuple[str,Population]], save=False, file
                         row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=_n_ind, n_strategy=_count)
                         res_df.loc[len(res_df)] = row
 
-    if save and file_name is not None:
-        res_df.to_pickle(file_name)
+    if _save: 
+        res_df.to_pickle(save_name)
     return res_df
 
 def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
@@ -315,56 +325,172 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         title="AOC",
         )
 
-def _plot_serach_pop_similarity(results:list[tuple[str,Population]]):
-    strategy_group = {}
-    for strategy_name, pop in results:
-        if strategy_name not in strategy_group:
-            strategy_group[strategy_name] = []
-        strategy_group[strategy_name].append(pop)
+
+def _calculate_pop_sim(pop:Population, iter_sim_func, total_sim_func):
+    iter_sim = []
+    pop_sim = 0
+    n_iter = 0
+    n_generation = pop.get_current_generation()
+    if pop.n_offspring > 1:
+        for gen in range(n_generation):
+            gen_offsprings = pop.get_offsprings(generation=gen)
+            n_iter += len(gen_offsprings)
+
+            n_fill = n_iter - len(iter_sim)
+            mean_sim, _ = iter_sim_func(gen_offsprings)
+            _sim = np.mean(mean_sim)
+            iter_sim.extend([_sim] * n_fill)
+
+    all_inds = pop.all_individuals()
+    all_mean_sim, _ = total_sim_func(all_inds)
+    pop_sim = np.mean(all_mean_sim)
+
+    return iter_sim, pop_sim
+
+def _calculate_strategy_similarity(pop_list:list[Population], max_workers=8, cal_desc_sim=True, cal_code_sim=False):
+
+    code_sim = None
+    if cal_code_sim:
+        iter_sim_list = []
+        pop_sim_list = []
+
+        def _code_sim_func(pop):
+            return code_diff_similarity(pop, max_workers=max_workers)
+        
+        for pop in pop_list:
+            iter_sim, pop_sim = _calculate_pop_sim(pop, code_diff_similarity, _code_sim_func)
+            if len(iter_sim) > 0:
+                iter_sim_list.append(iter_sim)
+            pop_sim_list.append(pop_sim)
+        iter_sim_list = None if len(iter_sim_list) == 0 else iter_sim_list
+        code_sim = (iter_sim_list, pop_sim_list)
+    
+    desc_sim = None
+    if cal_desc_sim:
+        iter_sim_list = []
+        pop_sim_list = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for pop in pop_list:
+                futures.append(executor.submit(_calculate_pop_sim, pop, desc_similarity, desc_similarity))
+            for future in concurrent.futures.as_completed(futures):
+                iter_sim, pop_sim = future.result()
+                if len(iter_sim) > 0:
+                    iter_sim_list.append(iter_sim)
+                pop_sim_list.append(pop_sim)
+
+        # for pop in pop_list:
+        #     iter_sim, pop_sim = _calculate_pop_sim(pop, desc_similarity, desc_similarity)
+        #     iter_sim_list.append(iter_sim)
+        #     pop_sim_list.append(pop_sim)
+        iter_sim_list = None if len(iter_sim_list) == 0 else iter_sim_list
+        desc_sim = (iter_sim_list, pop_sim_list)
+    
+    return {'Desc Similarity': desc_sim, 'Code Diff By Lines': code_sim} 
+
+def _plot_serach_pop_similarity(results:list[tuple[str,Population]], unique_strategies:list[str], save_name=None):
+    _save_name = save_name
+    if _save_name is not None:
+        _save_name = f"{_save_name}_pop_sim"
+    _save = False
+    _load = False
+    if _save_name is not None:
+        if os.path.exists(_save_name):
+            _load = True
+        else:
+            _save = True
+    
+    if _load:
+        with open(_save_name, 'rb') as f:
+            sim_data = pickle.load(f)
+    else:
+        strategy_group = {}
+        for strategy_name, pop in results:
+            if strategy_name not in strategy_group:
+                strategy_group[strategy_name] = []
+            strategy_group[strategy_name].append(pop)
+
+        sim_data = {}
+        count = 0
+        for strategy_name in unique_strategies:
+            group = strategy_group[strategy_name]
+            sims = _calculate_strategy_similarity(group, 
+                                                  max_workers=6, 
+                                                  cal_desc_sim=True, 
+                                                  cal_code_sim=True
+                                                  )
+
+            for _key, _sim in sims.items():
+                if _key not in sim_data:
+                    sim_data[_key] = {
+                        'y_sim_list': [],
+                        'y_sim_filling': [],
+                        'y_sim_labels': [],
+
+                        'y_pop_sim_list': [],
+                        'y_pop_sim_labels': [],
+                    }
+
+                _sim_data = sim_data[_key]
+                iter_sim_list, pop_sim_list = _sim
+
+                if iter_sim_list is not None:
+                    mean_sim = np.mean(iter_sim_list, axis=0)
+                    std_sim = np.std(iter_sim_list, axis=0)
+                    _sim_data['y_sim_list'].append(mean_sim)
+                    _sim_data['y_sim_filling'].append((mean_sim + std_sim, mean_sim - std_sim))
+                    _sim_data['y_sim_labels'].append(strategy_name)
+
+                if pop_sim_list is not None:
+                    _sim_data['y_pop_sim_list'].append(pop_sim_list)
+                    _sim_data['y_pop_sim_labels'].append(strategy_name)
+
+            count += 1
+            
+        if _save and _save_name is not None:
+            with open(_save_name, 'wb') as f:
+                pickle.dump(sim_data, f)
+
+    y_pop_sim_list = []
+    y_pop_sim_labels = []
+    pop_sub_titles = []
+    for _key, _sim in sim_data.items():
+        y_pop_sim_list.append(_sim['y_pop_sim_list'])
+        y_pop_sim_labels.append(_sim['y_pop_sim_labels'])
+        pop_sub_titles.append(_key)
+
+    plot_box_violin(
+        data=y_pop_sim_list,
+        labels=y_pop_sim_labels,
+        sub_titles=pop_sub_titles,
+        plot_type="violin",
+        n_cols=4,
+        title="Population similarity",
+        label_fontsize=10,
+        figsize=(12, 7),
+        )
 
     y_sim_list = []
     y_sim_filling = []
-    labels = []
-    y_pop_sim_list = []
+    y_sim_labels = []
+    pop_sub_titles = []
+    for _key, _sim in sim_data.items():
+        y_sim_list.append(np.array(_sim['y_sim_list']))
+        y_sim_filling.append(np.array(_sim['y_sim_filling']))
+        y_sim_labels.append(_sim['y_sim_labels'])
+        pop_sub_titles.append(_key)
 
-    for strategy_name, group in strategy_group.items():
-        sim_list = []
-        pop_sim_list = []
-        for pop in group:
-            iter_sim_list = []
-            n_iter = 1
-            n_generation = pop.get_current_generation()
-            for gen in range(n_generation):
-                gen_offsprings = pop.get_offsprings(generation=gen)
-                n_iter += len(gen_offsprings)
-
-                n_fill = n_iter - len(iter_sim_list)
-                mean_sim, _ = desc_similarity(gen_offsprings)
-                _sim = np.mean(mean_sim)
-                iter_sim_list.extend([_sim] * n_fill)
-            sim_list.append(iter_sim_list)
-
-            all_inds = pop.all_individuals()
-            all_mean_sim, _ = desc_similarity(all_inds)
-            pop_sim_list.append(np.mean(all_mean_sim))
-
-        mean_sim = np.mean(sim_list, axis=0)
-        std_sim = np.std(sim_list, axis=0)
-        y_sim_list.append(mean_sim)
-        y_sim_filling.append((mean_sim + std_sim, mean_sim - std_sim))
-
-        labels.append(strategy_name)
-
-        y_pop_sim_list.append(pop_sim_list)
-
-    plot_y = [np.array(y_sim_list)]
-    x_base = np.arange(len(y_sim_list[0]), dtype=np.int16)
-    x = np.tile(x_base, (len(plot_y), 1))
+    x_base = np.arange(y_sim_list[0].shape[1], dtype=np.int16)
+    x = np.tile(x_base, (len(y_sim_list), 1))
     plot_lines(
-        y = plot_y,
+        y = y_sim_list,
         x = x,
-        labels = [labels],
-        filling=[y_sim_filling], 
+        labels = y_sim_labels,
+        filling=y_sim_filling, 
+        sub_titles=pop_sub_titles,
+        label_fontsize=10,
+        linewidth=1.5,
+        figsize=(12, 9),
         )
 
 def _process_error_data(results:list[tuple[str,Population]]):
@@ -555,7 +681,8 @@ def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies
         y = plot_y,
         x = x,
         labels = plot_labels,
-        label_fontsize=9,
+        label_fontsize=10,
+        linewidth=2,
         # filling=fillings,
         sub_titles=sub_titles,
         title="Error rate by generation",
@@ -769,6 +896,8 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
             # offspring selected in this generation
             for ind in gen_offsprings:
                 handler = Population.get_handler_from_individual(ind)
+                if not hasattr(handler, 'query_time'):
+                    continue
                 res = {
                     'strategy': strategy_name,
                     'n_gen': gen+1,
@@ -788,6 +917,14 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
     y_response_token_count = []
     y_query_time = []
 
+    # compitable with 1+1
+    _unique_strategies = []
+    for strategy in unique_strategies:
+        if strategy == '1+1':
+            continue
+        _unique_strategies.append(strategy)
+    unique_strategies = _unique_strategies
+
     for strategy in unique_strategies:
         _strategy_token_df = _all_token_df[_all_token_df['strategy'] == strategy]
         _total_token_count = _strategy_token_df['total_token_count'].to_list()
@@ -802,9 +939,8 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         _mean_query_time = np.mean(_strategy_token_df['query_time'].to_list())
         y_query_time.append(_mean_query_time)
 
-
     plot_y = [y_total_token_count, y_prompt_token_count, y_response_token_count]
-    labels = [unique_strategies, unique_strategies, unique_strategies]
+    labels = [unique_strategies] * len(plot_y)
     sub_titles = ["Total token count", "Prompt token count", "Response token count"]
 
     plot_box_violin(
@@ -815,7 +951,7 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         n_cols=4,
         label_fontsize=10,
         title="Token usage per Experiment",
-        figsize=(15, 9),
+        figsize=(15, 5),
         )
 
     prices = {
@@ -859,21 +995,64 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
                 sub_titles=sub_titles,
                 n_cols=3,
                 title="Price per Experiment",
-                fig_size=(15,9))
+                fig_size=(15,5))
 
+    def _expand_list(idx_list, data_list):
+        _new_data_list = []
+        index = 0
+        for idx, data in zip(idx_list, data_list):
+            _n_filling = idx - index
+            _new_data_list.extend([data] * _n_filling)
+            index = idx
+        return np.array(_new_data_list)
 
-def plot_search_result(results:list[tuple[str,Population]], save=False, file_name=None):
-    res_df = _process_search_result(results, save=save, file_name=file_name)
+    _iter_token_df = _token_df.groupby(['strategy', 'n_iter'])[['total_token_count', 'prompt_token_count', 'response_token_count']].agg(np.mean).reset_index()
+    _y_total_token_count = []
+    _y_prompt_token_count = []
+    _y_response_token_count = []
+    for strategy in unique_strategies:
+        _strategy_token_df = _iter_token_df[_iter_token_df['strategy'] == strategy]
+
+        _iter_list = _strategy_token_df['n_iter'].to_list()
+        
+        _total_token_count = _strategy_token_df['total_token_count'].to_list()
+        _y_total_token_count.append(_expand_list(_iter_list, _total_token_count))
+
+        _prompt_token_count = _strategy_token_df['prompt_token_count'].to_list()
+        _y_prompt_token_count.append(_expand_list(_iter_list, _prompt_token_count))
+
+        _response_token_count = _strategy_token_df['response_token_count'].to_list()
+        _y_response_token_count.append(_expand_list(_iter_list, _response_token_count))
+    
+    plot_y = [_y_total_token_count, _y_prompt_token_count, _y_response_token_count]
+    plot_y = [np.array(ele) for ele in plot_y]
+    plot_x = [np.arange(len(_y_total_token_count[0]))] * len(plot_y)
+    labels = [unique_strategies] * len(plot_y)
+    sub_titles = ["Total token count", "Prompt token count", "Response token count"]
+    plot_lines(
+        y = plot_y,
+        x = plot_x,
+        labels = labels,
+        linewidth=1.5,
+        label_fontsize=10,
+        sub_titles = sub_titles,
+        n_cols=3,
+        figsize=(15, 5),
+        title="Token usage",
+        )
+
+def plot_search_result(results:list[tuple[str,Population]], save_name=None):
+    res_df = _process_search_result(results, save_name=save_name)
     
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
 
     # _plot_search_token_usage(results, unique_strategies)
 
-    _plot_search_aoc(res_df, unique_strategies)
-    _plot_search_group_aoc(res_df, unique_strategies)
+    # _plot_search_aoc(res_df, unique_strategies)
+    # _plot_search_group_aoc(res_df, unique_strategies)
 
-    # _plot_serach_pop_similarity(results)
+    _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
 
     # err_df = _process_error_data(results)
     # _plot_search_all_error_rate(err_df, unique_strategies)
@@ -1065,16 +1244,9 @@ def plot_light_evol_and_final():
                    fig_size=(15,9))
 
 
-def plot_search_0209(dir_path, add_cr_rate=False):
-    file_paths = [
-        # "Experiments/pop_40_f/ESPopulation_evol_1+1_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210035334/ESPopulation_final_0210065735.pkl",
-        # 'Experiments/pop_40_temp/ESPopulation_evol_10+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208164605/ESPopulation_final_0208204450.pkl',
-
-        # 'Experiments/pop_40_test/ESPopulation_evol_3+5_IOHEvaluator_f4_dim-5_budget-100_instances-[1]_repeat-1_0214010030/ESPopulation_final_0214010239.pkl',
-    ]
-    # dir_path = 'Experiments/pop_40_f_0220'
-    file_name = None
-    if len(file_paths) == 0:
+def plot_search_0209(dir_path, add_cr_rate=False, file_paths=None, save_name=None):
+    if file_paths is None:
+        file_paths = []
         for dir_name in os.listdir(dir_path):
             if not os.path.isdir(os.path.join(dir_path, dir_name)):
                 continue
@@ -1086,9 +1258,10 @@ def plot_search_0209(dir_path, add_cr_rate=False):
         
         if len(file_paths) == 0:
             raise ValueError(f"Invalid directory path: {dir_path}")
+    else:
+        if len(file_paths) == 0:
+            raise ValueError(f"Invalid file paths: {file_paths}")
 
-        file_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl' 
-    
     pop_list = []
     best_pop_map = {}
     for file_path in file_paths:
@@ -1110,27 +1283,30 @@ def plot_search_0209(dir_path, add_cr_rate=False):
         if cur_best is None or pop.get_best_of_all().fitness > cur_best.get_best_of_all().fitness:
             best_pop_map[name] = pop
     
-    # save = True
-    save = False
 
-    # file_name = 'Experiments/pop_40_f/df_res_02110305.pkl'
-    file_name = None
-    
-    plot_search_result(pop_list, save=save, file_name=file_name)
+    plot_search_result(pop_list, save_name=save_name)
 
 
 if __name__ == "__main__":
+    setup_logger(level=logging.INFO)
     # plot_search()
 
     # plot_light_evol_and_final()
 
-    dir_path = 'Experiments/pop_40_f_0220'
-    dir_path = 'Experiments/pop_100_f'
+    file_paths = None
+    save_name = None
     add_cr_rate = False
 
-    dir_path = 'Experiments/pop_40_cr'
-    add_cr_rate = True
+    dir_path = 'Experiments/pop_40_f_0220'
+    save_name = 'Experiments/pop_40_f_0220/df_res_02230646.pkl'
+    
+    # dir_path = 'Experiments/pop_100_f'
 
-    plot_search_0209(dir_path, add_cr_rate=add_cr_rate)
+    # dir_path = 'Experiments/pop_40_cr'
+    # add_cr_rate = True
+
+    # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl' 
+
+    plot_search_0209(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name)
 
     pass
