@@ -211,10 +211,20 @@ class ESPopulation(Population):
                     query_items.append(query_item)
                 return query_items
 
-        _n_parent_per_offspring = self.n_parent_per_offspring if n_parent is None else n_parent
         _n_offspring = self.n_offspring
         if max_n_offspring is not None and max_n_offspring < self.n_offspring:
             _n_offspring = max_n_offspring
+
+        _current_gen = self.get_current_generation()
+        if len(self.generations) > _current_gen:
+            # found offspring
+            if len(self.generations[-1]) >= _n_offspring:
+                # has enough offspring
+                return []
+            else:
+                _n_offspring = _n_offspring - len(self.generations[-1])
+
+        _n_parent_per_offspring = self.n_parent_per_offspring if n_parent is None else n_parent
 
         last_pop = self.selected_generations[-1]
         last_pop = [self.individuals[id] for id in last_pop if id in self.individuals]
