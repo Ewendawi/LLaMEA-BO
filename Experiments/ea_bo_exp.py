@@ -191,7 +191,11 @@ def _run_exp(prompt_generator:PromptGenerator,
                 ind = Individual()
                 Population.set_handler_to_individual(ind, handler)
                 ind.fitness = handler.eval_result.score
-
+                ind.name = handler.code_name
+                ind.solution = handler.code
+                ind.feedback = handler.feedback
+                ind.error = handler.error
+                ind.parent_id = handler.parent_ids
                 population.add_individual(ind)
                 warmstart_inds.append(ind)
             if len(warmstart_inds) > 0:

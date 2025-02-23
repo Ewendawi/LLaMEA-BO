@@ -114,6 +114,8 @@ class LLaMBO:
         parent_ids = []
         if not query_item.is_initialized:
             parent_ids = [p.id for p in query_item.parent if p is not None]
+        handler.parent_ids = parent_ids
+
         ind = query_item.offspring
         ind.description = getattr(handler , "desc", "")
         ind.solution = handler.code

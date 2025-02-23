@@ -30,6 +30,8 @@ class ResponseHandler(ABC):
 
         self._eval_result:EvaluatorResult = None
 
+        self.parent_ids = []
+
         self.query_time = 0
         self.prompt_token_count = 0
         self.response_token_count = 0
