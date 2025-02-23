@@ -73,6 +73,10 @@ class IOHObjectiveFn:
             logging.error("%s Over budget: %s/%s", self.name, self.obj_fn.state.evaluations, self.budget)
             if not self.ignore_over_budget:
                 raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by func should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the func to evaluate the points is a alternative option.")
+        
+        # check if x are nan
+        if np.isnan(x).any():
+            raise ValueError(f"x({x}) contains nan values")
 
         if self.x_hist is None:
             self.x_hist = x
