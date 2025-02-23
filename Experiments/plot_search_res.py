@@ -1122,25 +1122,6 @@ def plot_search_0209(dir_path, add_cr_rate=False):
 if __name__ == "__main__":
     # plot_search()
 
-    # _temp_dir_path = 'Experiments/pop_40_temp2/ESPopulation_evol_4+8_cr9_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0222171812'
-    # _temp_dir_path = 'Experiments/pop_40_f_0220/ESPopulation_evol_4+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0220023034'
-    # # load all pkls in the directory
-    # file_paths = []
-    # for file in os.listdir(_temp_dir_path):
-    #     if file.endswith(".pkl") and 'handler' not in file:
-    #         file_paths.append(os.path.join(_temp_dir_path, file))
-    # pop_list = []
-    # for file_path in file_paths:
-    #     with open(file_path, "rb") as f:
-    #         target = pickle.load(f)
-    #         pop_list.append(target)
-
-    # for pop in pop_list:
-    #     for ind in pop.all_individuals():
-    #         handler = ESPopulation.get_handler_from_individual(ind)
-            # if handler.error is not None and handler.eval_result 
-            #     continue
-
     # plot_light_evol_and_final()
 
     dir_path = 'Experiments/pop_40_f_0220'
@@ -1148,7 +1129,6 @@ if __name__ == "__main__":
     add_cr_rate = False
 
     dir_path = 'Experiments/pop_40_cr'
-    dir_path = 'Experiments/pop_40_temp2'
     add_cr_rate = True
 
     plot_search_0209(dir_path, add_cr_rate=add_cr_rate)
