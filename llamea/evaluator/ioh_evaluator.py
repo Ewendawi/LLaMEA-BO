@@ -282,7 +282,36 @@ class IOHEvaluator(AbstractEvaluator):
 
         return eval_basic_result
 
-    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = -1, use_multi_process=False, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
+    def _check_timeout(self, start_time, timeout):
+        if timeout is not None:
+            _current_eval_time = time.perf_counter()
+            _time_diff = _current_eval_time - start_time
+            if _time_diff > timeout:
+                return True
+        return False
+
+    def _post_process_error_check(self, eval_result: EvaluatorResult, eval_basic_result: EvaluatorBasicResult, timeout, start_time):
+        _err = eval_basic_result.error
+        _err_type = eval_basic_result.error_type
+        if _err is None and self._check_timeout(start_time, timeout):
+            _err = TimeoutError("Evaluation timed out (%d)", timeout)
+            _err_type = "Timeout"
+        if _err is not None:
+            eval_result.error = _err 
+            eval_result.error_type = _err_type
+        else:
+            eval_result.result.append(eval_basic_result)
+
+    def _logging_eval_process(self, eval_result, interval, total_tasks):
+        cls_name = eval_result.name
+        if eval_result.error is not None:
+            logging.error("Evaluating %s: %s", cls_name, eval_result.error_type)
+        else:
+            done_tasks = len(eval_result.result)
+            if done_tasks % interval == 0:
+                logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
+            
+    def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
         """Evaluate an individual."""
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
@@ -309,14 +338,10 @@ class IOHEvaluator(AbstractEvaluator):
         interval = min(max(1, total_tasks // 4), 20)
 
         _all_eval_time_start = time.perf_counter()
-        def _check_timeout(start_time, timeout):
-            if timeout is not None:
-                _current_eval_time = time.perf_counter()
-                _time_diff = _current_eval_time - start_time
-                if _time_diff > timeout:
-                    return True
-            return False
-
+        
+        max_eval_workers = self.max_eval_workers
+        use_multi_process = self.use_multi_process
+        timeout = self.timeout
         if max_eval_workers is None or max_eval_workers > 0:
             max_workers = min(os.cpu_count() - 1, max_eval_workers)
             if use_multi_process:
@@ -329,28 +354,16 @@ class IOHEvaluator(AbstractEvaluator):
             executor = executor_cls(max_workers=max_workers)
             futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
             _should_cancel = False
-
             for future in concurrent.futures.as_completed(futures.keys()):
                 res = future.result()
                 eval_basic_result = self.__process_results(*res)
 
-                _err = eval_basic_result.error
-                _err_type = eval_basic_result.error_type
-                if _err is None and _check_timeout(_all_eval_time_start, timeout):
-                    _err = TimeoutError("Evaluation timed out (%ds)", timeout)
-                    _err_type = "Timeout"
+                self._post_process_error_check(eval_result, eval_basic_result, timeout, _all_eval_time_start)
+                self._logging_eval_process(eval_result, interval, total_tasks)
 
-                if _err is not None:
-                    eval_result.error = _err
-                    eval_result.error_type = _err_type
-                    logging.error("Evaluating %s: Got Error - %s", cls_name, _err_type)
-                    _should_shutdown = True
+                if eval_result.error is not None:
+                    _should_cancel = True
                     break
-                else:
-                    eval_result.result.append(eval_basic_result)
-                    done_tasks = len(eval_result.result)
-                    if done_tasks % interval == 0:
-                        logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
 
             logging.info("Evaluating %s: Shutting down executor", cls_name)
             # better to wait for all running tasks to finish in case of resource competition
@@ -363,21 +376,10 @@ class IOHEvaluator(AbstractEvaluator):
                 res = ioh_evaluate_block(**param)
                 eval_basic_result = self.__process_results(*res)
 
-                _err = eval_basic_result.error
-                _err_type = eval_basic_result.error_type
-                if _err is None and _check_timeout(_all_eval_time_start, timeout):
-                    _err = TimeoutError("Evaluation timed out (%d)", timeout)
-                    _err_type = "Timeout"
-                if _err is not None:
-                    eval_result.error = _err 
-                    eval_result.error_type = _err_type
-                    logging.error("Evaluating %s: %s", cls_name, _err_type)
+                self._post_process_error_check(eval_result, eval_basic_result, timeout, _all_eval_time_start)
+                self._logging_eval_process(eval_result, interval, total_tasks)
+                if eval_result.error is not None:
                     break
-                else:
-                    eval_result.result.append(eval_basic_result)
-                    done_tasks = len(eval_result.result)
-                    if done_tasks % interval == 0:
-                        logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
 
         _all_eval_time = time.perf_counter() - _all_eval_time_start
         if eval_result.error is None:

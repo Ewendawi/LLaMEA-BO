@@ -48,8 +48,6 @@ class LLaMBO:
                        response_handler:ResponseHandler,
                        task:GenerationTask,
                        evaluator:AbstractEvaluator,
-                       n_eval_workers:int=0,
-                       timeout:int=1800,
                        gpu_name:str=None,
                        retry:int=3,
                        options=None,
@@ -103,7 +101,7 @@ class LLaMBO:
                     response_handler.code = response_handler.code.replace("\"cuda\"", f"\"{gpu_name}\"")
                     logging.info("replaced 'cuda' with '%s'", gpu_name)
 
-        res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name, max_eval_workers=n_eval_workers, timeout=timeout)
+        res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name)
 
         response_handler.eval_result = res
 
@@ -148,10 +146,8 @@ class LLaMBO:
                        n_population: int = 1,
                        n_retry: int = 3,
                        n_query_threads: int = 0,
-                       n_eval_workers: int = 0,
                        max_interval: int = 0,
-                       gpu_name: str = None,
-                       time_out_per_eval: int = 1800):
+                       gpu_name: str = None):
 
         logging.info("==========Starting==========")
         logging.info("%s", llm.model_name())
@@ -225,8 +221,6 @@ class LLaMBO:
                         "response_handler": next_handler,
                         "task": current_task,
                         "evaluator": _evaluator,
-                        "n_eval_workers": n_eval_workers,
-                        "timeout": time_out_per_eval,
                         "retry": n_retry,
                         "gpu_name": gpu_name,
                     }

@@ -68,8 +68,6 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
     cls_name = algo_cls.__name__
     logging.info("Start evaluating %s on %s", cls_name, evaluator)
 
-    _max_eval_workers = 0
-    _use_multi_process = False
     _ignore_cls = False
     extra_init_params = {}
     if options is not None:
@@ -81,10 +79,10 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
                     extra_init_params['device'] = options['device']
 
         if 'max_eval_workers' in options:
-            _max_eval_workers = options['max_eval_workers']
+            evaluator.max_eval_workers = options['max_eval_workers']
 
         if 'use_multi_process' in options:
-            _use_multi_process = options['use_multi_process']
+            evaluator.use_multi_process = options['use_multi_process']
 
         if 'ignore_cls' in options:
             _ignore_cls = options['ignore_cls']
@@ -97,8 +95,6 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
         cls_name=cls_name,
         cls=algo_cls,
         cls_init_kwargs=extra_init_params,
-        max_eval_workers=_max_eval_workers,
-        use_multi_process=_use_multi_process
     )
     if save:
         save_dir = 'Experiments/algo_eval_res'
@@ -210,14 +206,14 @@ def debug_algo_eval():
 
     for res in res_list:
         for i, r in enumerate(res.result):
-            r_id = r.id
-            r_split = r_id.split("-")
-            problem_id = int(r_split[0])
-            instance_id = int(r_split[1])
-            repeat_id = int(r_split[2])
-            title = f'{res.name} on F{problem_id} instance {instance_id} repeat {repeat_id}'
             _x_hist = r.x_hist
             if _x_hist.shape[1] == 2:
+                r_id = r.id
+                r_split = r_id.split("-")
+                problem_id = int(r_split[0])
+                instance_id = int(r_split[1])
+                repeat_id = int(r_split[2])
+                title = f'{res.name} on F{problem_id} instance {instance_id} repeat {repeat_id}'
                 plot_contour(problem_id=problem_id, instance=instance_id, title=title, points=_x_hist)
 
 def eval_final_algo():

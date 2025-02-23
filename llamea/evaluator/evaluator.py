@@ -9,6 +9,11 @@ class AbstractEvaluator(ABC):
         self.ignore_over_budget = False
         self.inject_critic = False
 
+        self.max_eval_workers = 0
+        self.use_multi_process = False
+        self.timeout = None
+        self.use_mpi = False
+
     @abstractmethod
     def problem_prompt(self) -> str:
         pass
@@ -26,7 +31,7 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, code, cls_name, cls=None, max_eval_workers:int = 0, use_multi_process=False, timeout:int=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
         pass
 
     def evaluate_others(self) -> list[EvaluatorResult]:

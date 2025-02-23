@@ -82,13 +82,11 @@ def _run_exp(prompt_generator:PromptGenerator,
             gpu_name:str=None,
             max_interval:int=5,
             n_query_threads:int=0,
-            n_eval_workers:int=0,
-            time_out_per_eval:int=None,
-            options:dict=None,
-            ):
+            options:dict=None):
     llambo = LLaMBO()
 
     if options is not None:
+        # evaluator
         eval_overwrite_type = options.get("eval_overwrite_type", None)
         if eval_overwrite_type is not None:
             if eval_overwrite_type == 'test':
@@ -106,9 +104,17 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "eval_inject_critic" in options:
             evaluator.inject_critic = options["eval_inject_critic"]
 
+        if "time_out_per_eval" in options:
+            evaluator.timeout = options["time_out_per_eval"]
+            
+        if "n_eval_workers" in options:
+            evaluator.max_eval_workers = options["n_eval_workers"]
+
+        # prompt_generator
         if 'prompt_problem_desc' in options:
             prompt_generator.problem_desc = options['prompt_problem_desc']
 
+        # population
         if "pop_debug_save_on_the_fly" in options:
             population.debug_save_on_the_fly = options["pop_debug_save_on_the_fly"]
 
@@ -199,9 +205,7 @@ def _run_exp(prompt_generator:PromptGenerator,
     llambo.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,
                         n_retry=5,
-                        time_out_per_eval=time_out_per_eval,
                         n_query_threads=n_query_threads,
-                        n_eval_workers=n_eval_workers,
                         gpu_name=gpu_name,
                         max_interval=max_interval
                         )
@@ -346,48 +350,6 @@ def show_code_similarity():
 
         pass
 
-def get_search_default_params():
-    params = {
-        # "time_out_per_eval": 60 * 20,
-        "time_out_per_eval": None,
-
-        "llm": get_llm(),
-        "prompt_generator": get_bo_prompt_generator(),
-        "n_generations": np.inf,
-        "n_population": 40,
-        "n_query_threads": 0,
-        "n_eval_workers": 0,
-        "gpu_name": "cuda:7",
-        "max_interval": 5,
-        "evaluator": get_IOHEvaluator_for_evol(),
-        "options": {
-            # 'pop_load_check_point_path': "Experiments/pop_temp/xxx.pkl",
-            'pop_debug_save_on_the_fly': True,
-            # 'pop_warmstart_handlers': [handler|handler_path],
-            # 'pop_save_check_point_interval': 1,
-            # 'pop_save_dir': 'Experiments/pop_temp',
-
-            # 'pop_preorder_aware_init': True,
-            # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
-            # 'pop_selection_strategy': diversity_awarness_selection_fn,
-            # 'pop_replaceable_parent_selection': True,
-            # 'pop_random_parent_selection': False,
-            # 'pop_exclusive_operations': True,
-
-
-            # 'eval_inject_critic': True,
-
-            # 'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
-            # 'test_eval_problems': [4, 10],
-            # 'test_eval_instances': [1],
-            # 'test_eval_repeat': 2,
-            # 'test_eval_budget': 60,
-
-            # 'llm_mocker': None,
-        }
-    }
-    return params
-
 def get_llm():
     # MODEL = 'deepseek/deepseek-chat'
 
@@ -436,22 +398,23 @@ if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
-    _params = get_search_default_params()
-    _new_params = {
+    _params = {
+        "n_generations": np.inf,
         "n_population": 40,
+
         "n_query_threads": 0,
+        "max_interval": 5,
 
-        # Choose time_out_per_eval carefully when running multiple evaluations of expriments in parallel due to OS's dispatching mechanism
-        "n_eval_workers": 0,
-        "time_out_per_eval": 60 * 30,
-
-        # "gpu_name": "cuda:7",
         "gpu_name": None,
+
+        "llm": get_llm(),
+        "prompt_generator": get_bo_prompt_generator(),
+        "evaluator": get_IOHEvaluator_for_evol(),
 
         "options": {
             'pop_debug_save_on_the_fly': True,
             # 'pop_warmstart_handlers': [],
-            'pop_load_check_point_path': '',
+            # 'pop_load_check_point_path': '',
 
             'pop_save_check_point_interval': 1,
             'pop_preorder_aware_init': True,
@@ -468,6 +431,9 @@ if __name__ == "__main__":
             # 'pop_cr_light_promptor': get_light_Promptor_for_crossover(),
             # 'es_pop_is_elitism': False,
 
+            "n_eval_workers": 0,
+            "time_out_per_eval": 60 * 30,
+
             'eval_inject_critic': False,
             'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
             'test_eval_problems': [4], # [4, 10],
@@ -481,10 +447,8 @@ if __name__ == "__main__":
         }
     }
 
-    _params.update(_new_params)
-
-    N_PARENT = 4
-    N_OFFSPRING = 8
+    N_PARENT = 1
+    N_OFFSPRING = 1
 
     run_mu_lambda_exp(
         n_parent=N_PARENT,
