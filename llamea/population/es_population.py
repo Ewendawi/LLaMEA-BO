@@ -222,7 +222,7 @@ class ESPopulation(Population):
                 # has enough offspring
                 return []
             else:
-                _n_offspring = _n_offspring - len(self.generations[-1])
+                _n_offspring = min(self.n_offspring - len(self.generations[-1]), _n_offspring)
 
         _n_parent_per_offspring = self.n_parent_per_offspring if n_parent is None else n_parent
 

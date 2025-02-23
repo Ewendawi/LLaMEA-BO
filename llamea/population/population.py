@@ -143,10 +143,10 @@ class Population(ABC):
                 f.write(prompt)
 
             raw_res = handler.raw_response
-            if individual.feedback:
-                raw_res += f'\n## Feedback\n {individual.feedback}'
-            elif individual.error:
-                raw_res += f'\n## Error\n {individual.error}'
+            if handler.feedback:
+                raw_res += f'\n## Feedback\n {handler.feedback}'
+            elif handler.error:
+                raw_res += f'\n## Error\n {handler.error}'
             res_path = f'{_save_dir}/{file_name}_respond.md'
             with open(res_path, 'w', encoding='utf-8') as f:
                 f.write(raw_res)

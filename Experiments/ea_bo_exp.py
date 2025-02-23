@@ -154,9 +154,6 @@ def _run_exp(prompt_generator:PromptGenerator,
         if 'es_pop_is_elitism' in options:
             population.use_elitism = options['es_pop_is_elitism']
 
-        if "pop_save_dir" in options:
-            population.save_dir = options["pop_save_dir"]
-
         if population.get_current_generation() == 0:
             # population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
             population.name += f"_{evaluator}"
@@ -169,15 +166,20 @@ def _run_exp(prompt_generator:PromptGenerator,
                 population = Population.load(check_point_path)
                 logging.info("Load population from check point: %s", check_point_path)
                 inds = population.get_individuals()
-                if len(inds) < population.n_offspring:
+                if len(inds) < population.n_parent:
                     population.revert_last_generation()
                     logging.info("Revert to last generation")
             else:
                 logging.warning("Check point path not exist: %s", check_point_path)
 
+        if "pop_save_dir" in options:
+            population.save_dir = options["pop_save_dir"]
+
         if "pop_warmstart_handlers" in options:
             warmstart_handlers = options["pop_warmstart_handlers"]
             warmstart_inds = []
+            _old_save_on_the_fly = population.debug_save_on_the_fly
+            population.debug_save_on_the_fly = False
             for _handler in warmstart_handlers:
                 handler = _handler
                 if isinstance(_handler, str):
@@ -189,6 +191,7 @@ def _run_exp(prompt_generator:PromptGenerator,
                 ind = Individual()
                 Population.set_handler_to_individual(ind, handler)
                 ind.fitness = handler.eval_result.score
+
                 population.add_individual(ind)
                 warmstart_inds.append(ind)
             if len(warmstart_inds) > 0:
@@ -199,6 +202,7 @@ def _run_exp(prompt_generator:PromptGenerator,
                 else:
                     if len(warmstart_inds) > population.n_offspring:
                         population.select_next_generation()
+            population.debug_save_on_the_fly = _old_save_on_the_fly
 
         if 'llm_mocker' in options:
             llm.mock_res_provider = options['llm_mocker']
