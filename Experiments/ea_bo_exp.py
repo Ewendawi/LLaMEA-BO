@@ -110,6 +110,9 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "n_eval_workers" in options:
             evaluator.max_eval_workers = options["n_eval_workers"]
 
+        if 'use_mpi' in options:
+            evaluator.use_mpi = options['use_mpi']
+
         # prompt_generator
         if 'prompt_problem_desc' in options:
             prompt_generator.problem_desc = options['prompt_problem_desc']
@@ -433,6 +436,7 @@ if __name__ == "__main__":
 
             "n_eval_workers": 0,
             "time_out_per_eval": 60 * 30,
+            # 'use_mpi': True,
 
             'eval_inject_critic': False,
             'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 

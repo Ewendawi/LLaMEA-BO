@@ -341,8 +341,42 @@ class IOHEvaluator(AbstractEvaluator):
         
         max_eval_workers = self.max_eval_workers
         use_multi_process = self.use_multi_process
+        use_mpi = self.use_mpi
         timeout = self.timeout
-        if max_eval_workers is None or max_eval_workers > 0:
+        if use_mpi:
+            from mpi4py import MPI
+            from mpi4py.futures import MPIPoolExecutor
+            from mpi4py.futures import get_comm_workers
+            
+            comm = MPI.COMM_WORLD
+            size = comm.Get_size()
+            rank = comm.Get_rank()
+
+            if size < 2:
+                raise ValueError("Requires at least 2 MPI processes.")
+
+            logging.info("Evaluating %s: %s tasks, using MPI with %s max_workers", cls_name, total_tasks, size)
+                
+            executor = MPIPoolExecutor(max_workers=size)  
+            if rank == 0:  
+                futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
+                _should_cancel = False
+                for future in concurrent.futures.as_completed(futures.keys()):
+                    res = future.result()
+                    eval_basic_result = self.__process_results(*res)
+
+                    self._post_process_error_check(eval_result, eval_basic_result, timeout, _all_eval_time_start)
+                    self._logging_eval_process(eval_result, interval, total_tasks)
+
+                    if eval_result.error is not None:
+                        _should_cancel = True
+                        break
+
+                logging.info("Evaluating %s: Shutting down executor", cls_name)
+                # better to wait for all running tasks to finish in case of resource competition
+                executor.shutdown(wait=True, cancel_futures=_should_cancel)
+                logging.info("Evaluating %s: Executor shut down", cls_name)
+        elif max_eval_workers is None or max_eval_workers > 0:
             max_workers = min(os.cpu_count() - 1, max_eval_workers)
             if use_multi_process:
                 logging.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)

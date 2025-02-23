@@ -84,6 +84,9 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
         if 'use_multi_process' in options:
             evaluator.use_multi_process = options['use_multi_process']
 
+        if 'use_mpi' in options:
+            evaluator.use_mpi = options['use_mpi']
+
         if 'ignore_cls' in options:
             _ignore_cls = options['ignore_cls']
     
@@ -168,9 +171,6 @@ def debug_algo_eval():
     file_map = {
         # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
         # 'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
-        # 'AdaptiveBatchBOv7': 'Experiments/pop_40_f/ESPopulation_evol_1+1_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210043001/25-26_AdaptiveBatchBOv7_0.0748.py',
-
-        'AdaptiveLocalPenaltyVarianceBOv3':'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208230817/5-40_AdaptiveLocalPenaltyVarianceBOv3_0.0482.py',
     }
 
     from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO, BLCMAES, BLHEBO
@@ -198,6 +198,7 @@ def debug_algo_eval():
         # 'is_baseline': True,
         # 'max_eval_workers': 4,
         # 'use_multi_process': True,
+        # 'use_mpi': True,
         # 'time_profile': True,
     }
 
