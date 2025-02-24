@@ -190,6 +190,9 @@ class Population(ABC):
         
         
 # Utility functions
+import torch
+from transformers import AutoTokenizer, AutoModel
+from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer, util
 
 # disable sentence transformer logging
@@ -247,6 +250,61 @@ def _code_diff_similarity(codes: list, max_workers=0) -> tuple[np.ndarray, np.nd
     mean_similarity = np.array([
         np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
         for i in range(len(codes))
+    ])
+
+    return mean_similarity, similarity_matrix
+
+def code_bert_similarity(inds:list[Individual]) -> tuple[np.ndarray, np.ndarray]:
+    if not inds:
+        return np.array([]), np.array([])
+
+    codes = [Population.get_handler_from_individual(ind).code for ind in inds]
+    return _code_bert_similarity(codes)
+
+def code_bert_similarity_from_handlers(handlers: list) -> tuple[np.ndarray, np.ndarray]:
+    if not handlers:
+        return np.array([]), np.array([])
+
+    codes = [handler.code for handler in handlers]
+    return _code_bert_similarity(codes)
+
+def _code_bert_similarity(code_list: list[str], 
+                        #   model_name="microsoft/codebert-base", 
+                          model_name='dbernsohn/roberta-python',
+                          batch_size=32, 
+                          device=None
+) -> tuple[np.ndarray, np.ndarray]:
+    logging.info("Calculating code diversity of %s", len(code_list))
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+
+    num_batches = (len(code_list) + batch_size - 1) // batch_size
+    all_embeddings = []
+
+    for i in range(num_batches):
+        batch_codes = code_list[i * batch_size : (i + 1) * batch_size]
+
+        inputs = tokenizer(
+            batch_codes, return_tensors="pt", padding=True, truncation=True, max_length=512
+        ).to(device)
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+            embeddings = outputs.last_hidden_state[:, 0, :] # get CLS embedding.
+            all_embeddings.append(embeddings.cpu().numpy())
+
+    all_embeddings = np.concatenate(all_embeddings, axis=0)  # Combine batches
+    similarity_matrix = cosine_similarity(all_embeddings)
+
+    # Calculate mean similarity excluding diagonal (self-similarity)
+    mean_similarity = np.array([
+        np.mean(np.concatenate([similarity_matrix[i,:i], similarity_matrix[i,i+1:]]))
+        for i in range(len(code_list))
     ])
 
     return mean_similarity, similarity_matrix

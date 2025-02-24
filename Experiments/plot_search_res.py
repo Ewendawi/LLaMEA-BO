@@ -11,7 +11,7 @@ from matplotlib import pyplot as plt
 from llamea.utils import IndividualLogger
 from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
 from llamea.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
-from llamea.population.population import Population, desc_similarity, code_diff_similarity
+from llamea.population.population import Population, desc_similarity, code_diff_similarity, code_bert_similarity
 from llamea.population.es_population import ESPopulation
 from llamea.evaluator.evaluator_result import EvaluatorResult
 from llamea.utils import setup_logger
@@ -354,11 +354,8 @@ def _calculate_strategy_similarity(pop_list:list[Population], max_workers=8, cal
         iter_sim_list = []
         pop_sim_list = []
 
-        def _code_sim_func(pop):
-            return code_diff_similarity(pop, max_workers=max_workers)
-        
         for pop in pop_list:
-            iter_sim, pop_sim = _calculate_pop_sim(pop, code_diff_similarity, _code_sim_func)
+            iter_sim, pop_sim = _calculate_pop_sim(pop, code_bert_similarity, code_bert_similarity)
             if len(iter_sim) > 0:
                 iter_sim_list.append(iter_sim)
             pop_sim_list.append(pop_sim)
@@ -386,7 +383,7 @@ def _calculate_strategy_similarity(pop_list:list[Population], max_workers=8, cal
         iter_sim_list = None if len(iter_sim_list) == 0 else iter_sim_list
         desc_sim = (iter_sim_list, pop_sim_list)
     
-    return {'Desc Similarity': desc_sim, 'Code Diff By Lines': code_sim} 
+    return {'Desc Similarity': desc_sim, 'Code Similarity': code_sim} 
 
 def _plot_serach_pop_similarity(results:list[tuple[str,Population]], unique_strategies:list[str], save_name=None):
     _save_name = save_name

@@ -55,11 +55,11 @@ class LLaMBO:
         if session_messages is None:
             return response_handler
 
-        logging.info("Querying")
-        res_content = ''
         _llm_params = {}
         if options is not None:
             _llm_params.update(options.get("llm_params", {}))
+        logging.info("Querying with: %s", _llm_params)
+        res_content = ''
         for i_try in range(retry):
             response = llm.chat(session_messages, **_llm_params)
             res_content = response.text
@@ -151,7 +151,9 @@ class LLaMBO:
                        n_retry: int = 3,
                        n_query_threads: int = 0,
                        max_interval: int = 0,
-                       gpu_name: str = None):
+                       gpu_name: str = None,
+                       options=None,
+                       ):
 
         logging.info("==========Starting==========")
         logging.info("%s", llm.model_name())
@@ -227,6 +229,7 @@ class LLaMBO:
                         "evaluator": _evaluator,
                         "retry": n_retry,
                         "gpu_name": gpu_name,
+                        'options': options,
                     }
                     params.append((kwargs, query_item))
 

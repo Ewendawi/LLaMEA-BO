@@ -6,7 +6,7 @@ import numpy as np
 from llamea import LLaMBO
 from llamea.llm import LLMmanager, LLMS
 from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator, GenerationTask
-from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn, desc_similarity_from_handlers, code_diff_similarity_from_handlers, family_competition_selection_fn
+from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
 from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
 from llamea.utils import setup_logger
 from llamea.individual import Individual
@@ -84,6 +84,7 @@ def _run_exp(prompt_generator:PromptGenerator,
             n_query_threads:int=0,
             options:dict=None):
     llambo = LLaMBO()
+    evol_options = {}
 
     if options is not None:
         # evaluator
@@ -211,15 +212,18 @@ def _run_exp(prompt_generator:PromptGenerator,
         if 'llm_mocker' in options:
             llm.mock_res_provider = options['llm_mocker']
 
-    
+        if 'llm_temp' in options:
+            llm_options = evol_options.get('llm_params', {})
+            llm_options['temperature'] = options['llm_temp']
+            evol_options['llm_params'] = llm_options
 
     llambo.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,
                         n_retry=5,
                         n_query_threads=n_query_threads,
                         gpu_name=gpu_name,
-                        max_interval=max_interval
-                        )
+                        max_interval=max_interval,
+                        options=evol_options)
 
     population.save(suffix='final')
 
@@ -343,24 +347,6 @@ def tune_vanilla_bo(params):
     test_eval = False
     tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
 
-def show_code_similarity():
-    file_paths = [
-        'Experiments/temperature_res/0215081907/temperature_res.pkl',
-    ]
-
-    for file_path in file_paths:
-        with open(file_path, "rb") as f:
-            target = pickle.load(f)
-
-
-        for temperature_res in target:
-            mean_sim, sim_matrix = code_diff_similarity_from_handlers(temperature_res[0])
-
-            print(f"Mean similarity: {mean_sim}")
-            print(sim_matrix)
-
-        pass
-
 def get_llm():
     # MODEL = 'deepseek/deepseek-chat'
 
@@ -456,6 +442,7 @@ if __name__ == "__main__":
             # 'prompt_problem_desc': 'one noiseless function:F2 Ellipsoid Separable Function',
 
             # 'llm_mocker': mock_res_provider,
+            # 'llm_temp': 0.5,
         }
     }
 
