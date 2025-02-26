@@ -267,7 +267,6 @@ class RequestClient(LLMClient):
             return res
 
 class LLMmanager:
-    """LLM manager, currently only supports ChatGPT models."""
     def __init__(self, model_key: str):
         if model_key not in LLMS:
             raise ValueError(f"Invalid model key: {model_key}")

@@ -156,6 +156,40 @@ def run_algo_eval_from_file_map(evaluator, file_map=None, cls_list=None, plot=Fa
 
     return res_list
 
+def list_top_k_res(res_list, k=5):
+    file_paths = [
+        '0-4_TrustRegionActiveLearningBO_0.0767_handler.pkl',
+        '1-13_TrustRegionMemoryGradientBO_0.0819_handler.pkl',
+
+        '2-13_AdaptiveRegionBOv2_0.0761_handler.pkl',
+        '7-49_ARSDKBO_0.0814_handler.pkl',
+
+        '5-84_MATRBO_V2_0.0864_handler.pkl',
+
+        '9-70_ATRCGRMFLSBO_0.0733_handler.pkl',
+
+        '6-94_RVIBADEBO_0.0744_handler.pkl',
+
+        '3-26_ATTRTSLBO_0.0808_handler.pkl',
+
+        '4-33_TrustRegionThompsonBO_AEGFS_0.0806_handler.pkl',
+
+        '5-37_TRATVDMBO_0.0867_handler.pkl',
+
+        '0-2_ATRBO_0.0905_handler.pkl',
+        '1-20_ATRBO_DKAI_0.0961_handler.pkl',
+
+        
+        '5-38_HistoryAwareAdaptiveExplorationBO_0.0532_handler.pkl',
+        '5-40_RATTSLocalBO_0.0563_handler.pkl',
+        '4-36_TSAdaptiveCMA_ESBO_v2_0.0602_handler.pkl',
+        '4-33_EADETSLSBO_0.0664_handler.pkl',
+        '2-14_RefinedEnsembleThompsonSamplingAdaptiveKernelDiversityBO_0.0515_handler.pkl',
+        '5-38_BudgetAwareThompsonDuelingBO_ABDE_0.0643_handler.pkl',
+    ]
+    
+    pass
+
 def debug_algo_eval():
     problems = [2]
     # problems = list(range(1, 25))
@@ -214,7 +248,7 @@ def debug_algo_eval():
                 problem_id = int(r_split[0])
                 instance_id = int(r_split[1])
                 repeat_id = int(r_split[2])
-                title = f'{res.name} on F{problem_id} instance {instance_id} repeat {repeat_id}'
+                title = f'{res.name} on F{problem_id} instance {instance_id}'
                 plot_contour(problem_id=problem_id, instance=instance_id, title=title, points=_x_hist)
 
 def eval_final_algo():

@@ -359,37 +359,37 @@ def _plot_algo_iter(res_df:pd.DataFrame):
         'loss': 'Loss',
         'best_loss': 'Best Loss',
 
-        'r2': 'R2 on test',
-        'r2_on_train' : 'R2 on train',
-        'uncertainty' : 'Uncertainty on test',
-        'uncertainty_on_train' : 'Uncertainty on train',
+        # 'r2': 'R2 on test',
+        # 'r2_on_train' : 'R2 on train',
+        # 'uncertainty' : 'Uncertainty on test',
+        # 'uncertainty_on_train' : 'Uncertainty on train',
 
-        'grid_coverage' : 'Grid Coverage',
+        # 'grid_coverage' : 'Grid Coverage',
 
         # 'dbscan_circle_coverage': 'DBSCAN Circle Coverage',
         # 'dbscan_rect_coverage': 'DBSCAN Rect Coverage',
 
-        'online_rect_coverage': 'Online Cluster Rect Coverage',
+        # 'online_rect_coverage': 'Online Cluster Rect Coverage',
         # 'online_circle_coverage': 'Online Circle Coverage',
 
-        'acq_grid_coverage' : 'Acq Grid Coverage',
+        # 'acq_grid_coverage' : 'Acq Grid Coverage',
 
         # 'acq_dbscan_circle_coverage': 'DBSCAN Circle Coverage(Acq)',
         # 'acq_dbscan_rect_coverage': 'DBSCAN Rect Coverage(Acq)',
 
-        'acq_online_rect_coverage': 'Online Cluster Rect Coverage(Acq)',
+        # 'acq_online_rect_coverage': 'Online Cluster Rect Coverage(Acq)',
         # 'acq_online_circle_coverage': 'Online Circle Coverage(Acq)',
 
-        'exploitation_rate': 'Exploitation Rate',
-        'acq_exploitation_rate': 'Acq Exploitation Rate(er)',
+        # 'exploitation_rate': 'Exploitation Rate',
+        # 'acq_exploitation_rate': 'Acq Exploitation Rate(er)',
 
-        'acq_exploitation_improvement': 'Exploitation Improvement: $current-best$',
-        'acq_exploitation_score': 'Exploitation Score: $improve/(best-optimum)$',
-        'acq_exploitation_validity': 'Exploitation Validity: $score*er$',
+        # 'acq_exploitation_improvement': 'Exploitation Improvement: $current-best$',
+        # 'acq_exploitation_score': 'Exploitation Score: $improve/(best-optimum)$',
+        # 'acq_exploitation_validity': 'Exploitation Validity: $score*er$',
 
-        'acq_exploration_improvement': 'Exploration Improvement: $current-best$',
-        'acq_exploration_score': 'Exploration Score: $improve/fixed\_base$',
-        'acq_exploration_validity': 'Exploration Validity: $score*(1-er)$',
+        # 'acq_exploration_improvement': 'Exploration Improvement: $current-best$',
+        # 'acq_exploration_score': 'Exploration Score: $improve/fixed\_base$',
+        # 'acq_exploration_validity': 'Exploration Validity: $score*(1-er)$',
     }
     data_cols = list(data_col_map.keys())
     
@@ -471,9 +471,10 @@ def _plot_algo_iter(res_df:pd.DataFrame):
         sub_titles = []
         y_scales = []
         colors = []
+        line_styles = []
         baselines = []
         baseline_labels = []
-        
+
         _temp_df = y_df[y_df['problem_id'] == problem_id]
 
         prop_cycle = plt.rcParams['axes.prop_cycle']
@@ -490,7 +491,7 @@ def _plot_algo_iter(res_df:pd.DataFrame):
 
             if len(data) == 0:
                 continue
-            
+
             # fill short data and replace nan with the left
             max_len = max([len(ele[0]) for ele in data])
             for i, ele in enumerate(data):
@@ -522,7 +523,8 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             # fill the area between mean - std and mean + std
             if col not in non_fill_cols:
                 upper_bound = mean_array + std_array 
-                lower_bound = mean_array - std_array
+                _lower_bound = mean_array - std_array
+                lower_bound = np.clip(_lower_bound, 0, None)
                 plot_filling.append(list(zip(lower_bound, upper_bound)))
             else:
                 plot_filling.append(None)
@@ -556,6 +558,8 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             _colors = [color for i, color in enumerate(_colors) if i not in empty_indexs]
             labels.append(_labels)
             colors.append(_colors)
+            _line_styles = ['--' if 'BL' in _label else '-' for _label in _labels]
+            line_styles.append(_line_styles)
 
             _sub_title = data_col_map.get(col, col)
             if col in y_scale_cols:
@@ -574,13 +578,14 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             baseline_labels=baseline_labels,
             colors=colors,
             labels=labels, 
-            label_fontsize=8,
-            linewidth=1.0,
+            line_styles=line_styles,
+            label_fontsize=9,
+            linewidth=1.5,
             filling=plot_filling,
             x_dot=x_dots,
             n_cols=3,
             sub_titles=sub_titles,
-            sub_title_fontsize=9,
+            sub_title_fontsize=10,
             title=f"F{problem_id}",
             figsize=(15, 9),
         ) 
@@ -738,18 +743,24 @@ def plot_algo_0220():
     file_paths = [
         # 'Experiments/final_eval_res/BLRandomSearch_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0210053711.pkl',
 
-        'Experiments/final_eval_res/BLTuRBO1_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0215224338.pkl',
+        # 'Experiments/final_eval_res/BLTuRBO1_0.0792_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0215224338.pkl',
 
         # 'Experiments/final_eval_res/BLTuRBOM_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0215232616.pkl',
 
-        'Experiments/final_eval_res/BLMaternVanillaBO_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216012649.pkl',
+        # 'Experiments/final_eval_res/BLMaternVanillaBO_0.1078_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216012649.pkl',
 
-        'Experiments/final_eval_res/BLHEBO_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216043242.pkl',
+        'Experiments/final_eval_res/BLHEBO_0.0967_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216043242.pkl',
 
-        'Experiments/final_eval_res/BLCMAES_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216014349.pkl',
+        # 'Experiments/final_eval_res/BLCMAES_0.0490_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216014349.pkl',
 
-        # 'Experiments/final_eval_res/TrustRegionAdaptiveTempBOv2_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211000039.pkl',
+        # 'Experiments/final_eval_res/ATRBO_0.1236_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222082510.pkl',
         
+        'Experiments/final_eval_res/ATRBO_DKAI_0.1242_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222114050.pkl',
+
+        # 'Experiments/final_eval_res/ARSUAEBO_0.0828_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0221171337.pkl',
+
+        # 'Experiments/final_eval_res/TrustRegionAdaptiveTempBOv2_0.1299_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211000039.pkl',
+
         # 'Experiments/final_eval_res/BayesLocalAdaptiveAnnealBOv1_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211012527.pkl',
         
         # 'Experiments/final_eval_res/EnsembleLocalSearchBOv1_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211041109.pkl',
@@ -764,5 +775,5 @@ if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
-    plot_project_tr()
-    # plot_algo_0220()
+    # plot_project_tr()
+    plot_algo_0220()

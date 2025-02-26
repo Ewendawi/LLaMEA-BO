@@ -288,6 +288,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 linewidth:float = 1.0,
 
                 colors:list[list]=None,
+                line_styles:list[list]=None,
                 
                 y_scales:list[tuple[str, dict]]=None,
 
@@ -351,10 +352,12 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
         _filling = filling[i] if filling is not None else None
         _x_dot = x_dot[i] if x_dot is not None else None
         _colors = colors[i] if colors is not None else None
+        _linestyles = line_styles[i] if line_styles is not None else None
         for j in range(_y.shape[0]):
             label = _labels[j] if len(_labels) > j else f"{j}"
             _color = _colors[j] if _colors is not None and len(_colors) > j else None
-            ax.plot(_x, _y[j,:], label=label, linewidth=linewidth, color=_color)
+            _linestyle = _linestyles[j] if _linestyles is not None and len(_linestyles) > j else None
+            ax.plot(_x, _y[j,:], label=label, linewidth=linewidth, color=_color, linestyle=_linestyle)
 
             _color = _color if _color is not None else ax.get_lines()[-1].get_color()
             if _filling is not None:
@@ -373,7 +376,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 # get the color from the line
                 # color = ax.get_lines()[-1].get_color()
                 _dot_x = _dot_x.astype(np.float64) + np.random.uniform(-0.2, 0.2, len(_dot_x))
-                ax.scatter(_dot_x, _dot_y, facecolors='none', edgecolors=_color)
+                ax.scatter(_dot_x, _dot_y, facecolors='none', edgecolors=_color, s=70, linewidths=linewidth+0.5)
             
         _baseline = baselines[i] if baselines is not None else None
         if _baseline is not None:
@@ -480,7 +483,7 @@ def plot_box_violin(
     data:list[np.ndarray],
     labels: list[list[str]], 
     long_labels: list[str] = None,
-    label_fontsize:int = 7,
+    label_fontsize:int = 9,
     sub_titles: list[str] = None,
     x_labels: list[str] = None,
     y_labels: list[str] = None,
@@ -519,9 +522,9 @@ def plot_box_violin(
 
         sub_title = sub_titles[i] if sub_titles is not None else ""
         if show_inside_box:
-            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=False, showextrema=False)
+            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=False, showextrema=False, widths=0.7)
         else:
-            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=True, showextrema=True)
+            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=True, showextrema=True, widths=0.7)
 
         box_colors = []
         for _pc_i, pc in enumerate(_violin_parts['bodies']):

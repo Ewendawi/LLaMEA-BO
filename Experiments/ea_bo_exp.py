@@ -1,6 +1,7 @@
 import os
 import logging
 import pickle
+import json 
 import torch
 import numpy as np
 from llamea import LLaMBO
@@ -216,6 +217,18 @@ def _run_exp(prompt_generator:PromptGenerator,
             llm_options = evol_options.get('llm_params', {})
             llm_options['temperature'] = options['llm_temp']
             evol_options['llm_params'] = llm_options
+
+    option_str = json.dumps(options, indent=4)
+    log_str = f"""Start running evolutions: 
+n_generation:{n_generations}, n_population:{n_population}
+n_query_threads:{n_query_threads}, gpu_name:{gpu_name}, max_interval:{max_interval}
+{llm.model_name()}
+{prompt_generator}
+{evaluator}
+{population}
+{option_str}
+"""
+    logging.info(log_str)
 
     llambo.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,

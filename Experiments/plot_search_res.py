@@ -3,6 +3,7 @@ import os
 import logging
 from functools import cmp_to_key
 from datetime import datetime
+import re
 import concurrent.futures
 import numpy as np
 import pandas as pd
@@ -414,7 +415,7 @@ def _plot_serach_pop_similarity(results:list[tuple[str,Population]], unique_stra
             sims = _calculate_strategy_similarity(group, 
                                                   max_workers=6, 
                                                   cal_desc_sim=True, 
-                                                  cal_code_sim=True
+                                                  cal_code_sim=False
                                                   )
 
             for _key, _sim in sims.items():
@@ -643,6 +644,9 @@ def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies
     y_err_rates_filling = []
     labels = []
     for strategy in unique_strategies:
+        if strategy == '1+1':
+            continue
+        
         _strategy_error_df = _gen_error_df[_gen_error_df['strategy'] == strategy]
 
         _evol_err_rate = _strategy_error_df['evol_err_rate'].to_list()
@@ -680,7 +684,7 @@ def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies
         labels = plot_labels,
         label_fontsize=10,
         linewidth=2,
-        # filling=fillings,
+        filling=fillings,
         sub_titles=sub_titles,
         title="Error rate by generation",
         n_cols=3,
@@ -906,7 +910,6 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
                     'total_token_count': handler.prompt_token_count + handler.response_token_count,
                 }
                 _token_df.loc[len(_token_df)] = res
-
     _all_token_df = _token_df.groupby(['strategy', 'n_repeat'])[['total_token_count', 'prompt_token_count', 'response_token_count', 'query_time']].agg(np.sum).reset_index()
 
     y_total_token_count = []
@@ -1241,7 +1244,7 @@ def plot_light_evol_and_final():
                    fig_size=(15,9))
 
 
-def plot_search_0209(dir_path, add_cr_rate=False, file_paths=None, save_name=None):
+def plot_search_0209(dir_path, add_cr_rate=False, file_paths=None, save_name=None, extract_fn=None):
     if file_paths is None:
         file_paths = []
         for dir_name in os.listdir(dir_path):
@@ -1274,6 +1277,9 @@ def plot_search_0209(dir_path, add_cr_rate=False, file_paths=None, save_name=Non
         if add_cr_rate:
             name += f"_{cr_rate}"
 
+        if extract_fn is not None:
+            name += "_" + extract_fn(file_path)
+
         pop_list.append((name, pop))
 
         cur_best = best_pop_map.get(name, None)
@@ -1293,17 +1299,54 @@ if __name__ == "__main__":
     file_paths = None
     save_name = None
     add_cr_rate = False
+    extract_fn = None
 
     dir_path = 'Experiments/pop_40_f_0220'
     save_name = 'Experiments/pop_40_f_0220/df_res_02230646.pkl'
     
-    # dir_path = 'Experiments/pop_100_f'
+    dir_path = 'Experiments/pop_100_f'
+    save_name = 'Experiments/pop_100_f/df_res_02250235.pkl'
 
-    # dir_path = 'Experiments/pop_40_cr'
+    dir_path = 'Experiments/pop_40_cr'
+    save_name = 'Experiments/pop_40_cr/df_res_02250316.pkl'
     # add_cr_rate = True
 
-    # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl' 
+    def _extract_fn(file_path):
+        if 'temperature' in file_path:
+            pattern = re.compile(r'_t(\d+)_IOHEvaluator')
+            match = pattern.search(file_path)
+            if match:
+                t = float(match.group(1)) / 10
+                return f"{t}"
+        elif 'top_k' in file_path:
+            pattern = re.compile(r'_k(\d+)_IOHEvaluator')
+            match = pattern.search(file_path)
+            if match:
+                k = int(match.group(1))
+                return f"{k}"
+        elif 'top_p' in file_path:
+            pattern = re.compile(r'_p(\d+)_IOHEvaluator')
+            match = pattern.search(file_path)
+            if match:
+                p = int(match.group(1)) / 100
+                return f"{p}"
+                
+    #     raise Exception(f'Pattern not found in {file_path}')
 
-    plot_search_0209(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name)
+    # dir_path = 'Experiments/pop_40_temperature'
+    # save_name = 'Experiments/pop_40_temperature/df_res_02250414.pkl'
+    # extract_fn = _extract_fn
+
+    # dir_path = 'Experiments/pop_40_top_k'
+    # save_name = 'Experiments/pop_40_top_k/df_res_02250447.pkl'
+    # extract_fn = _extract_fn
+
+    dir_path = 'Experiments/pop_40_top_p'
+    save_name = 'Experiments/pop_40_top_p/df_res_02250407.pkl'
+    extract_fn = _extract_fn
+
+    # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
+
+    plot_search_0209(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name, extract_fn=extract_fn)
 
     pass
