@@ -445,16 +445,17 @@ def _plot_algo_iter(res_df:pd.DataFrame):
 
     clip_cols = {
         'loss': clip_upper_factory(bound_type='mean'),
+        'best_loss': clip_upper_factory(bound_type='mean'),
     }
 
     y_scale_cols = {
-        'loss': ('log', {}),
-        'best_loss': ('log', {}),
+        'loss': ('symlog', {}),
+        'best_loss': ('symlog', {}),
     }
 
     non_fill_cols = [
         'loss',
-        'best_loss',
+        # 'best_loss',
     ]
 
     ignore_cols = [
@@ -525,6 +526,7 @@ def _plot_algo_iter(res_df:pd.DataFrame):
                 upper_bound = mean_array + std_array 
                 _lower_bound = mean_array - std_array
                 lower_bound = np.clip(_lower_bound, 0, None)
+                upper_bound = np.clip(upper_bound, None, np.max(mean_array))
                 plot_filling.append(list(zip(lower_bound, upper_bound)))
             else:
                 plot_filling.append(None)

@@ -5,6 +5,7 @@ import logging
 import pickle
 import os
 from matplotlib import pyplot as plt
+from matplotlib.ticker import FixedLocator, FixedFormatter
 import numpy as np
 from scipy.signal import savgol_filter 
 from scipy.ndimage import gaussian_filter1d  
@@ -247,6 +248,108 @@ class IndividualLogger:
                 ind.metadata[new_key] = ind.metadata[old_key]
                 del ind.metadata[old_key]
 
+# Remove Comment
+def remove_comments(code):
+    result = []
+    in_string = False
+    string_char = None  # Tracks whether we're in ' or " string
+    
+    i = 0
+    while i < len(code):
+        # Handle strings (both single and double quotes)
+        if code[i] in ["'", '"']:
+            if not in_string:
+                in_string = True
+                string_char = code[i]
+            elif string_char == code[i]:  # Matching quote found
+                in_string = False
+            result.append(code[i])
+                
+        # Handle single-line comments
+        elif not in_string and code[i] == '#':
+            while i < len(code) and code[i] != '\n':
+                i += 1
+            if i < len(code):
+                result.append('\n')
+            continue
+                
+        # Add normal characters
+        else:
+            result.append(code[i])
+            
+        i += 1
+            
+    return ''.join(result)
+
+def remove_empty_lines_in_function(code):
+    lines = code.splitlines()
+    result = []
+    in_function = False
+    current_indent = 0
+    
+    for line in lines:
+        # Check if line contains only whitespace
+        is_empty = not line.strip()
+        # Get the indentation level
+        indent = len(line) - len(line.lstrip())
+        
+        # Detect function start
+        if line.lstrip().startswith('def '):
+            in_function = True
+            current_indent = indent
+            result.append(line)
+            continue
+            
+        # If we're in a function
+        if in_function:
+            # Check if we've exited the function based on indentation
+            if line.strip() and indent <= current_indent:
+                in_function = False
+            
+            # Skip empty lines only within function
+            if is_empty:
+                continue
+                
+        # Add non-empty lines or lines outside functions
+        result.append(line)
+    
+    return '\n'.join(result)
+
+
+# Example usage
+def test_remove_comments():
+    test_code = '''
+def hello():
+    # This is a single-line comment
+    print("Hello World")  # End of line comment
+    str_with_hash = "This # is not a comment"
+    # Another comment
+    return None
+'''
+
+    file_pairs = [
+        ("Experiments/llm_exp/temperature_[0.0, 1.0, 2.0]_2*3_mut_0224043453/temperature-2.0-r0-1.0_ThompsonSamplingBOv2.py", "Experiments/llm_exp/temperature_[0.0, 1.0, 2.0]_2*3_mut_0224043453/temperature-2.0-r0-1.1_ThompsonSamplingBOv2.py"),
+    ]
+
+    code_pairs = []
+    for file1, file2 in file_pairs:
+        with open(file1, "r") as f:
+            code1 = f.read()
+        with open(file2, "r") as f:
+            code2 = f.read()
+        code_pairs.append((code1, code2))
+
+    test_code = code1
+    
+    cleaned_code = remove_comments(test_code)
+    print("Original code:")
+    print(test_code)
+    print("\nCode with comments removed:")
+    print(cleaned_code)
+    remove_empty = remove_empty_lines_in_function(cleaned_code)
+    print("\nCode with empty lines removed:")
+    print(remove_empty)
+
 # Plotting
 
 # Moving Average Smoothing
@@ -278,6 +381,233 @@ def gaussian_smoothing(data, sigma):
     """
     return gaussian_filter1d(data, sigma)
 
+def ceil_with_precision(arr, precision):
+    scaling_factor = 10 ** precision
+    scaled = arr * scaling_factor
+    ceiling = np.ceil(scaled)
+    result = ceiling / scaling_factor
+    return result
+
+def trunc_with_precision(arr, precision):
+    scaling_factor = 10 ** precision
+    scaled = arr * scaling_factor
+    trunc = np.trunc(scaled)
+    result = trunc / scaling_factor
+    return result
+
+def density_yscale(y_data_matrix, ranges, densities, precision=0, ytick_interval=None, sub_ytick_interval=None):
+
+    if not isinstance(y_data_matrix, np.ndarray) or y_data_matrix.ndim != 2:
+        raise TypeError("y_data_matrix must be a 2D numpy array.")
+    if len(ranges) != len(densities):
+        raise ValueError("The lengths of ranges and densities must be equal.")
+
+    # Flatten the data for range checks (bounds are based on all data).
+    y_data_flat = y_data_matrix.flatten()
+
+    sorted_ranges = sorted(ranges)
+    if sorted_ranges[0][0] > np.min(y_data_flat):
+        raise ValueError("Ranges do not cover the minimum y-data value.")
+    for i in range(len(sorted_ranges) - 1):
+        if sorted_ranges[i][1] > sorted_ranges[i + 1][0]:
+            raise ValueError("Ranges are overlapping.")
+    if sorted_ranges[-1][1] < np.max(y_data_flat):
+        raise ValueError("Ranges do not cover the maximum y-data value.")
+
+    for r in ranges:
+        if not isinstance(r, tuple) or len(r) != 2:
+            raise TypeError("Ranges must be tuples (lower, upper).")
+        if r[0] >= r[1]:
+            raise ValueError("Lower bound must be less than upper bound.")
+
+    # check desities whether they are normalized
+    if not np.isclose(sum(densities), 1.0):
+        raise ValueError("Densities must sum to 1.")
+
+    def _add_ytick(yticks, yticklabels, density_range, num, label, min_distance=0.03, subtitute=None, force=False):
+        lower, upper, density, cumulative_height = density_range
+        value = cumulative_height + (num - lower) / (upper - lower) * density
+        if len(yticks) > 0:
+            last_val = yticks[-1]
+            if value - last_val > min_distance:
+                yticks.append(value)
+                yticklabels.append(label)
+            else:
+                if force:
+                    yticks.pop()
+                    yticklabels.pop()
+                    yticks.append(value)
+                    yticklabels.append(label)
+                elif subtitute is not None:
+                    yticks.append(value)
+                    yticklabels.append(subtitute)
+        else:
+            yticks.append(value)
+            yticklabels.append(label)
+
+    transformed_y = np.zeros_like(y_data_matrix, dtype=float)
+    cumulative_height = 0
+    yticks = []
+    yticklabels = []
+    interval = int((np.max(y_data_flat) - np.min(y_data_flat)) / 5) if ytick_interval is None else ytick_interval
+    interval = 1
+    sub_interval = interval / 4 if sub_ytick_interval is None else sub_ytick_interval
+
+    for (lower, upper), density in zip(ranges, densities):
+        # Create a mask for *all* values within the current range.
+        mask = (y_data_matrix >= lower) & (y_data_matrix <= upper)
+
+        transformed_range = (y_data_matrix[mask] - lower) / (upper - lower) * density
+        transformed_y[mask] = transformed_range + cumulative_height
+
+        ceil_lower = ceil_with_precision(lower, precision)
+        trunc_upper = trunc_with_precision(upper, precision)
+        density_range = (lower, upper, density, cumulative_height)
+
+        def _add_non_numerical_yticks(_lower, _upper):
+            num_ticks = int((_upper - _lower) / sub_interval) - 1
+            for j in range(1, num_ticks + 1): 
+                extra_tick = _lower + j * sub_interval
+                _add_ytick(yticks, yticklabels, density_range, extra_tick, '')
+
+        _add_ytick(yticks, yticklabels, density_range, ceil_lower, f'{ceil_lower}', force=True)
+
+        n_extra_num_ticks = int((upper - lower) / interval) - 1
+        _lower = lower
+        for i in range(1, n_extra_num_ticks + 1):
+            extra_tick_upper = lower + i * interval
+            ceil_tick_upper = ceil_with_precision(extra_tick_upper, precision)
+            _add_non_numerical_yticks(_lower, ceil_tick_upper)
+            _add_ytick(yticks, yticklabels, density_range, ceil_tick_upper, f'{ceil_tick_upper}', force=True)
+            _lower = ceil_tick_upper
+        
+        _add_non_numerical_yticks(_lower, trunc_upper)
+
+        _add_ytick(yticks, yticklabels, density_range, trunc_upper, f'{trunc_upper}', force=True)
+
+        cumulative_height += density
+
+    tick_locator = FixedLocator(yticks)
+    tick_formatter = FixedFormatter(yticklabels)
+
+    return tick_locator, tick_formatter, transformed_y
+
+def determine_ranges_and_densities(y_data_matrix, num_ranges=3, range_bounds=None,  density_threshold_factor=1.0):
+    """
+    num_ranges: Number of ranges to divide the data into.
+    range_bounds: List of bounds for the ranges. If not provided, the bounds are determined automatically based on the number of ranges.
+    density_threshold_factor: Controls sensitivity to density differences by powering the relative density value.
+    """
+    y_data_flat = y_data_matrix.flatten()
+
+    if range_bounds is not None:
+        # check if the range bounds are valid
+        if len(range_bounds) != num_ranges + 1:
+            raise ValueError("range_bounds must have length num_ranges + 1.")
+        if range_bounds[0] > np.min(y_data_flat):
+            raise ValueError("range_bounds do not cover the minimum y-data value.")
+        if range_bounds[-1] < np.max(y_data_flat):
+            raise ValueError("range_bounds do not cover the maximum y-data value.")
+        for i in range(len(range_bounds) - 1):
+            if range_bounds[i] >= range_bounds[i + 1]:
+                raise ValueError("Range bounds must be in ascending order.")
+    else:
+        upper_bound = np.ceil(np.max(y_data_flat))
+        lower_bound = np.trunc(np.min(y_data_flat))
+        range_bounds = np.linspace(lower_bound, upper_bound, num_ranges + 1)
+    ranges = [(range_bounds[i], range_bounds[i + 1]) for i in range(num_ranges)]
+        
+    densities = []
+    for lower, upper in ranges:
+        mask = (y_data_matrix >= lower) & (y_data_matrix <= upper)
+        # Column density (number of True values in each column).
+        counts_per_column = np.sum(mask, axis=0)
+        total_count_in_range = np.sum(counts_per_column) #sum all the counts
+
+        #Relative density based on the total number of elements.
+        relative_density = total_count_in_range / y_data_matrix.size
+
+        original_density = relative_density * 10
+        density = np.power(original_density, density_threshold_factor)
+        densities.append(density)
+
+    total_density = sum(densities)
+    normalized_densities = [d / total_density for d in densities]
+
+    return ranges, normalized_densities
+
+def test_density_yscale():
+    """
+    Tests the custom y-scale with a 2D data matrix.
+    """
+    # Create some sample 2D data.  Multiple lines.
+    num_lines = 3
+    num_points = 100
+    x = np.linspace(0, 10, num_points)
+    y_data_matrix = np.zeros((num_lines, num_points))
+
+    # Line 1: Centered around y=2, dense
+    y_data_matrix[0, :] = np.random.normal(2, 0.5, num_points)
+    # Line 2: Centered around y=8, less dense
+    y_data_matrix[1, :] = np.random.normal(8, 1.5, num_points)
+    # Line 3: Starts low, then jumps high
+    y_data_matrix[2, :num_points // 2] = np.random.normal(1, 0.3, num_points // 2)
+    y_data_matrix[2, num_points // 2:] = np.random.normal(9, 0.8, num_points // 2)
+
+    linear_y_data_matrix = np.zeros((num_lines, num_points))
+    for i in range(num_lines):
+        linear_y_data = np.linspace(0, 6 * i+1, num_points)
+        linear_y_data_matrix[i, :] = linear_y_data
+
+    
+    fig, axs = plt.subplots(2,2, figsize=(14, 9))
+
+    #determine ranges and densities
+    ax = axs[0, 0]
+    ranges, densities = determine_ranges_and_densities(linear_y_data_matrix, num_ranges=4, density_threshold_factor=1.5)
+    tick_locator, tick_formatter, transformed_y = density_yscale(linear_y_data_matrix, ranges, densities)
+    ax.yaxis.set_major_locator(tick_locator)
+    ax.yaxis.set_major_formatter(tick_formatter)
+    for i in range(num_lines):
+        ax.plot(x, transformed_y[i, :], label=f"Line {i+1}") # Plot each transformed line
+    ax.set_title("Custom Y-Scale (2D Data, Fixed Ranges)")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Transformed Y")
+    ax.legend()
+
+    # Original scale for comparison.
+    ax = axs[0, 1]
+    for i in range(num_lines):
+        ax.plot(x, linear_y_data_matrix[i, :], label=f"Line {i+1}")
+    ax.set_title("Original Y-Scale")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.legend()
+
+    # determine ranges and densities
+    ax = axs[1, 0]
+    ranges, densities = determine_ranges_and_densities(y_data_matrix, num_ranges=4, density_threshold_factor=1.5)
+    tick_locator, tick_formatter, transformed_y = density_yscale(y_data_matrix, ranges, densities)
+    ax.yaxis.set_major_locator(tick_locator)
+    ax.yaxis.set_major_formatter(tick_formatter)
+    for i in range(num_lines):
+        ax.plot(x, transformed_y[i, :], label=f"Line {i+1}") # Plot each transformed line
+    ax.set_title("Custom Y-Scale (2D Data, Fixed Ranges)")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Transformed Y")
+    ax.legend()
+
+     # Original scale for comparison.
+    ax = axs[1, 1]
+    for i in range(num_lines):
+         ax.plot(x, y_data_matrix[i, :], label=f"Line {i+1}")
+    ax.set_title("Original Y-Scale")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.legend()
+
+    plt.tight_layout()
+    plt.show()
 
 def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
 
