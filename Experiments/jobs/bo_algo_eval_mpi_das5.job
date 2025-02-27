@@ -1,0 +1,27 @@
+#!/bin/bash
+#SBATCH --time=08:11:15
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --output=LLAMBO/Experiments/jobs/bo_algo_eval.log
+#SBATCH --job-name=bo_algo_eval
+
+. /etc/bashrc
+. /etc/profile.d/lmod.sh
+
+module load openmpi/gcc/64
+module load slurm 
+
+APP=python
+ARGS="-m mpi4py.futures LLAMBO/Experiments/ea_bo_algo_exp.py"
+# ARGS='-m mpi4py.futures LLAMBO/Experiments/jobs/mpi_py_test.py'
+
+ARGS="LLAMBO/Experiments/ea_bo_algo_exp.py"
+
+# ARGS="LLAMBO/Experiments/ea_bo_algo_exp.py --mpi"
+# ARGS='LLAMBO/Experiments/jobs/mpi_py_test.py'
+
+# OMPI_OPTS="--mca btl ^usnic"
+# DAS-6/OpenHPC modules do not set MPI_RUN, so:
+MPI_RUN=mpirun
+
+$MPI_RUN $OMPI_OPTS $APP $ARGS
