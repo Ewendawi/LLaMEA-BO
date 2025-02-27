@@ -1,5 +1,7 @@
 import logging
 import os
+import sys
+import getopt
 import pickle
 from datetime import datetime
 import importlib.util
@@ -86,6 +88,9 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
 
         if 'use_mpi' in options:
             evaluator.use_mpi = options['use_mpi']
+
+        if 'use_mpi_future' in options:
+            evaluator.use_mpi_future = options['use_mpi_future']
 
         if 'ignore_cls' in options:
             _ignore_cls = options['ignore_cls']
@@ -232,7 +237,8 @@ def debug_algo_eval():
         # 'is_baseline': True,
         # 'max_eval_workers': 4,
         # 'use_multi_process': True,
-        # 'use_mpi': True,
+        'use_mpi': True,
+        # 'use_mpi_future': True,
         # 'time_profile': True,
     }
 
@@ -311,9 +317,29 @@ def eval_final_algo():
 
     run_algo_eval_from_file_map(evaluator, file_map, plot=False, save=True, options=options)
 
-if __name__ == "__main__":
+def main():
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
     debug_algo_eval()
     # eval_final_algo()
+
+if __name__ == "__main__":
+    use_mpi = False
+    opts, args = getopt.getopt(sys.argv[1:], "m", ["mpi"])
+    for opt, arg in opts:
+        if opt == "-m":
+            use_mpi = True
+        elif opt == "--mpi":
+            use_mpi = True
+    
+
+    if use_mpi:
+        print("Using MPI")
+        from llamea.evaluator.MPITaskManager import start_mpi_task_manager 
+
+        with start_mpi_task_manager(result_recv_buffer_size=1024*100) as task_manager:
+            if task_manager.is_master:
+                main()
+    else:
+        main()

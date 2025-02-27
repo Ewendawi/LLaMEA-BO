@@ -182,6 +182,7 @@ ast/graphstats*
 
 logs_*/
 exp-*
+jobs/*.log
 currentexp
 Experiments/pop_*
 population_logs

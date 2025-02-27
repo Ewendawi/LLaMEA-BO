@@ -15,6 +15,8 @@ from .evaluator import AbstractEvaluator
 from .evaluator_result import EvaluatorResult, EvaluatorBasicResult
 from .exec_utils import default_exec
 
+_logger = logging.getLogger(__name__)
+
 class IOHObjectiveFn:
     def __init__(self, problem_id, instance_id, exec_id, dim, budget, show_progress_bar=False):
         self.problem_id = problem_id
@@ -70,7 +72,7 @@ class IOHObjectiveFn:
 
     def __call__(self, x):
         if self.obj_fn is not None and self.budget is not None and self.obj_fn.state.evaluations > self.budget:
-            logging.error("%s Over budget: %s/%s", self.name, self.obj_fn.state.evaluations, self.budget)
+            _logger.error("%s Over budget: %s/%s", self.name, self.obj_fn.state.evaluations, self.budget)
             if not self.ignore_over_budget:
                 raise BOOverBudgetException("OverBudgetException", "The total number(during the whole process) of the sample points which evaluated by func should not exceed the budget. Using the surrogate model, accquisition function or any other methods suited your purposes instead of the func to evaluate the points is a alternative option.")
         
@@ -102,12 +104,12 @@ class IOHObjectiveFn:
                 progress = x.shape[0]
             self.progress_bar.update(progress)
         else:
-            if logging.getLogger().isEnabledFor(logging.DEBUG):
+            if _logger.isEnabledFor(logging.DEBUG):
                 progress = len(self.x_hist)
                 interval = self.budget // 4
                 if progress % interval == 0:
                     msg = f"{self.name}-{self.instance_id}-{self.exec_id}:{progress}/{self.budget} evaluations completed"
-                    logging.debug(msg)
+                    _logger.debug(msg)
         
         if self.maximize:
             y = -y
@@ -305,11 +307,11 @@ class IOHEvaluator(AbstractEvaluator):
     def _logging_eval_process(self, eval_result, interval, total_tasks):
         cls_name = eval_result.name
         if eval_result.error is not None:
-            logging.error("Evaluating %s: %s", cls_name, eval_result.error_type)
+            _logger.error("Evaluating %s: %s", cls_name, eval_result.error_type)
         else:
             done_tasks = len(eval_result.result)
             if done_tasks % interval == 0:
-                logging.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
+                _logger.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
             
     def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
         """Evaluate an individual."""
@@ -342,8 +344,37 @@ class IOHEvaluator(AbstractEvaluator):
         max_eval_workers = self.max_eval_workers
         use_multi_process = self.use_multi_process
         use_mpi = self.use_mpi
+        use_mpi_future = self.use_mpi_future
         timeout = self.timeout
+
         if use_mpi:
+            from mpi4py import MPI
+            from llamea.evaluator.MPITaskManager import MPITaskManager, MPIFuture
+
+            comm = MPI.COMM_WORLD
+            size = comm.Get_size()
+            _logger.info("Evaluating %s: %s tasks, using MPI with %s max_workers", cls_name, total_tasks, size)
+
+            task_manager = MPITaskManager()
+            futures = {task_manager.submit(ioh_evaluate_block, **param): param for param in params}
+            _should_cancel = False
+            for future in task_manager.as_completed(futures.keys()):
+                res = future.result()
+                eval_basic_result = self.__process_results(*res)
+
+                self._post_process_error_check(eval_result, eval_basic_result, timeout, _all_eval_time_start)
+                self._logging_eval_process(eval_result, interval, total_tasks)
+
+                if eval_result.error is not None:
+                    _should_cancel = True
+                    break
+
+            _logger.info("Evaluating %s: Shutting down executor", cls_name)
+            # better to wait for all running tasks to finish in case of resource competition
+            task_manager.shutdown(wait=True, cancel_futures=_should_cancel)
+            _logger.info("Evaluating %s: Executor shut down", cls_name)
+        
+        elif use_mpi_future:
             from mpi4py import MPI
             from mpi4py.futures import MPIPoolExecutor
             from mpi4py.futures import get_comm_workers
@@ -355,7 +386,7 @@ class IOHEvaluator(AbstractEvaluator):
             if size < 2:
                 raise ValueError("Requires at least 2 MPI processes.")
 
-            logging.info("Evaluating %s: %s tasks, using MPI with %s max_workers", cls_name, total_tasks, size)
+            _logger.info("Evaluating %s: %s tasks, using MPI.futures with %s max_workers", cls_name, total_tasks, size)
                 
             executor = MPIPoolExecutor(max_workers=size)  
             if rank == 0:  
@@ -372,17 +403,17 @@ class IOHEvaluator(AbstractEvaluator):
                         _should_cancel = True
                         break
 
-                logging.info("Evaluating %s: Shutting down executor", cls_name)
+                _logger.info("Evaluating %s: Shutting down executor", cls_name)
                 # better to wait for all running tasks to finish in case of resource competition
                 executor.shutdown(wait=True, cancel_futures=_should_cancel)
-                logging.info("Evaluating %s: Executor shut down", cls_name)
+                _logger.info("Evaluating %s: Executor shut down", cls_name)
         elif max_eval_workers is None or max_eval_workers > 0:
             max_workers = min(os.cpu_count() - 1, max_eval_workers)
             if use_multi_process:
-                logging.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+                _logger.info("Evaluating %s: %s tasks, using ProcessPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
                 executor_cls = concurrent.futures.ProcessPoolExecutor
             else:
-                logging.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
+                _logger.info("Evaluating %s: %s tasks, using ThreadPoolExecutor with %s max_workers", cls_name, total_tasks, max_workers)
                 executor_cls = concurrent.futures.ThreadPoolExecutor
 
             executor = executor_cls(max_workers=max_workers)
@@ -399,12 +430,12 @@ class IOHEvaluator(AbstractEvaluator):
                     _should_cancel = True
                     break
 
-            logging.info("Evaluating %s: Shutting down executor", cls_name)
+            _logger.info("Evaluating %s: Shutting down executor", cls_name)
             # better to wait for all running tasks to finish in case of resource competition
             executor.shutdown(wait=True, cancel_futures=_should_cancel)
-            logging.info("Evaluating %s: Executor shut down", cls_name)
+            _logger.info("Evaluating %s: Executor shut down", cls_name)
         else:
-            logging.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
+            _logger.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
 
             for param in params:
                 res = ioh_evaluate_block(**param)
@@ -419,9 +450,9 @@ class IOHEvaluator(AbstractEvaluator):
         if eval_result.error is None:
             eval_result.score = np.mean([r.log_y_aoc for r in eval_result.result])
             eval_result.total_execution_time = np.sum([r.execution_time for r in eval_result.result])
-            logging.info("Evaluated %s: %.4f executed %.2fs in %.2fs", cls_name, eval_result.score, eval_result.total_execution_time, _all_eval_time)
+            _logger.info("Evaluated %s: %.4f executed %.2fs in %.2fs", cls_name, eval_result.score, eval_result.total_execution_time, _all_eval_time)
         else:                           
-            logging.error("Evaluated %s: Failed in %.2fs", cls_name, _all_eval_time)
+            _logger.error("Evaluated %s: Failed in %.2fs", cls_name, _all_eval_time)
             eval_result.score = 0.0
             eval_result.total_execution_time = 0.0
 

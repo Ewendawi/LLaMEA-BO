@@ -1,0 +1,27 @@
+#!/bin/bash
+#SBATCH --time=06:15:00
+#SBATCH -N 4
+#SBATCH --ntasks-per-node=1
+#SBATCH --output=LLAMBO/Experiments/jobs/bo_evol.log
+#SBATCH --job-name=bo_evol
+
+# Note: Run on the Home directory
+
+. /etc/bashrc
+# DAS-5:
+# . /etc/profile.d/modules.sh
+# DAS-6:
+. /etc/profile.d/lmod.sh
+
+module load openmpi/gcc/64
+
+APP=python
+
+# ARGS="-m mpi4py.futures LLAMBO/Experiments/ea_bo_exp.py"
+ARGS="LLAMBO/Experiments/ea_bo_exp.py --mpi"
+
+OMPI_OPTS=""
+# DAS-6/OpenHPC modules do not set MPI_RUN, so:
+MPI_RUN=mpirun
+
+$MPI_RUN $OMPI_OPTS $APP $ARGS

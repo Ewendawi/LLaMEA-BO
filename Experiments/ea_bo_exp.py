@@ -1,4 +1,6 @@
 import os
+import getopt
+import sys
 import logging
 import pickle
 import json 
@@ -114,6 +116,9 @@ def _run_exp(prompt_generator:PromptGenerator,
 
         if 'use_mpi' in options:
             evaluator.use_mpi = options['use_mpi']
+
+        if 'use_mpi_future' in options:
+            evaluator.use_mpi_future = options['use_mpi_future']
 
         # prompt_generator
         if 'prompt_problem_desc' in options:
@@ -404,7 +409,7 @@ def mock_res_provider(*args, **kwargs):
         response = f.read()
     return response
 
-if __name__ == "__main__":
+def main():
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
@@ -443,7 +448,8 @@ if __name__ == "__main__":
 
             "n_eval_workers": 0,
             "time_out_per_eval": 60 * 30,
-            # 'use_mpi': True,
+            'use_mpi': True,
+            # 'use_mpi_future': True,
 
             'eval_inject_critic': False,
             'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
@@ -466,3 +472,21 @@ if __name__ == "__main__":
         n_parent=N_PARENT,
         n_offspring=N_OFFSPRING,
         **_params)
+
+if __name__ == "__main__":
+    use_mpi = False
+    opts, args = getopt.getopt(sys.argv[1:], "m", ["mpi"])
+    for opt, arg in opts:
+        if opt == "-m":
+            use_mpi = True
+        elif opt == "--mpi":
+            use_mpi = True
+    
+    if use_mpi:
+        from llamea.evaluator.MPITaskManager import start_mpi_task_manager 
+
+        with start_mpi_task_manager(result_recv_buffer_size=1024*100) as task_manager:
+            if task_manager.is_master:
+                main()
+    else:
+        main()

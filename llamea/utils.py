@@ -25,27 +25,38 @@ def handle_timeout(signum, frame):
 #Logger
 #========================================
 class CustomFormatter(logging.Formatter):
-    grey = "\x1b[38;20m"
-    yellow = "\x1b[33;20m"
-    red = "\x1b[31;20m"
-    bold_red = "\x1b[31;1m"
-    reset = "\x1b[0m"
-    format_str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
-
-    FORMATS = {
-        logging.DEBUG: grey + format_str + reset,
-        logging.INFO: grey + format_str + reset,
-        logging.WARNING: yellow + format_str + reset,
-        logging.ERROR: red + format_str + reset,
-        logging.CRITICAL: bold_red + format_str + reset
-    }
+    def __init__(self, use_color=False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # format_str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+        format_str = "%(asctime)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+        if use_color:
+            grey = "\x1b[38;20m"
+            yellow = "\x1b[33;20m"
+            red = "\x1b[31;20m"
+            bold_red = "\x1b[31;1m"
+            reset = "\x1b[0m"
+            self.FORMATS = {
+                logging.DEBUG: grey + format_str + reset,
+                logging.INFO: grey + format_str + reset,
+                logging.WARNING: yellow + format_str + reset,
+                logging.ERROR: red + format_str + reset,
+                logging.CRITICAL: bold_red + format_str + reset
+            }
+        else:
+            self.FORMATS = {
+                logging.DEBUG: format_str,
+                logging.INFO: format_str,
+                logging.WARNING: format_str,
+                logging.ERROR: format_str,
+                logging.CRITICAL: format_str
+            }
 
     def format(self, record):
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
-def setup_logger(logger = None, level=logging.INFO, filename=None):
+def setup_logger(logger = None, level=logging.INFO, filename=None, color=False):
     if logger is None:
         logger = logging.getLogger()
     logger.setLevel(level)
@@ -56,7 +67,7 @@ def setup_logger(logger = None, level=logging.INFO, filename=None):
 
     ch = logging.StreamHandler()
     ch.setLevel(level)
-    ch.setFormatter(CustomFormatter())
+    ch.setFormatter(CustomFormatter(use_color=color))
     logger.addHandler(ch)
     return logger
 
