@@ -676,6 +676,18 @@ class EvaluatorBasicResult:
         self.uncertainty_list = []
         self.uncertainty_list_on_train = []
 
+        # new aoc use 100*100 as the upper bound instead of 100
+        self.aoc_version = 2.0
+
+    def is_aoc_under_new_bound(self):
+        if hasattr(self, "aoc_version"):
+            return self.aoc_version >= 2.0
+        return False
+
+    def update_aoc_with_new_bound(self):
+        self.aoc_version = 2.0
+        self.update_aoc(self.optimal_value, min_y=1e-8, max_y=1e4)
+        
     
     def fill_short_data(self, length):
         self.r2_list = _fill_nan(self.r2_list, length)
