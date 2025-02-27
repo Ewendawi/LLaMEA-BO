@@ -40,7 +40,7 @@ class MPIFuture:
     def cancelled(self):
         return self._cancelled
     
-    def result(self, timeout=None):
+    def result(self):
         if not self._done:
             raise ValueError("Result not available yet")
         if self._cancelled:
@@ -74,7 +74,7 @@ class MPIResultPackage:
         self.task_id = task_id
         self.result = result
         self.exception = exception
-        self.cancelled = False
+        self.cancelled = cancelled
 
 class Singleton(type):
     _instances = {}
@@ -148,7 +148,7 @@ class MPITaskManager(metaclass=Singleton):
         
         # Add task to queue
         self.task_queue.append(task)
-        logger.debug(f"Task {task_id} added to queue. Queue length: {len(self.task_queue)}")
+        logger.debug('Task %s added to queue. Queue length: %s', task_id, len(self.task_queue))
         
         return future
     
