@@ -200,6 +200,7 @@ def _run_exp(prompt_generator:PromptGenerator,
                 ind.fitness = handler.eval_result.score
                 ind.name = handler.code_name
                 ind.solution = handler.code
+                ind.description = handler.desc
                 ind.feedback = handler.feedback
                 ind.error = handler.error
                 ind.parent_id = handler.parent_ids
@@ -218,10 +219,8 @@ def _run_exp(prompt_generator:PromptGenerator,
         if 'llm_mocker' in options:
             llm.mock_res_provider = options['llm_mocker']
 
-        if 'llm_temp' in options:
-            llm_options = evol_options.get('llm_params', {})
-            llm_options['temperature'] = options['llm_temp']
-            evol_options['llm_params'] = llm_options
+        if 'llm_params' in options:
+            evol_options['llm_params'] = options['llm_params']
 
     option_str = json.dumps(options, indent=4)
     log_str = f"""Start running evolutions: 

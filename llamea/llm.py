@@ -302,6 +302,7 @@ class LLMmanager:
             res.response_token_count = len(_content.split()) 
             return res
         
+        logging.info("LLM: %s, %s", self.model_name(), kwargs) 
         response = self.client.raw_completion(
             session_messages,
             **kwargs

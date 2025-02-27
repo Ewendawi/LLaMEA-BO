@@ -218,7 +218,7 @@ class ESPopulation(Population):
         _current_gen = self.get_current_generation()
         if len(self.generations) > _current_gen:
             # found offspring
-            if len(self.generations[-1]) >= _n_offspring:
+            if len(self.generations[-1]) >= self.n_offspring:
                 # has enough offspring
                 return []
             else:
