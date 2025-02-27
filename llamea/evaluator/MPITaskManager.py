@@ -406,49 +406,60 @@ def compute_intensive_task(task_id, value):
     
     return result
 
+def master_test_func(task_manager):
+    # Submit tasks
+    n_tasks = 9
+    futures = []
+    
+    print("Submitting tasks...")
+    for i in range(n_tasks):
+        future = task_manager.submit(compute_intensive_task, f"task_{i}", i)
+        futures.append(future)
+    
+    # Wait for all tasks to complete
+    print("Waiting for tasks to complete...")
+    done, not_done = task_manager.wait(futures)
+    
+    # Process results
+    for i, future in enumerate(futures):
+        try:
+            result = future.result()
+            print(f"Result from task {i}: {result:.6f}")
+        except Exception as e:
+            print(f"Task {i} failed: {str(e)}")
+    
+    # Shutdown the task manager
+    task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=False)
+
+    print("Submitting tasks for as_completed...")
+    futures = []
+    for i in range(n_tasks):
+        future = task_manager.submit(compute_intensive_task, f"task_{i}", i)
+        futures.append(future) 
+
+    for future in task_manager.as_completed(futures):
+        try:
+            result = future.result()
+            print(f"Result from task {future.task_id}: {result:.6f}")
+        except Exception as e:
+            print(f"Task {i} failed: {str(e)}")
+            print("Cancelling remaining tasks...")
+            break
+
+    task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=True)
+
+def test_context_func():
+    logging.basicConfig(level=logging.DEBUG)
+    with start_mpi_task_manager() as task_manager:
+        if task_manager.is_master:
+            master_test_func(task_manager)
+
 def test():
+    logging.basicConfig(level=logging.DEBUG)
     task_manager = MPITaskManager()
     
     if task_manager.is_master:
-        # Submit tasks
-        n_tasks = 3
-        futures = []
-        
-        print("Submitting tasks...")
-        for i in range(n_tasks):
-            future = task_manager.submit(compute_intensive_task, f"task_{i}", i)
-            futures.append(future)
-        
-        # Wait for all tasks to complete
-        print("Waiting for tasks to complete...")
-        done, not_done = task_manager.wait(futures)
-        
-        # Process results
-        for i, future in enumerate(futures):
-            try:
-                result = future.result()
-                print(f"Result from task {i}: {result:.6f}")
-            except Exception as e:
-                print(f"Task {i} failed: {str(e)}")
-        
-        # Shutdown the task manager
-        task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=False)
-
-        print("Submitting tasks for as_completed...")
-        futures = []
-        for i in range(n_tasks):
-            future = task_manager.submit(compute_intensive_task, f"task_{i}", i)
-            futures.append(future) 
-
-        for future in task_manager.as_completed(futures):
-            try:
-                result = future.result()
-                print(f"Result from task {future.task_id}: {result:.6f}")
-                break
-            except Exception as e:
-                print(f"Task {i} failed: {str(e)}")
-
-        task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=True)
+        master_test_func(task_manager)
     else:
         task_manager.start_worker()
 

@@ -16,14 +16,12 @@ module load openmpi/gcc/64
 
 APP=python
 # ARGS="-m mpi4py.futures LLAMBO/Experiments/ea_bo_algo_exp.py"
-# ARGS='-m mpi4py.futures LLAMBO/Experiments/jobs/mpi4py_test.py'
-# ARGS='-m mpi4py.futures LLAMBO/Experiments/jobs/mpi_test.py'
+ARGS='-m mpi4py.futures LLAMBO/Experiments/jobs/mpi_py_test.py'
 
-ARGS="LLAMBO/Experiments/ea_bo_algo_exp.py --mpi"
-# ARGS='LLAMBO/Experiments/jobs/mpi4py_test.py'
-# ARGS='LLAMBO/Experiments/jobs/mpi_test.py'
+# ARGS="LLAMBO/Experiments/ea_bo_algo_exp.py --mpi"
+# ARGS='LLAMBO/Experiments/jobs/mpi_py_test.py'
 
-OMPI_OPTS="--mca btl ^usnic"
+# OMPI_OPTS="--mca btl ^usnic"
 # DAS-6/OpenHPC modules do not set MPI_RUN, so:
 MPI_RUN=mpirun
 
