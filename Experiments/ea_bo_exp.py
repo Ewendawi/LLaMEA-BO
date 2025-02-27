@@ -460,7 +460,11 @@ def main():
             # 'prompt_problem_desc': 'one noiseless function:F2 Ellipsoid Separable Function',
 
             # 'llm_mocker': mock_res_provider,
-            # 'llm_temp': 0.5,
+            'llm_params': {
+                # 'temperature': 0.5,
+                # 'top_p': 0.7,
+                # 'top_k': 20,
+            }
         }
     }
 
