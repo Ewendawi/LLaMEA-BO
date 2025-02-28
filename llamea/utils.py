@@ -723,6 +723,8 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
         if _baseline is not None:
             _bl_labels = baseline_labels[i] if len(baseline_labels) > i else []
             for j, base in enumerate(_baseline):
+                if base is None:
+                    continue
                 label = _bl_labels[j] if len(_bl_labels) > j else f"{j}"
                 ax.axhline(y=base, label=label, linestyle="--", color="black", linewidth=linewidth, alpha=0.6)
 

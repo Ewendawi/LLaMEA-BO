@@ -20,9 +20,9 @@ from llamea.utils import setup_logger
 
 # utils
 
-def combine_acc(column='y_aoc', maximum=True, max_n_iter=None):
+def combine_acc(column='y_aoc', maximum=True, max_n_iter=None, iter_column='n_iter'):
     def _inner_combine_acc(df_series):
-        _n_iters = df_series['n_iter'].copy()
+        _n_iters = df_series[iter_column].copy()
         _contents = []
         _n_iters.sort()
         _aoc = df_series[column].copy()
@@ -161,9 +161,9 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
             _strategy_count[strategy_name] += 1
             n_generation = pop.get_current_generation()
             n_iter = 1
+            n_ind = 0
             for gen in range(n_generation):
                 # offspring generated in this generation
-                n_inds = n_iter
                 gen_offsprings = pop.get_offsprings(generation=gen)
                 n_iter += len(gen_offsprings)
                 # offspring selected in this generation
@@ -171,14 +171,14 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
                 gen_inds = gen_offsprings
                 for i, ind in enumerate(gen_inds):
                     handler = Population.get_handler_from_individual(ind)
-                    _n_ind = n_inds + i
+                    n_ind += 1
                     _count = _strategy_count[strategy_name]
                     if handler.eval_result is None:
                         continue
                     for res in handler.eval_result.result:
                         if not res.is_aoc_under_new_bound():
                             res.update_aoc_with_new_bound()
-                        row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=_n_ind, n_strategy=_count)
+                        row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=n_ind, n_strategy=_count)
                         res_df.loc[len(res_df)] = row
 
     if _save: 
@@ -253,11 +253,16 @@ def _group_plus_aoc(strategy_group:dict, strategy:str, y_aoc:np.ndarray, log_y_a
 def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], group_fn=None):
     max_n_iter = res_df['n_iter'].max()
     aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_iter', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
-    aoc_df = aoc_df.groupby(['strategy', 'n_strategy', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
 
-    aoc_df = aoc_df.groupby(['strategy', 'n_strategy',])[['n_iter',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
-    aoc_df['acc_y_aoc'] = aoc_df.apply(combine_acc('y_aoc', max_n_iter=max_n_iter), axis=1)
-    aoc_df['acc_log_y_aoc'] = aoc_df.apply(combine_acc('log_y_aoc', max_n_iter=max_n_iter), axis=1)
+    # aoc_df = aoc_df.groupby(['strategy', 'n_strategy', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
+    # aoc_df = aoc_df.groupby(['strategy', 'n_strategy',])[['n_iter',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
+    # iter_column = 'n_iter'
+
+    aoc_df = aoc_df.groupby(['strategy', 'n_strategy',])[['n_ind',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
+    iter_column = 'n_ind'
+
+    aoc_df['acc_y_aoc'] = aoc_df.apply(combine_acc('y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
+    aoc_df['acc_log_y_aoc'] = aoc_df.apply(combine_acc('log_y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
 
     aoc_df = aoc_df.groupby(['strategy'])[['acc_y_aoc', 'acc_log_y_aoc']].agg(list).reset_index()
 
@@ -278,13 +283,13 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         y_aoc = np.mean(acc_y_aoc, axis=0)
         std_y_aoc = np.std(acc_y_aoc, axis=0)
         strategy_aoc.append(y_aoc)
-        strategy_filling.append((y_aoc + std_y_aoc, y_aoc - std_y_aoc))
+        strategy_filling.append((y_aoc + std_y_aoc, np.clip(y_aoc - std_y_aoc, 0, None)))
 
         acc_log_y_aoc = np.array(strategy_df['acc_log_y_aoc'].values[0])
         log_y_aoc = np.mean(acc_log_y_aoc, axis=0)
         std_log_y_aoc = np.std(acc_log_y_aoc, axis=0)
         strategy_log_aoc.append(log_y_aoc)
-        strategy_log_filling.append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
+        strategy_log_filling.append((log_y_aoc + std_log_y_aoc, np.clip(log_y_aoc - std_log_y_aoc, 0, None)))
 
         labels.append(strategy)
 
@@ -737,17 +742,55 @@ def _group_plus_aoc_loss(strategy_group_in_problem:dict, strategy:str, y_aoc:np.
             strategy_group_in_problem[_key]['loss_filling'].append((loss + std_loss, loss - std_loss))
             strategy_group_in_problem[_key]['labels'].append(strategy)
     
+def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
+    def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
+        _clip_len = int(data.shape[1] * upper_len_ratio)
+        _upper_bound = _bound
+        if bound_type == 'mean':
+            if inverse:
+                _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
+            else:
+                _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
+        elif bound_type == 'median':
+            if inverse:
+                _upper_bound = np.nanmedian(data[:, _clip_len:])
+            else:
+                _upper_bound = np.nanmedian(data[:, :_clip_len])
+        elif bound_type == 'fixed' and _bound is not None:
+            _upper_bound = _bound
+
+        _data = np.clip(data, 0, _upper_bound)
+        return _data, _upper_bound
+    return _clip_upper
+
 def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
     def _min_max_agg(x):
         if 'aoc' in x.name:
             return np.max(x)
         return np.min(x)
 
-    aoc_df = res_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id', 'n_iter'])[["log_y_aoc", 'y_aoc', 'loss']].agg(_min_max_agg).reset_index()
-    aoc_df = aoc_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id'])[['n_iter',"log_y_aoc", 'y_aoc', 'loss']].agg(list).reset_index()
-    aoc_df['acc_y_aoc'] = aoc_df.apply(combine_acc('y_aoc'), axis=1)
-    aoc_df['acc_log_y_aoc'] = aoc_df.apply(combine_acc('log_y_aoc'), axis=1)
-    aoc_df['acc_loss'] = aoc_df.apply(combine_acc('loss', maximum=False), axis=1)
+    max_n_iter = res_df['n_iter'].max()
+
+    # generate aggregation
+    # aoc_df = res_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id', 'n_iter'])[["log_y_aoc", 'y_aoc', 'loss']].agg(_min_max_agg).reset_index()
+    # aoc_df = aoc_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id'])[['n_iter',"log_y_aoc", 'y_aoc', 'loss']].agg(list).reset_index()
+    # iter_column = 'n_iter'
+
+    # iterated version
+    # aoc_df = res_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id', 'n_ind'])[["log_y_aoc", 'y_aoc', 'loss']].agg(_min_max_agg).reset_index()
+    # aoc_df = aoc_df.groupby(['strategy', 'problem_id','instance_id', 'exec_id'])[['n_ind',"log_y_aoc", 'y_aoc', 'loss']].agg(list).reset_index()
+    # iter_column = 'n_ind'
+
+    # repeatation version
+    aoc_df = res_df.groupby(['strategy', 'problem_id', 'n_strategy','n_ind'])[["log_y_aoc", 'y_aoc', 'loss']].agg(np.mean).reset_index()
+    aoc_df = aoc_df.groupby(['strategy', 'problem_id', 'n_strategy'])[['n_ind',"log_y_aoc", 'y_aoc', 'loss']].agg(list).reset_index()
+    iter_column = 'n_ind'
+
+    aoc_df['acc_y_aoc'] = aoc_df.apply(combine_acc('y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
+    aoc_df['acc_log_y_aoc'] = aoc_df.apply(combine_acc('log_y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
+    aoc_df['acc_loss'] = aoc_df.apply(combine_acc('loss', maximum=False, max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
+
+    loss_upper_cliper = clip_upper_factory(bound_type='median')
     
     problem_log_aoc = []
     problem_log_aoc_filling = []
@@ -770,17 +813,20 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
         strategy_group_in_problem = {}
         for strategy in unique_strategies:
             strategy_df = problem_df[problem_df['strategy'] == strategy]
-            acc_log_y_aoc = np.array(strategy_df['acc_log_y_aoc'].values)
+            acc_log_y_aoc = np.array(strategy_df['acc_log_y_aoc'].to_list())
             log_y_aoc = np.mean(acc_log_y_aoc, axis=0)
             std_log_y_aoc = np.std(acc_log_y_aoc, axis=0)
             _log_aoc.append(log_y_aoc)
-            _log_aoc_filling.append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
+            _log_aoc_filling.append((log_y_aoc + std_log_y_aoc, np.clip(log_y_aoc - std_log_y_aoc, 0, None)))
 
-            acc_loss = np.array(strategy_df['acc_loss'].values)
+            acc_loss = np.array(strategy_df['acc_loss'].to_list())
+            _upper_bound = None
+            if loss_upper_cliper is not None:
+                acc_loss, _upper_bound = loss_upper_cliper(acc_loss)
             loss = np.mean(acc_loss, axis=0)
             std_loss = np.std(acc_loss, axis=0)
             _loss.append(loss)
-            _loss_filling.append((loss + std_loss, loss - std_loss))
+            _loss_filling.append((np.clip(loss + std_loss, 0, _upper_bound), np.clip(loss - std_loss, 0, _upper_bound)))
 
             _labels.append(strategy)
 
@@ -835,15 +881,22 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
         filling = []
         n_cols = 5
 
+        aoc_and_loss.extend(problem_log_aoc)
+        subtitles.extend([f"F{problem}-AOC" for problem in unique_problems])
+        filling.extend(problem_log_aoc_filling)
+        aoc_and_loss.extend(problem_loss)
+        subtitles.extend([f"F{problem}-Loss" for problem in unique_problems])
+        filling.extend(problem_loss_filling)
+
         # step n_cols
-        for i in range(0, len(unique_problems), n_cols):
-            aoc_and_loss.extend(problem_log_aoc[i:i+n_cols])
-            subtitles.extend([f"F{problem}-AOC" for problem in unique_problems[i:i+n_cols]])
-            filling.extend(problem_log_aoc_filling[i:i+n_cols])
+        # for i in range(0, len(unique_problems), n_cols):
+        #     aoc_and_loss.extend(problem_log_aoc[i:i+n_cols])
+        #     subtitles.extend([f"F{problem}-AOC" for problem in unique_problems[i:i+n_cols]])
+        #     filling.extend(problem_log_aoc_filling[i:i+n_cols])
             
-            aoc_and_loss.extend(problem_loss[i:i+n_cols])
-            subtitles.extend([f"F{problem}-Loss" for problem in unique_problems[i:i+n_cols]])
-            filling.extend(problem_loss_filling[i:i+n_cols])
+        #     aoc_and_loss.extend(problem_loss[i:i+n_cols])
+        #     subtitles.extend([f"F{problem}-Loss" for problem in unique_problems[i:i+n_cols]])
+        #     filling.extend(problem_loss_filling[i:i+n_cols])
 
         # for i, problem in enumerate(unique_problems):
         #     aoc_and_loss.append(problem_log_aoc[i])
@@ -868,7 +921,7 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
             labels = labels,
             filling=filling,
             sub_titles=subtitles, 
-            n_cols=5,
+            n_cols=n_cols,
             figsize=(15, 9)
             )
 
@@ -1054,14 +1107,14 @@ def plot_search_result(results:list[tuple[str,Population]], save_name=None):
     # _plot_search_aoc(res_df, unique_strategies)
     # _plot_search_group_aoc(res_df, unique_strategies)
 
-    _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
+    # _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
 
     # err_df = _process_error_data(results)
     # _plot_search_all_error_rate(err_df, unique_strategies)
     # _plot_search_error_type(err_df)
     # _plot_search_error_rate_by_generation(err_df, unique_strategies)
 
-    # _plot_search_problem_aoc_and_loss(res_df)
+    _plot_search_problem_aoc_and_loss(res_df)
     
 def plot_search():
     # file_paths = [
@@ -1306,11 +1359,11 @@ if __name__ == "__main__":
     dir_path = 'Experiments/pop_40_f_0220'
     save_name = 'Experiments/pop_40_f_0220/df_res_02230646.pkl'
     
-    dir_path = 'Experiments/pop_100_f'
-    save_name = 'Experiments/pop_100_f/df_res_02250235.pkl'
+    # dir_path = 'Experiments/pop_100_f'
+    # save_name = 'Experiments/pop_100_f/df_res_02250235.pkl'
 
-    dir_path = 'Experiments/pop_40_cr'
-    save_name = 'Experiments/pop_40_cr/df_res_02250316.pkl'
+    # dir_path = 'Experiments/pop_40_cr'
+    # save_name = 'Experiments/pop_40_cr/df_res_02250316.pkl'
     # add_cr_rate = True
 
     def _extract_fn(file_path):
@@ -1343,10 +1396,11 @@ if __name__ == "__main__":
     # save_name = 'Experiments/pop_40_top_k/df_res_02250447.pkl'
     # extract_fn = _extract_fn
 
-    dir_path = 'Experiments/pop_40_top_p'
-    save_name = 'Experiments/pop_40_top_p/df_res_02250407.pkl'
-    extract_fn = _extract_fn
+    # dir_path = 'Experiments/pop_40_top_p'
+    # save_name = 'Experiments/pop_40_top_p/df_res_02250407.pkl'
+    # extract_fn = _extract_fn
 
+    # save_name = None
     # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
 
     plot_search_0209(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name, extract_fn=extract_fn)

@@ -49,14 +49,6 @@ def mean_std_agg(agg_series):
         std_list = np.nanstd(cliped_list, axis=0)
         return [mean_list, std_list]
 
-def _min_accumulate(_series):
-    if isinstance(_series, tuple):
-        mean, _ = _series
-        _mean = np.minimum.accumulate(mean)
-        _std = np.full_like(_mean, 0)
-        return (_mean, _std)
-    return np.minimum.accumulate(_series)
-
 def fill_nan_with_left(arr):
     filled_arr = arr.copy()
     last_valid_index = 0 
@@ -206,8 +198,9 @@ def _process_algo_result(results:list[EvaluatorResult]):
         problem_id = int(res_split[0])
         instance_id = int(res_split[1])
         repeat_id = int(res_split[2])
-        loss = res.y_hist - res.optimal_value
         row = {}
+
+        loss = res.y_hist - res.optimal_value
 
         for column_name, column_path in column_name_map.items():
             if column_path is None:
@@ -234,6 +227,8 @@ def _process_algo_result(results:list[EvaluatorResult]):
         # algo = result.name.removeprefix("BL")
         algo = result.name
         for res in result.result:
+            if not res.is_aoc_under_new_bound():
+                res.update_aoc_with_new_bound()
             row = res_to_row(res, algo)
             if row is not None:
                 res_df.loc[len(res_df)] = row
@@ -258,6 +253,7 @@ def _plot_algo_aoc_on_problems(res_df:pd.DataFrame):
         else:
             colors.append(_default_colors[1])
 
+    labels = [label.replace("BL", "") for label in labels]
     # plot aoc
     plot_box_violin(
         data=[all_log_plot_data],
@@ -287,6 +283,7 @@ def _plot_algo_aoc(res_df:pd.DataFrame):
             colors.append(_default_colors[0])
         else:
             colors.append(_default_colors[1])
+    labels = [label.replace("BL", "") for label in labels]
 
     # plot aoc
     plot_box_violin(
@@ -301,6 +298,7 @@ def _plot_algo_aoc(res_df:pd.DataFrame):
 
 def _plot_algo_problem_aoc(res_df:pd.DataFrame):
     problem_id_list = res_df['problem_id'].unique()
+    problem_id_list.sort()
     aoc_df = res_df.groupby(['algorithm','problem_id'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
     #(problem, data)
     
@@ -317,6 +315,7 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame):
 
         _labels = _temp_df['algorithm'].to_list()
         labels.append(_labels)
+        _label = [label.replace("BL", "") for label in _labels]
         short_labels.append([label[:16] for label in _labels])
 
     prop_cycle = plt.rcParams['axes.prop_cycle']
@@ -349,6 +348,37 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame):
                         n_cols=2,
                         figsize=(15, 9),
                         )
+
+def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
+    def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
+        _clip_len = int(data.shape[1] * upper_len_ratio)
+        _upper_bound = _bound
+        if bound_type == 'mean':
+            if inverse:
+                _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
+            else:
+                _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
+        elif bound_type == 'median':
+            if inverse:
+                _upper_bound = np.nanmedian(data[:, _clip_len:])
+            else:
+                _upper_bound = np.nanmedian(data[:, :_clip_len])
+        elif bound_type == 'fixed' and _bound is not None:
+            _upper_bound = _bound
+
+        _data = np.clip(data, 0, _upper_bound)
+        return _data, _upper_bound
+    return _clip_upper
+
+def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
+    def _smooth_data(data):
+        if smooth_type == 'savgol':
+            return savgol_smoothing(data, window_size, polyorder)
+        elif smooth_type == 'moving':
+            return moving_average(data, window_size)
+        elif smooth_type == 'gaussian':
+            return gaussian_smoothing(data, sigma)
+    return _smooth_data
 
 def _plot_algo_iter(res_df:pd.DataFrame):
     # handle y
@@ -392,60 +422,39 @@ def _plot_algo_iter(res_df:pd.DataFrame):
         # 'acq_exploration_validity': 'Exploration Validity: $score*(1-er)$',
     }
     data_cols = list(data_col_map.keys())
-    
-    # if 'loss' in data_cols:
-    #     # apply loss to min.accumulate, then create new column
-    #     # y_df['best_loss'] = y_df['loss'].apply(_min_accumulate)
-    #     res_df['best_loss'] = res_df['loss'].apply(np.minimum.accumulate)
-    #     # insert best_loss to the next of loss in data_cols
-    #     loss_index = data_cols.index('loss')
-    #     data_cols.insert(loss_index+1, 'best_loss')
-    #     data_col_map['best_loss'] = 'Best Loss'
 
-    y_df = res_df.groupby(['algorithm', 'problem_id'])[data_cols].agg(mean_std_agg).reset_index()
-    y_df[data_cols].applymap(lambda x: x[0] if isinstance(x, list) else x)
+    clip_cols = {
+        'loss': clip_upper_factory(bound_type='median', upper_len_ratio=0.15),
+        # 'loss': clip_upper_factory(bound_type='fixed', _bound=150),
+    }
 
+    y_df = res_df
     problem_ids = y_df['problem_id'].unique()
 
+    loss_upper_bounds = {}
 
-    def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
-        def _smooth_data(data):
-            if smooth_type == 'savgol':
-                return savgol_smoothing(data, window_size, polyorder)
-            elif smooth_type == 'moving':
-                return moving_average(data, window_size)
-            elif smooth_type == 'gaussian':
-                return gaussian_smoothing(data, sigma)
-        return _smooth_data
+    for problem_id in problem_ids:
+        _p_df = y_df[y_df['problem_id'] == problem_id]
+        for clip_col, cliper in clip_cols.items():
+            _data = _p_df[clip_col].to_list()
+            _, _upper_bound = cliper(np.array(_data))
+            # a = np.clip(_p_df[clip_col], 0, _upper_bound)
+            _p_df.loc[:, clip_col] = _p_df[clip_col].apply(lambda x: np.clip(x, 0, _upper_bound))
+            loss_upper_bounds[problem_id] = _upper_bound
+            # _p_df[clip_col] = 
+        y_df[y_df['problem_id'] == problem_id] = _p_df
+
+    y_df = y_df.groupby(['algorithm', 'problem_id', 'instance_id'])[data_cols].agg(np.mean).reset_index()
+    
+    if 'loss' in data_cols:
+        y_df['best_loss'] = y_df['loss'].apply(np.minimum.accumulate)
+    
+    # y_df = res_df
+    y_df = y_df.groupby(['algorithm', 'problem_id'])[data_cols].agg(mean_std_agg).reset_index()
+    y_df[data_cols].applymap(lambda x: x[0] if isinstance(x, list) else x)
 
     smooth_cols = {
         # 'exploitation_rate': smooth_factory(smooth_type='moving', window_size=5),
-    }
-
-    def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
-        def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
-            _clip_len = int(data.shape[1] * upper_len_ratio)
-            _upper_bound = _bound
-            if bound_type == 'mean':
-                if inverse:
-                    _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
-                else:
-                    _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
-            elif bound_type == 'median':
-                if inverse:
-                    _upper_bound = np.nanmedian(data[:, _clip_len:])
-                else:
-                    _upper_bound = np.nanmedian(data[:, :_clip_len])
-            elif bound_type == 'fixed' and _bound is not None:
-                _upper_bound = _bound
-
-            _data = np.clip(data, 0, _upper_bound)
-            return _data, _upper_bound
-        return _clip_upper
-
-    clip_cols = {
-        'loss': clip_upper_factory(bound_type='mean'),
-        'best_loss': clip_upper_factory(bound_type='mean'),
     }
 
     y_scale_cols = {
@@ -509,11 +518,6 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             mean_array = np.array([ele[0] for ele in data])
             std_array = np.array([ele[1] for ele in data])
 
-            # clip if needed
-            if col in clip_cols:
-                mean_array, _upper_bound = clip_cols[col](mean_array)
-                std_array = np.where(mean_array == _upper_bound, 0, std_array)
-
             # smooth if needed
             if col in smooth_cols:
                 mean_array = smooth_cols[col](mean_array)
@@ -531,15 +535,24 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             else:
                 plot_filling.append(None)
 
+            # handle baseline
+            _baselines = []
+            _baseline_labels = []
             if 'acq_exploitation_rate' in col:
                 exp_threshold = _temp_df['acq_exp_threshold'].to_list()
                 mean_exp = [ele[0] for ele in exp_threshold]
                 _bl = np.nanmean(mean_exp)
-                baselines.append([_bl])
-                baseline_labels.append(["Threshold"])
+                _baselines.append(_bl)
+                _baseline_labels.append("Threshold")
             else:
-                baselines.append(None)
-                baseline_labels.append(None)
+                _baseline_labels.append(None)
+                _baselines.append(None)
+
+            # _baseline_labels.append("Upper Bound")
+            # _baselines.append([loss_upper_bounds[problem_id]])
+
+            baselines.append(_baselines)
+            baseline_labels.append(_baseline_labels)
 
             # handle n_init
             n_init_data = _temp_df['n_init'].to_list()
@@ -558,10 +571,11 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             _labels = [ele for i, ele in enumerate(_labels) if i not in empty_indexs]
             _labels = [label[:10] for label in _labels]
             _colors = [color for i, color in enumerate(_colors) if i not in empty_indexs]
-            labels.append(_labels)
             colors.append(_colors)
             _line_styles = ['--' if 'BL' in _label else '-' for _label in _labels]
             line_styles.append(_line_styles)
+            _labels = [label.replace("BL", "") for label in _labels]
+            labels.append(_labels)
 
             _sub_title = data_col_map.get(col, col)
             if col in y_scale_cols:
@@ -751,7 +765,8 @@ def plot_algo_0220():
 
         # 'Experiments/final_eval_res/BLMaternVanillaBO_0.1078_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216012649.pkl',
 
-        'Experiments/final_eval_res/BLHEBO_0.0967_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216043242.pkl',
+        # 'Experiments/final_eval_res/BLHEBO_0.0967_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216043242.pkl',
+        'Experiments/final_eval_res/BLHEBO_0.0939_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0228124151.pkl',
 
         # 'Experiments/final_eval_res/BLCMAES_0.0490_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216014349.pkl',
 
@@ -779,3 +794,19 @@ if __name__ == "__main__":
 
     # plot_project_tr()
     plot_algo_0220()
+
+    # from scipy.stats import qmc
+    # from ioh import get_problem
+
+    # x = [0.5] * 5
+    # feasible_instances = list(range(1, 15))
+    # for instance in feasible_instances:
+    #     problem = get_problem(19, instance, dimension=5)
+    #     y = problem(x)
+    #     loss = y - problem.optimum.y
+    #     print('')
+    #     print(y)
+    #     print(loss)
+
+    # for i in range(10):
+    #     print(qmc.Sobol(d=5, scramble=True).random(n=10))
