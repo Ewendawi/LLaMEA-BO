@@ -8,6 +8,7 @@ class AbstractEvaluator(ABC):
         self.return_checker:Callable[[tuple], str] = lambda x: ""
         self.ignore_over_budget = False
         self.inject_critic = False
+        self.ignore_capture = True
 
         self.max_eval_workers = 0
         self.use_multi_process = False

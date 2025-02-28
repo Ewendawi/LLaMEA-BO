@@ -118,7 +118,7 @@ class IOHObjectiveFn:
             return np.array(y).reshape(-1,1)
         return y
 
-def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, time_out:int=None, cls_init_kwargs=None, cls_call_kwargs=None, ignore_over_budget:bool=False, inject_critic:bool=False) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]: 
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, cls_init_kwargs=None, cls_call_kwargs=None, ignore_over_budget:bool=False, inject_critic:bool=False, ignore_capture:bool=True) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]: 
 
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
     obj_fn.ignore_over_budget = ignore_over_budget
@@ -148,6 +148,9 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     aoc = correct_aoc(obj_fn.obj_fn, l2, budget)
     obj_fn.aoc = aoc
     obj_fn.reset()
+
+    if ignore_capture:
+        captured_output = None
 
     return res, captured_output, err, exec_time, obj_fn, critic
 
@@ -332,6 +335,7 @@ class IOHEvaluator(AbstractEvaluator):
                 "inject_critic": self.inject_critic,
                 "cls_init_kwargs": cls_init_kwargs,
                 "cls_call_kwargs": cls_call_kwargs,
+                'ignore_capture': self.ignore_capture
             }
             new_param.update(param)
             params.append(new_param)

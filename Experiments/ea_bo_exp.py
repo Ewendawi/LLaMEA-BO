@@ -63,6 +63,7 @@ def get_IOHEvaluator_for_test(problems=[3], _instances=[1], repeat=1, budget=100
     instances = [_instances] * len(problems)
     repeat = repeat
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
+    evaluator.ignore_capture = False
     return evaluator
 
 def get_bo_prompt_generator():
