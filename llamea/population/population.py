@@ -86,6 +86,9 @@ class Population(ABC):
     def get_best_individual(self, maximize: bool = False):
         pass
 
+    def get_best_of_all(self, maximize: bool = True):
+        return self.get_best_individual(maximize)
+
     @abstractmethod
     def all_individuals(self):
         pass
