@@ -238,7 +238,7 @@ def debug_algo_eval():
         # 'is_baseline': True,
         # 'max_eval_workers': 4,
         # 'use_multi_process': True,
-        'use_mpi': True,
+        # 'use_mpi': True,
         # 'use_mpi_future': True,
         # 'time_profile': True,
         # 'ignore_cls': True, # the module with dynamic import can't be pickled

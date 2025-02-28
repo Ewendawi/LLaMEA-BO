@@ -416,8 +416,7 @@ def mock_res_provider(*args, **kwargs):
     return response
 
 def main():
-    # setup_logger(level=logging.DEBUG)
-    setup_logger(level=logging.INFO)
+    
 
     _params = {
         "n_generations": np.inf,
@@ -491,6 +490,9 @@ if __name__ == "__main__":
             use_mpi = True
         elif opt == "--mpi":
             use_mpi = True
+    
+    # setup_logger(level=logging.DEBUG)
+    setup_logger(level=logging.INFO)
     
     if use_mpi:
         from llamea.evaluator.MPITaskManager import start_mpi_task_manager 

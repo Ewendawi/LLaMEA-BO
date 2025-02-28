@@ -120,6 +120,10 @@ class MPITaskManager(metaclass=Singleton):
         if self.excuting:
             return
 
+        if max_size <= 0:
+            logger.error("Invalid buffer size %s", max_size)
+            return
+
         self.result_recv_buffer = bytearray(max_size) 
     
     def _handle_interrupt(self, signum, frame):
@@ -199,24 +203,27 @@ class MPITaskManager(metaclass=Singleton):
         not_done = set(futures)
 
         self.excuting = True
-        while not_done:
-            self._master_process_messages()
+        try:
+            while not_done:
+                self._master_process_messages()
 
-            done = [f for f in not_done if f.done()]
-            not_done -= set(done)
+                done = [f for f in not_done if f.done()]
+                not_done -= set(done)
 
-            for future in done:
-                yield future
+                for future in done:
+                    yield future
 
-            if timeout is not None:
-                elapsed_time = time.monotonic() - start_time
-                if elapsed_time >= timeout:
-                    break 
+                if timeout is not None:
+                    elapsed_time = time.monotonic() - start_time
+                    if elapsed_time >= timeout:
+                        break 
 
-            self._assign_pending_tasks()
+                self._assign_pending_tasks()
 
-            time.sleep(0.01)  
-        self.excuting = False
+                time.sleep(0.01)  
+        finally:
+            self.excuting = False
+            logger.debug("as_completed finished")
 
     def _process_result(self, worker_rank, result_package):
         task_id = result_package.task_id
@@ -275,14 +282,19 @@ class MPITaskManager(metaclass=Singleton):
         # Check for results from any worker
         for worker_rank in range(1, self.size):
             if self.comm.Iprobe(source=worker_rank, tag=Tags.RESULT.value):
-                if self.result_recv_buffer is not None:
-                    status = MPI.Status()
-                    self.comm.recv(self.result_recv_buffer, source=worker_rank, tag=Tags.RESULT.value, status=status)
-                    data_size = status.Get_count(MPI.BYTE)
-                    result_package = MPI.pickle.loads(self.result_recv_buffer[:data_size])
-                    logger.debug("Received result from worker %s with size %s", worker_rank, data_size)
-                else:
-                    result_package = self.comm.recv(source=worker_rank, tag=Tags.RESULT.value)
+                status = MPI.Status()
+                try:
+                    if self.result_recv_buffer is not None:
+                        self.comm.recv(self.result_recv_buffer, source=worker_rank, tag=Tags.RESULT.value, status=status)
+                        data_size = status.Get_count(MPI.BYTE)
+                        result_package = MPI.pickle.loads(self.result_recv_buffer[:data_size])
+                    else:
+                        result_package = self.comm.recv(source=worker_rank, tag=Tags.RESULT.value, status=status)
+                        data_size = status.Get_count(MPI.BYTE)
+                except MPI.Exception as e:
+                    logger.error("Received failed result from worker %s with size %s", worker_rank, data_size)
+                    raise e
+                logger.debug("Received result from worker %s with size %s", worker_rank, data_size)
                 self._process_result(worker_rank, result_package)
                 if worker_rank in self.active_tasks:
                     del self.active_tasks[worker_rank]
@@ -412,8 +424,9 @@ def master_test_func(task_manager):
     # Submit tasks
     n_tasks = 9
     futures = []
-    
-    print("Submitting tasks...")
+
+    print('====================')
+    print("Submitting tasks for wait...")
     for i in range(n_tasks):
         future = task_manager.submit(compute_intensive_task, f"task_{i}", i)
         futures.append(future)
@@ -433,6 +446,7 @@ def master_test_func(task_manager):
     # Shutdown the task manager
     task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=False)
 
+    print('====================')
     print("Submitting tasks for as_completed...")
     futures = []
     for i in range(n_tasks):
@@ -448,7 +462,24 @@ def master_test_func(task_manager):
             print("Cancelling remaining tasks...")
             break
 
-    task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=True)
+    task_manager.shutdown(wait=True, cancel_futures=True)
+
+    print("Submitting new tasks for as_completed...")
+    futures = []
+    for i in range(n_tasks):
+        future = task_manager.submit(compute_intensive_task, f"task_{i}", i)
+        futures.append(future) 
+
+    for future in task_manager.as_completed(futures):
+        try:
+            result = future.result()
+            print(f"Result from task {future.task_id}: {result:.6f}")
+        except Exception as e:
+            print(f"Task {i} failed: {str(e)}")
+            print("Cancelling remaining tasks...")
+            break
+
+    task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=False)
 
 def test_context_func():
     logging.basicConfig(level=logging.DEBUG)
