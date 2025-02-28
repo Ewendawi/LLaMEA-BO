@@ -209,7 +209,8 @@ def debug_algo_eval():
 
     file_map = {
         # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
-        # 'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
+        # 'BLTuRBO1': 'LLAMBO/Experiments/baselines/bo_baseline.py',
+        # 'BLHEBO': 'LLAMBO/Experiments/baselines/bo_baseline.py',
     }
 
     from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO, BLCMAES, BLHEBO
@@ -240,6 +241,7 @@ def debug_algo_eval():
         'use_mpi': True,
         # 'use_mpi_future': True,
         # 'time_profile': True,
+        # 'ignore_cls': True, # the module with dynamic import can't be pickled
     }
 
     plot = False
@@ -275,7 +277,9 @@ def eval_final_algo():
         'save_dir': 'Experiments/final_eval_res',
         # 'max_eval_workers': 4,
         # 'use_multi_process': True,
-        # 'ignore_cls': True, # sub-process can't find the module with dynamic import
+        # 'use_mpi': True,
+        # 'use_mpi_future': True,
+        # 'ignore_cls': True, # the module with dynamic import can't be pickled
     }
     _bl_file_map = {
         # 'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from mpi4py import MPI
 import numpy as np
+import warnings
 import time
 import uuid
 import signal
@@ -11,6 +12,7 @@ from enum import Enum
 from collections import deque
 
 logger = logging.getLogger(__name__)
+warnings.filterwarnings("ignore", message="the 'buf' argument is deprecated", category=UserWarning)
 
 # Tags for message types
 class Tags(Enum):

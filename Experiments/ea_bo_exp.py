@@ -218,6 +218,7 @@ def _run_exp(prompt_generator:PromptGenerator,
 
         if 'llm_mocker' in options:
             llm.mock_res_provider = options['llm_mocker']
+            options.pop('llm_mocker')
 
         if 'llm_params' in options:
             evol_options['llm_params'] = options['llm_params']
@@ -399,6 +400,11 @@ def mock_res_provider(*args, **kwargs):
         'Experiments/pop_temp/ESPopulation_evol_4+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208020829/0-4_BayesTrustRegionBOv1_respond.md',
 
         'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f4_f10_dim-5_budget-60_instances-[1]_repeat-2_0208010238/0-2_EfficientHybridBOv1_respond.md',
+    ]
+    file_list = [
+        '/home/hpcl2325/Experiments/pop_40_4-16/ESPopulation_evol_4-16_0222061618/1-3_HTRBO_0.0563_respond.md',
+        '/home/hpcl2325/Experiments/pop_40_4-16/ESPopulation_evol_4-16_0222063254/0-1_EHBO_0.0479_respond.md',
+        '/home/hpcl2325/Experiments/pop_40_4-16/ESPopulation_evol_4-16_0222063254/1-7_ATRBO_DKRA_0.0696_respond.md',
     ]
     file_path = np.random.choice(file_list, size=1)[0] 
     # file_path = np.random.choice(file_list, size=1, p=[0.25, 0.25, 0.25, 0.25])[0]

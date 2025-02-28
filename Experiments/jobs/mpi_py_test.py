@@ -73,6 +73,30 @@ def future_test():
 
     #worker process do nothing except listen in a blocked state
 
+import concurrent.futures
+import time
+
+# Function to perform a CPU-bound task
+def compute_factorial(n):
+    result = 1
+    for i in range(2, n + 1):
+        result *= i
+    return result
+
+def python_future_test():
+    numbers = [50000, 60000, 70000, 80000]
+
+    start_time = time.time()
+
+    # with concurrent.futures.ProcessPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(compute_factorial, num) for num in numbers]
+        for future in concurrent.futures.as_completed(futures):
+            print(f"Factorial computed for number: {numbers[futures.index(future)]}")
+
+    end_time = time.time()
+    print(f"Computed all factorials in {end_time - start_time:.2f} seconds")
+
 def send_test():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()

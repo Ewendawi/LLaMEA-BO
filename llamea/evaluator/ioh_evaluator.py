@@ -353,7 +353,7 @@ class IOHEvaluator(AbstractEvaluator):
 
             comm = MPI.COMM_WORLD
             size = comm.Get_size()
-            _logger.info("Evaluating %s: %s tasks, using MPI with %s max_workers", cls_name, total_tasks, size)
+            _logger.info("Evaluating %s: %s tasks, using MPI with %s workers", cls_name, total_tasks, size-1)
 
             task_manager = MPITaskManager()
             futures = {task_manager.submit(ioh_evaluate_block, **param): param for param in params}
