@@ -170,13 +170,13 @@ class MPITaskManager(metaclass=Singleton):
         if futures is None:
             futures = list(self.futures.values())
         
-        start_time = time.time()
+        start_time = time.monotonic()
         not_done = set(futures)
         
         self.excuting = True
         while not_done:
             # Check timeout
-            if timeout is not None and time.time() - start_time > timeout:
+            if timeout is not None and time.monotonic() - start_time > timeout:
                 break
             
             # Process any pending results/tasks
@@ -216,7 +216,7 @@ class MPITaskManager(metaclass=Singleton):
                 if timeout is not None:
                     elapsed_time = time.monotonic() - start_time
                     if elapsed_time >= timeout:
-                        break 
+                        raise TimeoutError()
 
                 self._assign_pending_tasks()
 
@@ -409,7 +409,7 @@ def start_mpi_task_manager(result_recv_buffer_size=None):
 
 # Example usage
 def compute_intensive_task(task_id, value):
-    if np.random.rand() < 0.4:
+    if np.random.rand() < 0.1:
         raise ValueError("Random failure")
     
     # Simulate computation with large array
@@ -433,7 +433,7 @@ def master_test_func(task_manager):
     
     # Wait for all tasks to complete
     print("Waiting for tasks to complete...")
-    done, not_done = task_manager.wait(futures)
+    done, not_done = task_manager.wait(futures, timeout=1)
     
     # Process results
     for i, future in enumerate(futures):
@@ -453,14 +453,17 @@ def master_test_func(task_manager):
         future = task_manager.submit(compute_intensive_task, f"task_{i}", i)
         futures.append(future) 
 
-    for future in task_manager.as_completed(futures):
-        try:
-            result = future.result()
-            print(f"Result from task {future.task_id}: {result:.6f}")
-        except Exception as e:
-            print(f"Task {i} failed: {str(e)}")
-            print("Cancelling remaining tasks...")
-            break
+    try:
+        for future in task_manager.as_completed(futures, timeout=1):
+            try:
+                result = future.result()
+                print(f"Result from task {future.task_id}: {result:.6f}")
+            except Exception as e:
+                print(f"Task {i} failed: {str(e)}")
+                print("Cancelling remaining tasks...")
+                break
+    except TimeoutError:
+        print("TimeoutError: No more tasks to process")
 
     task_manager.shutdown(wait=True, cancel_futures=True)
 
@@ -479,7 +482,6 @@ def master_test_func(task_manager):
             print("Cancelling remaining tasks...")
             break
 
-    task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=False)
 
 def test_context_func():
     logging.basicConfig(level=logging.DEBUG)
@@ -493,6 +495,7 @@ def test():
     
     if task_manager.is_master:
         master_test_func(task_manager)
+        task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=True)
     else:
         task_manager.start_worker()
 

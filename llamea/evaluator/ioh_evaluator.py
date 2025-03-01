@@ -315,6 +315,49 @@ class IOHEvaluator(AbstractEvaluator):
             done_tasks = len(eval_result.result)
             if done_tasks % interval == 0:
                 _logger.info("Evaluating %s: %s/%s", cls_name, done_tasks, total_tasks)
+
+    def start_as_completed(self,eval_result, futures, timeout, task_manager=None, executor=None, cls_name=None, interval=None, total_tasks=None):
+        _should_cancel = False
+        _as_completed = None
+        if task_manager is not None:
+            _as_completed = task_manager.as_completed(futures.keys(), timeout=timeout)
+        else:
+            _as_completed = concurrent.futures.as_completed(futures.keys(), timeout=timeout)
+        try:
+            for future in _as_completed:
+                res = future.result()
+                eval_basic_result = self.__process_results(*res)
+
+                _err = eval_basic_result.error
+                _err_type = eval_basic_result.error_type
+                if _err is not None:
+                    eval_result.error = _err 
+                    eval_result.error_type = _err_type
+                else:
+                    eval_result.result.append(eval_basic_result)
+
+                self._logging_eval_process(eval_result, interval, total_tasks)
+
+                if eval_result.error is not None:
+                    _should_cancel = True
+                    break
+        except TimeoutError as e:
+            _err = TimeoutError("Evaluation timed out (%d)", timeout)
+            _err_type = "Timeout"
+            eval_result.error = _err
+            eval_result.error_type = _err_type
+            self._logging_eval_process(eval_result, interval, total_tasks)
+            _should_cancel = True
+        
+        _logger.info("Evaluating %s: Shutting down executor", cls_name)
+        # better to wait for all running tasks to finish in case of resource competition
+        if task_manager is not None:
+            task_manager.shutdown(wait=True, cancel_futures=_should_cancel)
+        else:
+            executor.shutdown(wait=True, cancel_futures=_should_cancel)
+        _logger.info("Evaluating %s: Executor shut down", cls_name)
+
+        return eval_result
             
     def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
         """Evaluate an individual."""
@@ -361,22 +404,7 @@ class IOHEvaluator(AbstractEvaluator):
 
             task_manager = MPITaskManager()
             futures = {task_manager.submit(ioh_evaluate_block, **param): param for param in params}
-            _should_cancel = False
-            for future in task_manager.as_completed(futures.keys()):
-                res = future.result()
-                eval_basic_result = self.__process_results(*res)
-
-                self._post_process_error_check(eval_result, eval_basic_result, timeout, _all_eval_time_start)
-                self._logging_eval_process(eval_result, interval, total_tasks)
-
-                if eval_result.error is not None:
-                    _should_cancel = True
-                    break
-
-            _logger.info("Evaluating %s: Shutting down executor", cls_name)
-            # better to wait for all running tasks to finish in case of resource competition
-            task_manager.shutdown(wait=True, cancel_futures=_should_cancel)
-            _logger.info("Evaluating %s: Executor shut down", cls_name)
+            self.start_as_completed(eval_result, futures, timeout, task_manager=task_manager, cls_name=cls_name, interval=interval, total_tasks=total_tasks)
         
         elif use_mpi_future:
             from mpi4py import MPI
@@ -393,24 +421,9 @@ class IOHEvaluator(AbstractEvaluator):
             _logger.info("Evaluating %s: %s tasks, using MPI.futures with %s max_workers", cls_name, total_tasks, size)
                 
             executor = MPIPoolExecutor(max_workers=size)  
-            if rank == 0:  
-                futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
-                _should_cancel = False
-                for future in concurrent.futures.as_completed(futures.keys()):
-                    res = future.result()
-                    eval_basic_result = self.__process_results(*res)
+            futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
+            self.start_as_completed(eval_result, futures, timeout, executor=executor, cls_name=cls_name, interval=interval, total_tasks=total_tasks)
 
-                    self._post_process_error_check(eval_result, eval_basic_result, timeout, _all_eval_time_start)
-                    self._logging_eval_process(eval_result, interval, total_tasks)
-
-                    if eval_result.error is not None:
-                        _should_cancel = True
-                        break
-
-                _logger.info("Evaluating %s: Shutting down executor", cls_name)
-                # better to wait for all running tasks to finish in case of resource competition
-                executor.shutdown(wait=True, cancel_futures=_should_cancel)
-                _logger.info("Evaluating %s: Executor shut down", cls_name)
         elif max_eval_workers is None or max_eval_workers > 0:
             max_workers = min(os.cpu_count() - 1, max_eval_workers)
             if use_multi_process:
@@ -422,22 +435,7 @@ class IOHEvaluator(AbstractEvaluator):
 
             executor = executor_cls(max_workers=max_workers)
             futures = {executor.submit(ioh_evaluate_block, **param): param for param in params}
-            _should_cancel = False
-            for future in concurrent.futures.as_completed(futures.keys()):
-                res = future.result()
-                eval_basic_result = self.__process_results(*res)
-
-                self._post_process_error_check(eval_result, eval_basic_result, timeout, _all_eval_time_start)
-                self._logging_eval_process(eval_result, interval, total_tasks)
-
-                if eval_result.error is not None:
-                    _should_cancel = True
-                    break
-
-            _logger.info("Evaluating %s: Shutting down executor", cls_name)
-            # better to wait for all running tasks to finish in case of resource competition
-            executor.shutdown(wait=True, cancel_futures=_should_cancel)
-            _logger.info("Evaluating %s: Executor shut down", cls_name)
+            self.start_as_completed(eval_result, futures, timeout, executor=executor, cls_name=cls_name, interval=interval, total_tasks=total_tasks)
         else:
             _logger.info("Evaluating %s: %s tasks in sequence", cls_name, total_tasks)
 
@@ -445,7 +443,17 @@ class IOHEvaluator(AbstractEvaluator):
                 res = ioh_evaluate_block(**param)
                 eval_basic_result = self.__process_results(*res)
 
-                self._post_process_error_check(eval_result, eval_basic_result, timeout, _all_eval_time_start)
+                _err = eval_basic_result.error
+                _err_type = eval_basic_result.error_type
+                if _err is None and self._check_timeout(_all_eval_time_start, timeout):
+                    _err = TimeoutError("Evaluation timed out (%d)", timeout)
+                    _err_type = "Timeout"
+                if _err is not None:
+                    eval_result.error = _err 
+                    eval_result.error_type = _err_type
+                else:
+                    eval_result.result.append(eval_basic_result)
+
                 self._logging_eval_process(eval_result, interval, total_tasks)
                 if eval_result.error is not None:
                     break
