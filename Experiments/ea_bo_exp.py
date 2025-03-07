@@ -80,7 +80,7 @@ def get_light_Promptor_for_crossover():
 def _run_exp(prompt_generator:PromptGenerator,
             evaluator:AbstractEvaluator,
             llm:LLMmanager,
-            population:Population,
+            population:ESPopulation,
             n_generations:int=200,
             n_population:int=30,
             gpu_name:str=None,
@@ -161,6 +161,18 @@ def _run_exp(prompt_generator:PromptGenerator,
 
         if 'es_pop_is_elitism' in options:
             population.use_elitism = options['es_pop_is_elitism']
+
+        if 'llm_params' in options:
+            llm_params = options['llm_params']
+            p_name = population.name
+            if "temperature" in llm_params:
+                p_name += f'_t{llm_params["temperature"]}'
+            if "top_p" in llm_params:
+                p_name += f'_p{llm_params["top_p"]}'
+            if "top_k" in llm_params:
+                p_name += f'_k{llm_params["top_k"]}'
+            population.name = p_name
+        population.name += f'_cr{population.cross_over_rate}'
 
         if population.get_current_generation() == 0:
             # population.name += f"_{llm.model_name()}_{prompt_generator}_{evaluator}"
@@ -319,6 +331,7 @@ def run_mu_lambda_exp(
     if options is not None:
         if 'es_pop_is_elitism' in options:
             p_name = f'{n_parent}-{n_offspring}'
+        
     population.name = f"evol_{p_name}"
 
     _run_exp(
@@ -370,6 +383,7 @@ def get_llm():
     # MODEL = 'deepseek/deepseek-chat'
 
     MODEL = 'gemini-2.0-flash-exp'
+    # MODEL = 'gemini-2.0-flash'
     # MODEL = 'gemini-1.5-flash'
     # MODEL = 'gemini-2.0-pro-exp'
     # MODEL = 'gemini-2.0-flash-thinking-exp'

@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --time=08:01:15
-#SBATCH -N 4
+#SBATCH -N 6
 #SBATCH --ntasks-per-node=1
-#SBATCH --output=LLAMBO/Experiments/jobs/bo_algo_eval.log
-#SBATCH --job-name=bo_algo_eval
+#SBATCH --output=LLAMBO/Experiments/jobs/bo_evol_t05_k40_cr06.log
+#SBATCH --job-name=t05_k40_cr06
 
 . /etc/bashrc
 . /etc/profile.d/lmod.sh

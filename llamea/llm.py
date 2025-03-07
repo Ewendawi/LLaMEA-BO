@@ -33,8 +33,8 @@ LLMS = {
 
     "gemini-1.5-flash": ('gemini-1.5-flash', GEMINI_API_KEY, GEMINI_BASE_URL, 5, 'google'),
     "gemini-2.0-flash-exp": ('gemini-2.0-flash-exp', GEMINI_API_KEY, GEMINI_BASE_URL, 10, 'google'),
-    'gemini-exp-1206': ('gemini-exp-1206', GEMINI_API_KEY, GEMINI_BASE_URL, 5, 'google'),
-    'gemini-2.0-pro' : ('gemini-2.0-pro-exp-02-05', GEMINI_API_KEY, GEMINI_BASE_URL, 5, 'google'),
+    "gemini-2.0-flash": ('gemini-2.0-flash', GEMINI_API_KEY, GEMINI_BASE_URL, 10, 'google'),
+    'gemini-2.0-pro-exp' : ('gemini-2.0-pro-exp-02-05', GEMINI_API_KEY, GEMINI_BASE_URL, 5, 'google'),
     'gemini-2.0-flash-thinking': ('gemini-2.0-flash-thinking-exp-01-21', GEMINI_API_KEY, GEMINI_BASE_URL, 5, 'google'),
 
     'onehub-gemini-2.0-flash': ('gemini-2.0-flash-exp', ONEHUB_API_KEY, ONEHUB_BASE_URL, 5, None),
