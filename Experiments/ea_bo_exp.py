@@ -185,8 +185,8 @@ def _run_exp(prompt_generator:PromptGenerator,
             if os.path.exists(check_point_path):
                 population = Population.load(check_point_path)
                 logging.info("Load population from check point: %s", check_point_path)
-                inds = population.get_individuals()
-                if len(inds) < population.n_parent:
+                offspring = population.get_offsprings()
+                if len(offspring) < population.n_offspring:
                     population.revert_last_generation()
                     logging.info("Revert to last generation")
             else:

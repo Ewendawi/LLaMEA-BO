@@ -159,21 +159,26 @@ class MPITaskManager(metaclass=Singleton):
         return future
     
     def wait(self, futures=None, timeout=None):
-        if not self.is_master:
-            logger.warning("Only the master process can wait for futures")
-            return (set(), set())
-
         if self.shutdown_requested or self.excuting:
             logger.error("Task manager is shutting down or already executing tasks, cannot wait for futures")
             return (set(), set())
         
+        self.excuting = True
+        done, not_done = self._wait_for_futures(futures, timeout)
+        self.excuting = False
+        return (done, not_done)
+
+    def _wait_for_futures(self, futures, timeout=None):
+        if not self.is_master:
+            logger.warning("Only the master process can wait for futures")
+            return (set(), set())
+
         if futures is None:
             futures = list(self.futures.values())
         
         start_time = time.monotonic()
         not_done = set(futures)
         
-        self.excuting = True
         while not_done:
             # Check timeout
             if timeout is not None and time.monotonic() - start_time > timeout:
@@ -192,8 +197,7 @@ class MPITaskManager(metaclass=Singleton):
             
             # Sleep briefly to avoid busy waiting
             time.sleep(0.01)
-        
-        self.excuting = False
+
         done = set(futures) - not_done
         return (done, not_done)
 
@@ -261,14 +265,12 @@ class MPITaskManager(metaclass=Singleton):
             for worker_rank, task in list(self.active_tasks.items()):
                 task_id = task.task_id
                 self.comm.send(task_id, dest=worker_rank, tag=Tags.CANCEL.value)
-                future = self.futures[task_id]
-                future._set_cancelled()
         
-        if wait and self.task_queue:
+        if wait and (self.task_queue or self.active_tasks):
             logger.debug("Waiting for pending tasks to complete")
             pending_futures = [self.futures[task.task_id] for task in self.task_queue]
             pending_futures.extend([self.futures[task.task_id] for task in self.active_tasks.values()])
-            self.wait(pending_futures)
+            self._wait_for_futures(pending_futures)
         
         if terminate_workers:
             for worker_rank in range(1, self.size):
@@ -276,7 +278,7 @@ class MPITaskManager(metaclass=Singleton):
                 logger.debug("Termination signal sent to worker %s", worker_rank)
             self.running = False
         self.shutdown_requested = False
-        logger.debug("Shutdown initiated")
+        logger.debug("Shutdown completed")
     
     def _master_process_messages(self):
         # Check for results from any worker
@@ -292,7 +294,7 @@ class MPITaskManager(metaclass=Singleton):
                         result_package = self.comm.recv(source=worker_rank, tag=Tags.RESULT.value, status=status)
                         data_size = status.Get_count(MPI.BYTE)
                 except MPI.Exception as e:
-                    logger.error("Received failed result from worker %s with size %s", worker_rank, data_size)
+                    logger.error("Received failed result from worker %s", worker_rank)
                     raise e
                 logger.debug("Received result from worker %s with size %s", worker_rank, data_size)
                 self._process_result(worker_rank, result_package)
@@ -347,11 +349,7 @@ class MPITaskManager(metaclass=Singleton):
                 cancel_id = self.comm.recv(source=0, tag=Tags.CANCEL.value)
                 if cancel_id == current_task.task_id:
                     logger.debug("Worker %s cancelling task %s", self.rank, cancel_id)
-                    # Send cancellation confirmation
-                    result = MPIResultPackage(cancel_id, cancelled=True)
-                    self.comm.send(result, dest=0, tag=Tags.RESULT.value)
-                    current_task = None
-                    self.comm.send(Status.TERMINATED , dest=0, tag=Tags.STATUS.value)
+                    # TODO: Implement task cancellation
             
             # Check for new task if we're not running one
             if not current_task and self.comm.Iprobe(source=0, tag=Tags.TASK.value):
@@ -416,7 +414,9 @@ def compute_intensive_task(task_id, value):
     size = 10000
     data = np.linspace(0, 10, size)
     result = np.sum(np.sin(data + value))
-    time.sleep(1)  # Additional work simulation
+
+    time_out = np.random.randint(1, 5)
+    time.sleep(time_out)  # Additional work simulation
     
     return result
 
@@ -454,10 +454,15 @@ def master_test_func(task_manager):
         futures.append(future) 
 
     try:
-        for future in task_manager.as_completed(futures, timeout=1):
+        count = 0
+        for future in task_manager.as_completed(futures, timeout=100):
             try:
+                count += 1
                 result = future.result()
                 print(f"Result from task {future.task_id}: {result:.6f}")
+                if count == 2:
+                    print("Cancelling remaining tasks...")
+                    break
             except Exception as e:
                 print(f"Task {i} failed: {str(e)}")
                 print("Cancelling remaining tasks...")

@@ -54,9 +54,27 @@ class LLMClientResponse:
     def __init__(self, response):
         self.response = response
         self.text = None
-        self.prompt_token_count = 0
-        self.response_token_count = 0
+        self._prompt_token_count = 0
+        self._response_token_count = 0
         self.error = None
+
+    @property
+    def prompt_token_count(self):
+        return self._prompt_token_count
+    
+    @prompt_token_count.setter
+    def prompt_token_count(self, value):
+        if value is not None:
+            self._prompt_token_count = value
+
+    @property
+    def response_token_count(self):
+        return self._response_token_count
+    
+    @response_token_count.setter
+    def response_token_count(self, value):
+        if value is not None:
+            self._response_token_count = value
 
     def __str__(self):
         if self.error is not None:
