@@ -278,7 +278,15 @@ class MPITaskManager(metaclass=Singleton):
             for worker_rank in range(1, self.size):
                 self.comm.send(None, dest=worker_rank, tag=Tags.TERMINATE.value)
                 logger.debug("Termination signal sent to worker %s", worker_rank)
+        
+            if wait:
+                logger.debug("Waiting for workers to shut down")
+                while any(status != Status.TERMINATED for status in self.workers_status.values()):
+                    self._master_process_messages()
+                    time.sleep(0.2)
+                logger.debug("All workers have shut down")
             self.running = False
+
         self.shutdown_requested = False
         logger.debug("Shutdown completed")
     
@@ -333,7 +341,6 @@ class MPITaskManager(metaclass=Singleton):
             logger.debug("Task %s sent to worker %s", task.task_id, worker_rank)
 
     def _execute_task(self, task, queue):
-        logger.debug("Worker %s started on %s", self.rank, self.hostname)
         task_id = task.task_id
         func = task.func
         args = task.args
@@ -371,6 +378,8 @@ class MPITaskManager(metaclass=Singleton):
             if self.comm.Iprobe(source=0, tag=Tags.TERMINATE.value):
                 self.comm.recv(source=0, tag=Tags.TERMINATE.value)
                 logger.debug("Worker %s received termination signal", self.rank)
+                self.comm.send(Status.TERMINATED, dest=0, tag=Tags.STATUS.value)
+                logger.debug("Worker %s send termination status", self.rank)
                 self.running_as_worker = False
                 break
             
@@ -383,7 +392,6 @@ class MPITaskManager(metaclass=Singleton):
                         result = MPIResultPackage(cancel_id, cancelled=True)
                         self.comm.send(result, dest=0, tag=Tags.RESULT.value)
                         current_task = None
-                        self.comm.send(Status.IDLE, dest=0, tag=Tags.STATUS.value)
 
                         sub_process.terminate()
                         sub_process.join()
@@ -398,7 +406,6 @@ class MPITaskManager(metaclass=Singleton):
                 time.sleep(0.5)
                 current_task = req.wait()
                 logger.debug("Worker %s received task %s", self.rank, current_task.task_id)
-                self.comm.send(Status.BUSY, dest=0, tag=Tags.STATUS.value)
                 
                 if self.sub_process_worker:
                     import multiprocessing as mp
@@ -415,7 +422,6 @@ class MPITaskManager(metaclass=Singleton):
                     # Send the result back to the master
                     self.comm.send(result, dest=0, tag=Tags.RESULT.value)
                     current_task = None
-                    self.comm.send(Status.IDLE, dest=0, tag=Tags.STATUS.value)
 
             if sub_process and res_queue and not res_queue.empty():
                 # finish the sub process
@@ -425,7 +431,6 @@ class MPITaskManager(metaclass=Singleton):
 
                     self.comm.send(result, dest=0, tag=Tags.RESULT.value)
                     current_task = None
-                    self.comm.send(Status.IDLE, dest=0, tag=Tags.STATUS.value)
 
                     if sub_process.is_alive():
                         sub_process.terminate()
