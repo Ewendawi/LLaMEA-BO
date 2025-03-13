@@ -176,8 +176,7 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
                     if handler.eval_result is None:
                         continue
                     for res in handler.eval_result.result:
-                        if not res.is_aoc_under_new_bound():
-                            res.update_aoc_with_new_bound()
+                        res.update_aoc_with_new_bound_if_needed()
                         row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=n_ind, n_strategy=_count)
                         res_df.loc[len(res_df)] = row
 

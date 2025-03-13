@@ -227,8 +227,7 @@ def _process_algo_result(results:list[EvaluatorResult]):
         # algo = result.name.removeprefix("BL")
         algo = result.name
         for res in result.result:
-            if not res.is_aoc_under_new_bound():
-                res.update_aoc_with_new_bound()
+            res.update_aoc_with_new_bound_if_needed()
             row = res_to_row(res, algo)
             if row is not None:
                 res_df.loc[len(res_df)] = row

@@ -283,7 +283,7 @@ class IOHEvaluator(AbstractEvaluator):
 
             eval_basic_result.y_aoc_from_ioh = obj_fn.aoc
             eval_basic_result.update_stats()
-            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8, max_y=1e4)
+            eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8)
 
         return eval_basic_result
 

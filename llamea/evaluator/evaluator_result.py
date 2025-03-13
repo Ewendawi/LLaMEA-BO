@@ -676,18 +676,19 @@ class EvaluatorBasicResult:
         self.uncertainty_list = []
         self.uncertainty_list_on_train = []
 
-        # new aoc use 100*100 as the upper bound instead of 100
-        self.aoc_version = 2.0
+        self.aoc_upper_bound = 1e9
 
-    def is_aoc_under_new_bound(self):
-        if hasattr(self, "aoc_version"):
-            return self.aoc_version >= 2.0
-        return False
-
-    def update_aoc_with_new_bound(self):
-        self.aoc_version = 2.0
-        self.update_aoc(self.optimal_value, min_y=1e-8, max_y=1e4)
-        
+    def update_aoc_with_new_bound_if_needed(self, upper_bound=None):
+        if upper_bound is None:
+            if hasattr(self, "aoc_upper_bound"):
+                upper_bound = self.aoc_upper_bound
+            else:
+                upper_bound = 1e9
+        if hasattr(self, "aoc_upper_bound") and self.aoc_upper_bound == upper_bound:
+            pass
+        else:
+            self.aoc_upper_bound = upper_bound
+            self.update_aoc(self.optimal_value, max_y=upper_bound, min_y=1e-8) 
     
     def fill_short_data(self, length):
         self.r2_list = _fill_nan(self.r2_list, length)
@@ -739,6 +740,9 @@ class EvaluatorBasicResult:
     def update_aoc(self, optimal_value = None, min_y=None, max_y=None):
         if self.y_hist is None:
             return
+
+        if max_y is None and hasattr(self, "aoc_upper_bound"):
+            max_y = self.aoc_upper_bound
 
         y_hist = self.y_hist
         y_aoc = ConvergenceCurveAnalyzer(max_y=max_y, min_y=min_y, log_scale=False, shift_value=optimal_value).calculate_aoc(y_hist)

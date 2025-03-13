@@ -187,7 +187,7 @@ currentexp
 Experiments/pop_*
 population_logs
 algo_eval_res
-final_eval_res
+final_eval_res*
 0209_img
 temperature_res
 outcmaes
