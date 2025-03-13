@@ -226,6 +226,10 @@ def _process_algo_result(results:list[EvaluatorResult]):
     for result in results:
         # algo = result.name.removeprefix("BL")
         algo = result.name
+        if 'EvolutionaryBO' in algo:
+            algo = 'ATREvolBO'
+        elif 'Optimistic' in algo:
+            algo = 'ATROptimisticBO'
         for res in result.result:
             res.update_aoc_with_new_bound_if_needed()
             row = res_to_row(res, algo)
@@ -283,6 +287,7 @@ def _plot_algo_aoc(res_df:pd.DataFrame):
         else:
             colors.append(_default_colors[1])
     labels = [label.replace("BL", "") for label in labels]
+    labels = [label[:16] for label in labels]
 
     # plot aoc
     plot_box_violin(
@@ -314,7 +319,7 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame):
 
         _labels = _temp_df['algorithm'].to_list()
         labels.append(_labels)
-        _label = [label.replace("BL", "") for label in _labels]
+        _labels = [label.replace("BL", "") for label in _labels]
         short_labels.append([label[:16] for label in _labels])
 
     prop_cycle = plt.rcParams['axes.prop_cycle']
@@ -469,7 +474,22 @@ def _plot_algo_iter(res_df:pd.DataFrame):
     ignore_cols = [
         'n_init',
         'acq_exp_threshold',
+        'loss'
     ]
+    
+    best_loss_plot_data = []
+    best_loss_x_data = []
+    best_loss_plot_filling = []
+    best_loss_labels = []
+    best_loss_x_dots = []
+    best_loss_sub_titles = []
+    best_loss_y_scales = []
+    best_loss_colors = []
+    best_loss_line_styles = []
+    best_loss_baselines = []
+    best_loss_baseline_labels = []
+
+    seperated_plot = False
 
     for problem_id in problem_ids:
         plot_data = []
@@ -585,6 +605,21 @@ def _plot_algo_iter(res_df:pd.DataFrame):
                 y_scales.append(None)
                 sub_titles.append(_sub_title)
 
+            if col == 'best_loss':
+                best_loss_plot_data.append(plot_data[-1])
+                best_loss_x_data.append(x_data[-1])
+                best_loss_plot_filling.append(plot_filling[-1])
+                best_loss_labels.append(labels[-1])
+                best_loss_x_dots.append(x_dots[-1])
+                best_loss_sub_titles.append(f'F{problem_id}')
+                best_loss_y_scales.append(y_scales[-1])
+                best_loss_colors.append(colors[-1])
+                best_loss_line_styles.append(line_styles[-1])
+                best_loss_baselines.append(baselines[-1])
+                best_loss_baseline_labels.append(baseline_labels[-1])
+
+        if seperated_plot is False:
+            continue
 
         plot_lines(
             y=plot_data, x=x_data, 
@@ -604,6 +639,26 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             title=f"F{problem_id}",
             figsize=(15, 9),
         ) 
+
+    if seperated_plot is False:
+        plot_lines(
+            y=best_loss_plot_data, x=best_loss_x_data,
+            y_scales=best_loss_y_scales,
+            baselines=best_loss_baselines,
+            baseline_labels=best_loss_baseline_labels,
+            colors=best_loss_colors,
+            labels=best_loss_labels,
+            line_styles=best_loss_line_styles,
+            label_fontsize=6,
+            linewidth=1.2,
+            filling=best_loss_plot_filling,
+            x_dot=best_loss_x_dots,
+            n_cols=6,
+            sub_titles=best_loss_sub_titles,
+            sub_title_fontsize=10,
+            title="Best Loss",
+            figsize=(15, 9),
+        )
 
 def plot_algo_result(results:list[EvaluatorResult]):
     res_df = _process_algo_result(results)
