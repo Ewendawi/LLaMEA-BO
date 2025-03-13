@@ -1354,20 +1354,41 @@ def plot_search_0209(dir_path, add_cr_rate=False, file_paths=None, save_name=Non
             name += f"_{cr_rate}"
 
         if extract_fn is not None:
-            name += "_" + extract_fn(file_path)
+            sub_fix = extract_fn(file_path)
+            if sub_fix:
+                name += f"_{sub_fix}"
 
         pop_list.append((name, pop))
 
         cur_best = best_pop_map.get(name, None)
         if cur_best is None or pop.get_best_of_all().fitness > cur_best.get_best_of_all().fitness:
             best_pop_map[name] = pop
-    
+
 
     plot_search_result(pop_list, save_name=save_name)
+
+def update_aoc_for_res():
+    file_path = 'Experiments/ESPopulation_evol_4-16_final_0222112835.pkl'
+    with open(file_path, 'rb') as f:
+        res = pickle.load(f)
+
+    for key, ind in res.individuals.items():
+        hanlder = Population.get_handler_from_individual(ind)
+        eval_res = hanlder.eval_result
+        if eval_res is not None:
+            for sub_res in eval_res.result:
+                sub_res.update_aoc_with_new_bound_if_needed()
+            eval_res.score = np.mean([r.log_y_aoc for r in eval_res.result])
+            ind.fitness = eval_res.score
+
+    new_file_path = file_path.replace('final', 'final_aoc')
+    with open(new_file_path, 'wb') as f:
+        pickle.dump(res, f)
 
 
 if __name__ == "__main__":
     setup_logger(level=logging.INFO)
+
     # plot_search()
 
     # plot_light_evol_and_final()
@@ -1378,7 +1399,9 @@ if __name__ == "__main__":
     extract_fn = None
 
     dir_path = 'Experiments/pop_40_f_0220'
-    save_name = 'Experiments/pop_40_f_0220/df_res_02230646.pkl'
+    # save_name = 'Experiments/pop_40_f_0220/df_res_02230646.pkl'
+
+    dir_path = 'Experiments/pop_100_tkcr'
     
     # dir_path = 'Experiments/pop_100_f'
     # save_name = 'Experiments/pop_100_f/df_res_02250235.pkl'
@@ -1394,6 +1417,12 @@ if __name__ == "__main__":
             if match:
                 t = float(match.group(1)) / 10
                 return f"{t}"
+            pattern = re.compile(r'evol_\d*-\d*_(\w+)_IOHEvaluator')
+            match = pattern.search(file_path)
+            if match:
+                f = match.group(1)
+                return f"{f}"
+
         elif 'top_k' in file_path:
             pattern = re.compile(r'_k(\d+)_IOHEvaluator')
             match = pattern.search(file_path)
@@ -1406,20 +1435,24 @@ if __name__ == "__main__":
             if match:
                 p = int(match.group(1)) / 100
                 return f"{p}"
+        elif 'pop_40_4-16' in file_path:
+            pattern = re.compile(r'evol_\d*-\d*_(.+)_IOHEvaluator')
+            match = pattern.search(file_path)
+            if match:
+                f = match.group(1)
+                return f"{f}"
+        return ''
                 
-    #     raise Exception(f'Pattern not found in {file_path}')
-
     # dir_path = 'Experiments/pop_40_temperature'
     # save_name = 'Experiments/pop_40_temperature/df_res_02250414.pkl'
-    # extract_fn = _extract_fn
 
     # dir_path = 'Experiments/pop_40_top_k'
     # save_name = 'Experiments/pop_40_top_k/df_res_02250447.pkl'
-    # extract_fn = _extract_fn
 
     # dir_path = 'Experiments/pop_40_top_p'
     # save_name = 'Experiments/pop_40_top_p/df_res_02250407.pkl'
-    # extract_fn = _extract_fn
+
+    extract_fn = _extract_fn
 
     # save_name = None
     # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
