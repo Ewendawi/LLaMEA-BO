@@ -555,31 +555,53 @@ def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]
         figsize=(15, 9),
         ) 
 
-def _plot_search_error_type(err_df:pd.DataFrame):
-    _size = err_df.shape[0]
-    type_count = err_df['err_type'].value_counts()
-    _all_type_count = type_count.sum()
+def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str]):
 
-    # sum types less than 0.01 into others
-    _threshold = 0.01
-    _other_count = 0
-    for _type, _count in type_count.items():
-        if _count / _all_type_count < _threshold:
-            _other_count += _count
-    type_count = type_count[type_count / _all_type_count >= _threshold]
-    type_count['others'] = _other_count
+    _filter_types = [
+        'Timeout', 
+        'BOOverBudgetException', 
+    ]
 
-    _title = f"{_all_type_count} errors in {_size} algorithms"
-    _title = f'Total errors: {_all_type_count}/{_size}'
-    _plot_data = type_count
+    _err_df = error_df[~error_df['err_type'].isin(_filter_types)]
 
-    _, ax = plt.subplots(figsize=(10, 6))
-    ax.pie(_plot_data, 
-            labels=_plot_data.index, 
-            autopct='%1.1f%%',
-        #    autopct=lambda p: '{:d}'.format(int(p / 100 * _all_type_count)),
-            )
-    ax.set_title(_title)
+    titles = []
+    plot_data = []
+
+    for strategy in unique_strategies:
+        _all_strategy_error_df = error_df[error_df['strategy'] == strategy]
+        _timeout_count = _all_strategy_error_df[_all_strategy_error_df['err_type'] == 'Timeout'].shape[0]
+        _bo_count = _all_strategy_error_df[_all_strategy_error_df['err_type'] == 'BOOverBudgetException'].shape[0]
+        _all_size = _all_strategy_error_df.shape[0]
+
+        _strategy_error_df = _err_df[_err_df['strategy'] == strategy]
+        _size = _strategy_error_df.shape[0]
+        type_count = _strategy_error_df['err_type'].value_counts()
+        _all_type_count = type_count.sum()
+
+        # sum types less than 0.01 into others
+        _threshold = 0.01
+        _other_count = 0
+        for _type, _count in type_count.items():
+            if _count / _all_type_count < _threshold:
+                _other_count += _count
+        type_count = type_count[type_count / _all_type_count >= _threshold]
+        type_count['others'] = _other_count
+
+        _title = f'{strategy}\n Timeout:{_timeout_count} \n BOOverBudgetException:{_bo_count} \n rest:{_all_type_count} \n total:{_all_size}'
+        _plot_data = type_count
+        titles.append(_title)
+        plot_data.append(_plot_data)
+
+    for i, _plot_data in enumerate(plot_data):
+        fig, ax = plt.subplots(figsize=(12, 8))
+        _title = titles[i]
+        _plot_data = plot_data[i]
+        ax.pie(_plot_data, 
+                labels=_plot_data.index, 
+                autopct='%1.1f%%',
+            #    autopct=lambda p: '{:d}'.format(int(p / 100 * _all_type_count)),
+                )
+        fig.suptitle(_title)
 
 
 def _group_plus_error_rate(strategy_group:dict, strategy:str, mean_err_rate:float, std_err_rate:float):
