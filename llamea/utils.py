@@ -624,6 +624,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
 
                 labels:list[list[str]],
                 label_fontsize:int = 7,
+                combined_legend:bool = False,
 
                 filling:list[np.ndarray]=None, 
                 linewidth:float = 1.0,
@@ -675,7 +676,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
         for col in range(n_cols):
             row_ids.append(row * n_cols + col)
         axs_ids.append(row_ids)
-    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize)
+    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize, sharex=True)
     for i in range(n_plots):
         row = i // n_cols
         col = i % n_cols
@@ -728,7 +729,8 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 label = _bl_labels[j] if len(_bl_labels) > j else f"{j}"
                 ax.axhline(y=base, label=label, linestyle="--", color="black", linewidth=linewidth, alpha=0.6)
 
-        ax.legend(fontsize=label_fontsize)
+        if combined_legend is False:
+            ax.legend(fontsize=label_fontsize)
         ax.grid(True)
 
         if x_labels is not None:
@@ -746,11 +748,18 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
 
     if caption:
         fig.text(0.5, -0.11, caption, ha='center', fontsize=caption_fontsize)
+
+    fig.tight_layout()
+
+    if combined_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='lower center', ncol=10, fontsize=label_fontsize, bbox_to_anchor=(0.5, 0.0))
+        plt.subplots_adjust(bottom=0.07) 
+
     
     if filename:
         plt.savefig(filename, dpi=300)
 
-    fig.tight_layout()
 
     if show:
         plt.show()
@@ -840,8 +849,6 @@ def plot_box_violin(
 
     if len(labels) != len(data):
         logging.warning("PLOT:Number of labels does not match the number of plots.")
-    if long_labels is not None and len(long_labels) != len(data):
-        logging.warning("PLOT:Number of long_labels does not match the number of plots.")
 
     n_plots = len(data)
     n_cols = min(n_cols, n_plots)
@@ -930,6 +937,63 @@ def plot_box_violin(
     if show:
         plt.show()
 
+def plot_voilin_style_scatter(
+        data:list[np.ndarray],
+        labels: list[list[str]], 
+        label_fontsize:int = 9,
+        sub_titles: list[str] = None,
+        x_labels: list[str] = None,
+        y_labels: list[str] = None,
+        title = "", 
+        y_lim:tuple[float,float] = None,
+        margin:float = 0.5,
+        colors: list[list] = None,
+        n_cols:int = 1, figsize:tuple[int,int] = (10, 6), 
+        show:bool = True,
+        filename=None):
+    n_plots = len(data)
+    n_cols = min(n_cols, n_plots)
+    n_rows = n_plots // n_cols
+    if n_plots % n_cols != 0:
+        n_rows += 1
+
+    axs_ids = []
+    for row in range(n_rows):
+        row_ids = []
+        for col in range(n_cols):
+            row_ids.append(row * n_cols + col)
+        axs_ids.append(row_ids)
+    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize)
+
+    for i in range(n_plots):
+        row = i // n_cols
+        col = i % n_cols
+        ax = axs[i]
+
+        _data = data[i]
+        _labels = labels[i]
+        _x_labels = x_labels[i] if x_labels is not None else ""
+        _y_labels = y_labels[i] if y_labels is not None else ""
+        _sub_title = sub_titles[i] if sub_titles is not None else ""
+        _colors = colors[i] if colors is not None else None
+
+        for j, d in enumerate(_data):
+            _x = np.full(len(d), j)
+            _color = _colors[j] if _colors is not None and len(_colors) > j else None
+            ax.scatter(_x, d, label=_labels[j], color=_color)
+
+        ax.set_xticks(range(len(_data)), labels=_labels, fontsize=label_fontsize)
+        ax.set_xlabel(_x_labels)
+        ax.set_ylabel(_y_labels)
+        ax.set_title(_sub_title)
+        ax.yaxis.grid(True)
+        ax.set_xlim(-margin, len(_data) - 1 + margin)
+        ax.set_ylim(y_lim)
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    if show:
+        plt.show()
 
 
 

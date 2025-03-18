@@ -39,7 +39,7 @@ def mean_std_agg(agg_series):
     if is_numeric_dtype(agg_series.dtype):
         mean = np.nanmean(agg_series)
         std = np.nanstd(agg_series)
-        return [mean, std]
+        return [mean, std, None, None]
     else:  
         agg_list = agg_series.to_list()
         min_len = min([len(ele) for ele in agg_list])
@@ -47,7 +47,9 @@ def mean_std_agg(agg_series):
         cliped_list = [ele[:min_len] for ele in agg_list]
         mean_list = np.nanmean(cliped_list, axis=0)
         std_list = np.nanstd(cliped_list, axis=0)
-        return [mean_list, std_list]
+        _max_ele = np.max(cliped_list, axis=0)
+        _min_ele = np.min(cliped_list, axis=0)
+        return [mean_list, std_list, _max_ele, _min_ele]
 
 def fill_nan_with_left(arr):
     filled_arr = arr.copy()
@@ -227,9 +229,13 @@ def _process_algo_result(results:list[EvaluatorResult]):
         # algo = result.name.removeprefix("BL")
         algo = result.name
         if 'EvolutionaryBO' in algo:
-            algo = 'ATREvolBO'
+            algo = 'A_TREvol'
         elif 'Optimistic' in algo:
-            algo = 'ATROptimisticBO'
+            algo = 'A_TROptimistic'
+        elif 'Pareto' in algo:
+            algo = 'A_TRPareto'
+        elif 'ARM' in algo:
+            algo = 'A_ARM'
         for res in result.result:
             res.update_aoc_with_new_bound_if_needed()
             row = res_to_row(res, algo)
@@ -268,7 +274,7 @@ def _plot_algo_aoc_on_problems(res_df:pd.DataFrame):
         figsize=(15, 9),
     )
 
-def _plot_algo_aoc(res_df:pd.DataFrame):
+def _plot_algo_aoc(res_df:pd.DataFrame, dim:int):
     all_aoc_df = res_df.groupby(['algorithm', 'instance_id', 'exec_id'])[['y_aoc', 'log_y_aoc']].agg(np.mean).reset_index()
     all_aoc_df = all_aoc_df.groupby(['algorithm'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
     prop_cycle = plt.rcParams['axes.prop_cycle']
@@ -287,6 +293,7 @@ def _plot_algo_aoc(res_df:pd.DataFrame):
         else:
             colors.append(_default_colors[1])
     labels = [label.replace("BL", "") for label in labels]
+    labels = [label.replace("A_", "") for label in labels]
     labels = [label[:16] for label in labels]
 
     # plot aoc
@@ -296,11 +303,11 @@ def _plot_algo_aoc(res_df:pd.DataFrame):
         colors=[colors],
         show_inside_box=True,
         plot_type="violin",
-        title="AOC",
+        title=f"AOC on {dim}D Problems",
         figsize=(15, 9),
     )
 
-def _plot_algo_problem_aoc(res_df:pd.DataFrame):
+def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int):
     problem_id_list = res_df['problem_id'].unique()
     problem_id_list.sort()
     aoc_df = res_df.groupby(['algorithm','problem_id'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
@@ -320,6 +327,7 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame):
         _labels = _temp_df['algorithm'].to_list()
         labels.append(_labels)
         _labels = [label.replace("BL", "") for label in _labels]
+        _labels = [label.replace("A_", "") for label in _labels]
         short_labels.append([label[:16] for label in _labels])
 
     prop_cycle = plt.rcParams['axes.prop_cycle']
@@ -334,7 +342,7 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame):
     labels = short_labels
 
     # iter by step
-    step = 6
+    step = 1
     for i in range(0, len(log_plot_data), step):
         _plot_data = log_plot_data[i:i+step]
         _labels = labels[i:i+step]
@@ -344,7 +352,7 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame):
         plot_box_violin(data=_plot_data,
                         labels=_labels,
                         sub_titles=_sub_titles,
-                        title="AOC",
+                        title=f"AOC on {dim}D Problems",
                         plot_type="violin",
                         label_fontsize=8, 
                         show_inside_box=True,
@@ -384,7 +392,7 @@ def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
             return gaussian_smoothing(data, sigma)
     return _smooth_data
 
-def _plot_algo_iter(res_df:pd.DataFrame):
+def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
     # handle y
     data_col_map = {
         'n_init': '',
@@ -449,11 +457,18 @@ def _plot_algo_iter(res_df:pd.DataFrame):
         y_df[y_df['problem_id'] == problem_id] = _p_df
 
     y_df = y_df.groupby(['algorithm', 'problem_id', 'instance_id'])[data_cols].agg(np.mean).reset_index()
+    # y_df = y_df.groupby(['algorithm', 'problem_id', 'exec_id'])[data_cols].agg(np.mean).reset_index()
     
     if 'loss' in data_cols:
         y_df['best_loss'] = y_df['loss'].apply(np.minimum.accumulate)
     
-    # y_df = res_df
+    # copy each row in y_df with new algorithm name
+    for i, _row in y_df.iterrows():
+        _algo = _row['algorithm']
+        _new_row = _row.copy()
+        _new_row['algorithm'] = _algo + f"_{i}"
+        y_df.loc[len(y_df)] = _new_row
+
     y_df = y_df.groupby(['algorithm', 'problem_id'])[data_cols].agg(mean_std_agg).reset_index()
     y_df[data_cols].applymap(lambda x: x[0] if isinstance(x, list) else x)
 
@@ -535,7 +550,6 @@ def _plot_algo_iter(res_df:pd.DataFrame):
                 data[i] = _content
                     
             mean_array = np.array([ele[0] for ele in data])
-            std_array = np.array([ele[1] for ele in data])
 
             # smooth if needed
             if col in smooth_cols:
@@ -546,10 +560,16 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             
             # fill the area between mean - std and mean + std
             if col not in non_fill_cols:
-                upper_bound = mean_array + std_array 
+                std_array = np.array([ele[1] for ele in data])
+                max_array = np.array([ele[2] for ele in data])
+                min_array = np.array([ele[3] for ele in data])
+
+                _upper_bound = mean_array + std_array
+                upper_bound = np.clip(_upper_bound, None, max_array)
+
                 _lower_bound = mean_array - std_array
-                lower_bound = np.clip(_lower_bound, 0, None)
-                upper_bound = np.clip(upper_bound, None, np.max(mean_array))
+                lower_bound = np.clip(_lower_bound, min_array, None)
+
                 plot_filling.append(list(zip(lower_bound, upper_bound)))
             else:
                 plot_filling.append(None)
@@ -594,6 +614,7 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             _line_styles = ['--' if 'BL' in _label else '-' for _label in _labels]
             line_styles.append(_line_styles)
             _labels = [label.replace("BL", "") for label in _labels]
+            _labels = [label.replace("A_", "") for label in _labels]
             labels.append(_labels)
 
             _sub_title = data_col_map.get(col, col)
@@ -618,8 +639,8 @@ def _plot_algo_iter(res_df:pd.DataFrame):
                 best_loss_baselines.append(baselines[-1])
                 best_loss_baseline_labels.append(baseline_labels[-1])
 
-        if seperated_plot is False:
-            continue
+        # if not seperated_plot:
+        #     continue
 
         plot_lines(
             y=plot_data, x=x_data, 
@@ -629,18 +650,18 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             colors=colors,
             labels=labels, 
             line_styles=line_styles,
-            label_fontsize=9,
+            label_fontsize=8,
             linewidth=1.5,
             filling=plot_filling,
             x_dot=x_dots,
             n_cols=3,
             sub_titles=sub_titles,
             sub_title_fontsize=10,
-            title=f"F{problem_id}",
+            title=f"F{problem_id}({dim}D)",
             figsize=(15, 9),
         ) 
 
-    if seperated_plot is False:
+    if not seperated_plot:
         plot_lines(
             y=best_loss_plot_data, x=best_loss_x_data,
             y_scales=best_loss_y_scales,
@@ -649,25 +670,32 @@ def _plot_algo_iter(res_df:pd.DataFrame):
             colors=best_loss_colors,
             labels=best_loss_labels,
             line_styles=best_loss_line_styles,
-            label_fontsize=6,
+            label_fontsize=10,
+            combined_legend=True,
             linewidth=1.2,
             filling=best_loss_plot_filling,
             x_dot=best_loss_x_dots,
             n_cols=6,
             sub_titles=best_loss_sub_titles,
             sub_title_fontsize=10,
-            title="Best Loss",
+            title=f"Best Loss({dim}D)",
             figsize=(15, 9),
         )
 
 def plot_algo_result(results:list[EvaluatorResult]):
     res_df = _process_algo_result(results)
-    
-    _plot_algo_aoc(res_df)
-    _plot_algo_aoc_on_problems(res_df)
-    # _plot_algo_problem_aoc(res_df)
-    # _plot_algo_iter(res_df)
 
+    dim = 0
+    for result in results:
+        if len(result.result) > 0:
+            dim = result.result[0].best_x.shape[0]
+            break
+
+    
+    # _plot_algo_aoc(res_df, dim=dim)
+    # _plot_algo_aoc_on_problems(res_df)
+    # _plot_algo_problem_aoc(res_df, dim=dim)
+    _plot_algo_iter(res_df, dim=dim)
 
 
 def plot_algo(file_paths=None, dir_path=None, pop_path=None):
@@ -826,7 +854,7 @@ def plot_algo_0220():
 
         # 'Experiments/final_eval_res/ATRBO_0.1236_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222082510.pkl',
         
-        'Experiments/final_eval_res/ATRBO_DKAI_0.1242_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222114050.pkl',
+        # 'Experiments/final_eval_res/ATRBO_DKAI_0.1242_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222114050.pkl',
 
         # 'Experiments/final_eval_res/ARSUAEBO_0.0828_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0221171337.pkl',
 
@@ -835,8 +863,13 @@ def plot_algo_0220():
         # 'Experiments/final_eval_res/BayesLocalAdaptiveAnnealBOv1_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211012527.pkl',
         
         # 'Experiments/final_eval_res/EnsembleLocalSearchBOv1_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211041109.pkl',
+
+        # 'Experiments/final_eval_res/AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE_0.2304_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0310125738.pkl',
+
+        # 'Experiments/final_eval_res/AdaptiveTrustRegionOptimisticHybridBO_0.2401_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0310124027.pkl',
     ] 
 
+    dir_path = 'Experiments/final_eval_res_40dim'
     dir_path = None
     pop_path = None
 
@@ -863,4 +896,4 @@ if __name__ == "__main__":
     #     print(loss)
 
     # for i in range(10):
-    #     print(qmc.Sobol(d=5, scramble=True).random(n=10))
+    #     print(qmc.Sobol(d=5, scramble=False).random(n=10))

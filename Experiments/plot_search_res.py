@@ -11,7 +11,7 @@ from matplotlib import pyplot as plt
 
 from llamea.utils import IndividualLogger
 from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
-from llamea.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
+from llamea.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing, plot_voilin_style_scatter
 from llamea.population.population import Population, desc_similarity, code_diff_similarity, code_bert_similarity
 from llamea.population.es_population import ESPopulation
 from llamea.evaluator.evaluator_result import EvaluatorResult
@@ -194,6 +194,15 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
         strategy_df = max_aoc_df[max_aoc_df['strategy'] == strategy]
         _max_aoc_list = strategy_df['log_y_aoc'].values[0]
         _volin_y.append(np.array(_max_aoc_list))
+
+    plot_voilin_style_scatter(
+        data=[_volin_y],
+        labels=[unique_strategies],
+        n_cols=4,
+        title="AOC",
+        label_fontsize=10,
+        figsize=(14, 8),
+        )
 
     plot_box_violin(
         data=[_volin_y],
@@ -1132,10 +1141,10 @@ def plot_search_result(results:list[tuple[str,Population]], save_name=None):
 
     # err_df = _process_error_data(results)
     # _plot_search_all_error_rate(err_df, unique_strategies)
-    # _plot_search_error_type(err_df)
+    # _plot_search_error_type(err_df, unique_strategies=unique_strategies)
     # _plot_search_error_rate_by_generation(err_df, unique_strategies)
 
-    _plot_search_problem_aoc_and_loss(res_df)
+    # _plot_search_problem_aoc_and_loss(res_df)
     
 def plot_search():
     # file_paths = [
