@@ -94,6 +94,8 @@ class MPITaskManager(metaclass=Singleton):
         self.hostname = MPI.Get_processor_name()
 
         self.result_recv_buffer = None
+
+        self.sub_process_worker = False
         
         if self.size < 2:
             raise ValueError("This task manager requires at least 2 MPI processes")
@@ -196,7 +198,7 @@ class MPITaskManager(metaclass=Singleton):
                 break
             
             # Sleep briefly to avoid busy waiting
-            time.sleep(0.01)
+            time.sleep(0.2)
 
         done = set(futures) - not_done
         return (done, not_done)
@@ -276,7 +278,15 @@ class MPITaskManager(metaclass=Singleton):
             for worker_rank in range(1, self.size):
                 self.comm.send(None, dest=worker_rank, tag=Tags.TERMINATE.value)
                 logger.debug("Termination signal sent to worker %s", worker_rank)
+        
+            if wait:
+                logger.debug("Waiting for workers to shut down")
+                while any(status != Status.TERMINATED for status in self.workers_status.values()):
+                    self._master_process_messages()
+                    time.sleep(0.2)
+                logger.debug("All workers have shut down")
             self.running = False
+
         self.shutdown_requested = False
         logger.debug("Shutdown completed")
     
@@ -321,6 +331,7 @@ class MPITaskManager(metaclass=Singleton):
             task = self.task_queue.popleft()
             
             # Send the task to the worker
+            logger.debug("Assigning task %s to worker %s", task.task_id, worker_rank)   
             self.comm.send(task, dest=worker_rank, tag=Tags.TASK.value)
             
             # Mark the worker as busy
@@ -328,19 +339,47 @@ class MPITaskManager(metaclass=Singleton):
             self.active_tasks[worker_rank] = task
             
             logger.debug("Task %s sent to worker %s", task.task_id, worker_rank)
-    
+
+    def _execute_task(self, task, queue):
+        task_id = task.task_id
+        func = task.func
+        args = task.args
+        kwargs = task.kwargs
+
+        try:
+            logger.debug("Worker %s executing task %s", self.rank, task_id)
+            result_value = func(*args, **kwargs)
+            result = MPIResultPackage(task_id, result=result_value)
+            logger.debug("Worker %s completed task %s", self.rank, task_id)
+        except Exception as e:
+            logger.exception("Worker %s encountered error on task %s", self.rank, task_id)
+            result = MPIResultPackage(task_id, exception=e)
+        
+        # Send the result back to the main process
+        if queue:
+            queue.put(result)
+            return None
+        else:
+            return result
+
     def worker_process(self):
         logger.debug("Worker %s started on %s", self.rank, self.hostname)
         self.comm.send(Status.IDLE, dest=0, tag=Tags.STATUS.value)
         
         current_task = None
+        sub_process = None
+        res_queue = None
         self.running_as_worker = True
+
+        # print_time = time.monotonic()
         
         while self.running_as_worker:
             # Check for termination signal
             if self.comm.Iprobe(source=0, tag=Tags.TERMINATE.value):
                 self.comm.recv(source=0, tag=Tags.TERMINATE.value)
                 logger.debug("Worker %s received termination signal", self.rank)
+                self.comm.send(Status.TERMINATED, dest=0, tag=Tags.STATUS.value)
+                logger.debug("Worker %s send termination status", self.rank)
                 self.running_as_worker = False
                 break
             
@@ -349,36 +388,66 @@ class MPITaskManager(metaclass=Singleton):
                 cancel_id = self.comm.recv(source=0, tag=Tags.CANCEL.value)
                 if cancel_id == current_task.task_id:
                     logger.debug("Worker %s cancelling task %s", self.rank, cancel_id)
-                    # TODO: Implement task cancellation
-            
+                    if sub_process:
+                        result = MPIResultPackage(cancel_id, cancelled=True)
+                        self.comm.send(result, dest=0, tag=Tags.RESULT.value)
+                        current_task = None
+
+                        sub_process.terminate()
+                        sub_process.join()
+                        sub_process = None
+                        res_queue = None
+        
             # Check for new task if we're not running one
             if not current_task and self.comm.Iprobe(source=0, tag=Tags.TASK.value):
-                current_task = self.comm.recv(source=0, tag=Tags.TASK.value)
+                logger.debug("Worker %s is receiving task", self.rank)
+                req = self.comm.irecv(source=0, tag=Tags.TASK.value)
+                # FIXME: This is a hack to avoid deadlock
+                time.sleep(0.5)
+                current_task = req.wait()
                 logger.debug("Worker %s received task %s", self.rank, current_task.task_id)
-                self.comm.send(Status.BUSY, dest=0, tag=Tags.STATUS.value)
                 
-                # Execute the task
-                task_id = current_task.task_id
-                func = current_task.func
-                args = current_task.args
-                kwargs = current_task.kwargs
+                if self.sub_process_worker:
+                    import multiprocessing as mp
 
+                    res_queue = mp.Queue()
+                    logger.debug("Worker %s starting sub process for task %s", self.rank, current_task.task_id)
+
+                    process = mp.Process(target=self._execute_task, args=(current_task, res_queue))
+                    sub_process = process
+                    process.start()
+                else:
+                    # Execute the task
+                    result = self._execute_task(current_task, None)
+                    # Send the result back to the master
+                    self.comm.send(result, dest=0, tag=Tags.RESULT.value)
+                    current_task = None
+
+            if sub_process and res_queue and not res_queue.empty():
+                # finish the sub process
+                import queue as queue
                 try:
-                    logger.debug("Worker %s executing task %s", self.rank, task_id)
-                    result_value = func(*args, **kwargs)
-                    result = MPIResultPackage(task_id, result=result_value)
-                    logger.debug("Worker %s completed task %s", self.rank, task_id)
-                except Exception as e:
-                    logger.exception("Worker %s encountered error on task %s", self.rank, task_id)
-                    result = MPIResultPackage(task_id, exception=e)
-                
-                # Send the result back to the master
-                self.comm.send(result, dest=0, tag=Tags.RESULT.value)
-                current_task = None
-                self.comm.send(Status.IDLE, dest=0, tag=Tags.STATUS.value)
-            
+                    result = res_queue.get()
+
+                    self.comm.send(result, dest=0, tag=Tags.RESULT.value)
+                    current_task = None
+
+                    if sub_process.is_alive():
+                        sub_process.terminate()
+                        sub_process.join()
+                    sub_process = None
+                    res_queue = None
+
+                except queue.Empty:
+                    pass
+
             # Sleep briefly to avoid busy waiting
-            time.sleep(0.01)
+            time.sleep(0.2)
+
+            # current_time = time.monotonic()
+            # if current_time - print_time > 2:
+            #     logger.debug("Worker %s is idle", self.rank)
+            #     print_time = current_time
         
         self.running_as_worker = False
         logger.debug("Worker %s shut down", self.rank)
@@ -388,8 +457,9 @@ class MPITaskManager(metaclass=Singleton):
             self.worker_process()
 
 @contextmanager
-def start_mpi_task_manager(result_recv_buffer_size=None):
+def start_mpi_task_manager(result_recv_buffer_size=None, use_sub_process_worker=False):
     task_manager = MPITaskManager()
+    task_manager.sub_process_worker = use_sub_process_worker
     if task_manager.is_master:
         if task_manager.shutdown_requested or task_manager.excuting:
             raise RuntimeError("Task manager is already executing tasks or shutting down")

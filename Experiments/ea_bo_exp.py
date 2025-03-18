@@ -129,9 +129,6 @@ def _run_exp(prompt_generator:PromptGenerator,
         if "pop_debug_save_on_the_fly" in options:
             population.debug_save_on_the_fly = options["pop_debug_save_on_the_fly"]
 
-        if "pop_save_check_point_interval" in options:
-            population.save_per_generation = options["pop_save_check_point_interval"]
-
         if "pop_preorder_aware_init" in options:
             population.preorder_aware_init = options["pop_preorder_aware_init"]
 
@@ -194,6 +191,9 @@ def _run_exp(prompt_generator:PromptGenerator,
 
         if "pop_save_dir" in options:
             population.save_dir = options["pop_save_dir"]
+
+        if "pop_save_check_point_interval" in options:
+            population.save_per_generation = options["pop_save_check_point_interval"]
 
         if "pop_warmstart_handlers" in options:
             warmstart_handlers = options["pop_warmstart_handlers"]

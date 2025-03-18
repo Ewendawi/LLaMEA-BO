@@ -339,7 +339,6 @@ if __name__ == "__main__":
     
 
     if use_mpi:
-        print("Using MPI")
         from llamea.evaluator.MPITaskManager import start_mpi_task_manager 
 
         with start_mpi_task_manager(result_recv_buffer_size=1024*100) as task_manager:
