@@ -467,7 +467,7 @@ def main():
 
             "n_eval_workers": 0,
             "time_out_per_eval": 60 * 30,
-            'use_mpi': True,
+            # 'use_mpi': True,
             # 'use_mpi_future': True,
 
             'eval_inject_critic': False,

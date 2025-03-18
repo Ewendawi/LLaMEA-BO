@@ -222,7 +222,7 @@ def debug_algo_eval():
     cls_list = [
         # VanillaBO,
         # BLRandomSearch,
-        # BLCMAES,
+        BLCMAES,
         # BLHEBO,
         # BLMaternVanillaBO,
         # BLTuRBO1,
@@ -235,7 +235,7 @@ def debug_algo_eval():
 
     options = {
         # 'device': 'cuda',
-        # 'is_baseline': True,
+        'is_baseline': True,
         # 'max_eval_workers': 4,
         # 'use_multi_process': True,
         # 'use_mpi': True,
