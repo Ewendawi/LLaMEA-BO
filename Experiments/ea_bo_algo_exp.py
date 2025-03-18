@@ -208,16 +208,12 @@ def debug_algo_eval():
     evaluator.ignore_over_budget = True
 
     file_map = {
-        # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
         # 'BLTuRBO1': 'LLAMBO/Experiments/baselines/bo_baseline.py',
         # 'BLHEBO': 'LLAMBO/Experiments/baselines/bo_baseline.py',
     }
 
     from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO, BLCMAES, BLHEBO
     from Experiments.baselines.vanilla_bo import VanillaBO
-    from Experiments.test_cands.EnsembleLocalSearchBOv1 import EnsembleLocalSearchBOv1
-    from Experiments.test_cands.EnsembleDeepKernelAdaptiveTSLocalSearchARDv1 import EnsembleDeepKernelAdaptiveTSLocalSearchARDv1
-    from Experiments.test_cands.QMCBOv1 import GP_Matern_EI_MSL_SobolBOv1
 
     cls_list = [
         # VanillaBO,
