@@ -139,10 +139,12 @@ def plot_contour(problem_id, instance, points, x1_range=None, x2_range=None, lev
 # plot_contour(2, 1, [(0, 0), (1, 1), (-1, -1)])
 
 
-def _process_algo_result(results:list[EvaluatorResult]):
+def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
     # dynamic access from EvaluatorBasicResult. None means it should be handled separately
-    column_name_map = {
+    _column_name_map = {
         'algorithm' : None,
+        'algorithm_name' : None,
+        'algorithm_short_name' : None,
         'problem_id' : None,
         'instance_id' : None,
         'exec_id' : None,
@@ -189,10 +191,24 @@ def _process_algo_result(results:list[EvaluatorResult]):
         'acq_exploration_improvement' : 'search_result.acq_exploration_improvement',
     }
 
+    column_name_map = _column_name_map if column_name_map is None else column_name_map
+
     def _none_to_nan(_target):
         if isinstance(_target, list):
             return [np.nan if ele is None else ele for ele in _target] 
         return np.nan if _target is None else _target
+
+    def _algo_to_name(algo:str):
+        short_name = algo
+        if 'EvolutionaryBO' in algo:
+            short_name = 'TREvol'
+        elif 'Optimistic' in algo:
+            short_name = 'TROptimistic'
+        elif 'Pareto' in algo:
+            short_name = 'TRPareto'
+        elif 'ARM' in algo:
+            short_name = 'ARM'
+        return f'A_{algo}', algo, f'{short_name}'
 
     def res_to_row(res, algo:str):
         res_id = res.id
@@ -204,10 +220,16 @@ def _process_algo_result(results:list[EvaluatorResult]):
 
         loss = res.y_hist - res.optimal_value
 
+        algo_id, algo_name, algo_short_name = _algo_to_name(algo)
+
         for column_name, column_path in column_name_map.items():
             if column_path is None:
                 if column_name == 'algorithm':
-                    row[column_name] = algo
+                    row[column_name] = algo_id
+                elif column_name == 'algorithm_name':
+                    row[column_name] = algo_name
+                elif column_name == 'algorithm_short_name':
+                    row[column_name] = algo_short_name
                 elif column_name == 'problem_id':
                     row[column_name] = problem_id
                 elif column_name == 'instance_id':
@@ -226,16 +248,7 @@ def _process_algo_result(results:list[EvaluatorResult]):
 
     res_df = pd.DataFrame(columns=column_name_map.keys())
     for result in results:
-        # algo = result.name.removeprefix("BL")
         algo = result.name
-        if 'EvolutionaryBO' in algo:
-            algo = 'A_TREvol'
-        elif 'Optimistic' in algo:
-            algo = 'A_TROptimistic'
-        elif 'Pareto' in algo:
-            algo = 'A_TRPareto'
-        elif 'ARM' in algo:
-            algo = 'A_ARM'
         for res in result.result:
             res.update_aoc_with_new_bound_if_needed()
             row = res_to_row(res, algo)
@@ -837,6 +850,86 @@ def plot_project_tr():
     plt.show()
 
 
+def extract_algo_result():
+    dir_path = "Experiments/final_eval_res_40dim"
+    file_paths = []
+    if not os.path.isdir(dir_path):
+        raise ValueError(f"Invalid directory path: {dir_path}")
+    for file in os.listdir(dir_path):
+        if file.endswith(".pkl"):
+            file_paths.append(os.path.join(dir_path, file))
+    
+    res_list = []
+    for file_path in file_paths:
+        with open(file_path, "rb") as f:
+            target = pickle.load(f)
+            if target.error is not None:
+                continue
+            if isinstance(target, EvaluatorResult):
+                res_list.append(target)
+            elif isinstance(target, ResponseHandler):
+                res_list.append(target.eval_result)
+
+    dim = 0
+    for result in res_list:
+        if len(result.result) > 0:
+            dim = result.result[0].best_x.shape[0]
+            break
+
+    column_name_map = {
+        'algorithm' : None,
+        'algorithm_name' : None,
+        'algorithm_short_name' : None,
+        'problem_id' : None,
+        'instance_id' : None,
+        'exec_id' : None,
+        'n_init' : 'n_initial_points',
+
+        'optimum' : 'optimal_value',
+
+        'y_hist': 'y_hist',
+        'x_hist': 'x_hist',
+
+        'loss': None,
+        'best_loss': None,
+        'y_aoc': 'log_y_aoc',
+    }
+
+    res_df = _process_algo_result(res_list, column_name_map)
+    algos = res_df['algorithm'].unique()
+    filter_intace_id = 4
+    filter_exec_id = 0
+    filter_problem_id = 4
+
+    df_data = []
+    for algo in algos:
+        # filter by algo , instance_id, exec_id to create a new dataframe
+        _temp_df = res_df[
+            (res_df['algorithm'] == algo) 
+            # & ((res_df['instance_id'] == filter_intace_id) | (res_df['instance_id'] == 5))
+            # & (res_df['exec_id'] == filter_exec_id)
+            # & ((res_df['problem_id'] == 4) | (res_df['problem_id'] == 5))
+            ]
+
+        for _, row in _temp_df.iterrows():
+            _y_hist = row['y_hist'].tolist()
+            p_id = row['problem_id']
+            instance_id = row['instance_id']
+            f_id = f"{p_id}_{instance_id}"
+            algo_id = row['algorithm_name'].replace("BL", "")
+            run_id = row['exec_id']
+            for j, y in enumerate(_y_hist):
+                df_data.append({
+                    'Evaluation counter': j + 1,
+                    'Function values': y,
+                    'Function ID': f_id,
+                    'Algorithm ID': algo_id,
+                    'Problem dimension': dim,
+                    'Run ID': run_id
+                })
+    _new_df = pd.DataFrame(df_data)
+    _new_df.to_csv(f"Experiments/extracted_res/{dim}D_ioh.csv", index=False)
+
 def plot_algo_0220():
     file_paths = [
         # 'Experiments/final_eval_res/BLRandomSearch_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0210053711.pkl',
@@ -880,20 +973,7 @@ if __name__ == "__main__":
     setup_logger(level=logging.INFO)
 
     # plot_project_tr()
-    plot_algo_0220()
 
-    # from scipy.stats import qmc
-    # from ioh import get_problem
+    # plot_algo_0220()
 
-    # x = [0.5] * 5
-    # feasible_instances = list(range(1, 15))
-    # for instance in feasible_instances:
-    #     problem = get_problem(19, instance, dimension=5)
-    #     y = problem(x)
-    #     loss = y - problem.optimum.y
-    #     print('')
-    #     print(y)
-    #     print(loss)
-
-    # for i in range(10):
-    #     print(qmc.Sobol(d=5, scramble=False).random(n=10))
+    extract_algo_result()
