@@ -16,9 +16,7 @@ from llamea.evaluator.ioh_evaluator import IOHEvaluator
 from Experiments.plot_algo_res import plot_algo_result, plot_contour
 
 # Utils
-def get_IOHEvaluator_for_final_eval():
-    budget = 100
-    dim = 5
+def get_IOHEvaluator_for_final_eval(dim=5, budget=100):
     problems = list(range(1, 25))
     instances = [[4, 5, 6]] * len(problems)
     repeat = 5
@@ -161,40 +159,6 @@ def run_algo_eval_from_file_map(evaluator, file_map=None, cls_list=None, plot=Fa
 
     return res_list
 
-def list_top_k_res(res_list, k=5):
-    file_paths = [
-        '0-4_TrustRegionActiveLearningBO_0.0767_handler.pkl',
-        '1-13_TrustRegionMemoryGradientBO_0.0819_handler.pkl',
-
-        '2-13_AdaptiveRegionBOv2_0.0761_handler.pkl',
-        '7-49_ARSDKBO_0.0814_handler.pkl',
-
-        '5-84_MATRBO_V2_0.0864_handler.pkl',
-
-        '9-70_ATRCGRMFLSBO_0.0733_handler.pkl',
-
-        '6-94_RVIBADEBO_0.0744_handler.pkl',
-
-        '3-26_ATTRTSLBO_0.0808_handler.pkl',
-
-        '4-33_TrustRegionThompsonBO_AEGFS_0.0806_handler.pkl',
-
-        '5-37_TRATVDMBO_0.0867_handler.pkl',
-
-        '0-2_ATRBO_0.0905_handler.pkl',
-        '1-20_ATRBO_DKAI_0.0961_handler.pkl',
-
-        
-        '5-38_HistoryAwareAdaptiveExplorationBO_0.0532_handler.pkl',
-        '5-40_RATTSLocalBO_0.0563_handler.pkl',
-        '4-36_TSAdaptiveCMA_ESBO_v2_0.0602_handler.pkl',
-        '4-33_EADETSLSBO_0.0664_handler.pkl',
-        '2-14_RefinedEnsembleThompsonSamplingAdaptiveKernelDiversityBO_0.0515_handler.pkl',
-        '5-38_BudgetAwareThompsonDuelingBO_ABDE_0.0643_handler.pkl',
-    ]
-    
-    pass
-
 def debug_algo_eval():
     problems = [2]
     # problems = list(range(1, 25))
@@ -256,61 +220,48 @@ def debug_algo_eval():
                 plot_contour(problem_id=problem_id, instance=instance_id, title=title, points=_x_hist)
 
 def eval_final_algo():
-    evaluator = get_IOHEvaluator_for_final_eval()
+    dim = 10
+    budget = 10 * dim + 50
+    evaluator = get_IOHEvaluator_for_final_eval(dim=dim, budget=budget)
     evaluator.inject_critic = True
     evaluator.ignore_over_budget = True
 
-    
     # problems = list(range(1, 25))
     # instances = [8]
     # repeat = 3
     # budget = 100
-    # evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget)
+    # dim = 10
+    # evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget, dim=dim)
 
     options = {
         # 'device': 'cuda',
-        'is_baseline': True,
-        'save_dir': 'Experiments/final_eval_res',
-        # 'max_eval_workers': 4,
+        # 'is_baseline': True,
+        'save_dir': f'Experiments/final_eval_res_{dim}dim',
+        # 'max_eval_workers': 10,
         # 'use_multi_process': True,
         # 'use_mpi': True,
         # 'use_mpi_future': True,
-        # 'ignore_cls': True, # the module with dynamic import can't be pickled
+        'ignore_cls': True, # the module with dynamic import can't be pickled
     }
     _bl_file_map = {
         # 'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',
-        # 'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
+        # 'BLTuRBO1': 'LLAMBO/Experiments/baselines/bo_baseline.py',
         # 'BLTuRBOM': 'Experiments/baselines/bo_baseline.py',
-        # 'BLMaternVanillaBO': 'Experiments/baselines/bo_baseline.py',
+        # 'BLMaternVanillaBO': 'LLAMBO/Experiments/baselines/bo_baseline.py',
         # 'BLScaledVanillaBO': 'Experiments/baselines/bo_baseline.py',
         # 'BLSKOpt': 'Experiments/baselines/bo_baseline.py',
-        # 'BLCMAES': 'Experiments/baselines/bo_baseline.py',
-        'BLHEBO': 'Experiments/baselines/bo_baseline.py',
+        # 'BLCMAES': 'LLAMBO/Experiments/baselines/bo_baseline.py',
+        'BLHEBO': 'LLAMBO/Experiments/baselines/bo_baseline.py',
     }
 
     _file_map = {
-        # 0.04
-        # 'NoisyBanditBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-10_NoisyBanditBOv1_0.0434.py',
-        # 'ParetoActiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_4+2_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210025714/0-3_ParetoActiveBOv1_0.0426.py',
+        # 'AdaptiveTrustRegionOptimisticHybridBO': 'Experiments/2-33_AdaptiveTrustRegionOptimisticHybridBO_0.2043.py',
 
-        # 0.05
-        # 'AdaptiveBatchUCBLocalSearchBOv2': 'Experiments/pop_40_f/ESPopulation_evol_4+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210043822/4-20_AdaptiveBatchUCBLocalSearchBOv2_0.0526.py',
-        # 'AdaptiveControlVariateBOv4': 'Experiments/pop_40_f/ESPopulation_evol_8+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209152106/6-29_AdaptiveControlVariateBOv4_0.0595.py'
+        # 'AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE': 'Experiments/5-88_AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE_0.2138.py',
 
-        # 0.06
-        # 'AdaptiveEvoBatchHybridBOv2': 'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208224540/4-32_AdaptiveEvoBatchHybridBOv2_0.0619.py',
-        # 'MultiObjectiveBOv1': 'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-19_MultiObjectiveBOv1_0.0665.py',
-        # 'AdaptiveHybridBOv6':'Experiments/pop_40_f/ESPopulation_evol_1+1_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0211000947/10-11_AdaptiveHybridBOv6_0.0615.py',
-        # 'AdaptiveTrustRegionDynamicAllocationBOv2': 'Experiments/pop_40_f/ESPopulation_evol_8+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065623/2-22_AdaptiveTrustRegionDynamicAllocationBOv2_0.0650.py'
+        # 'ATRBO': 'Experiments/0-2_ATRBO_0.0905.py',
 
-        # 0.07
-        # 'AdaptiveTrustRegionVarianceQuantileDEBOv2': 'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208225600/5-40_AdaptiveTrustRegionVarianceQuantileDEBOv2_0.0731.py',
-
-        # 0.08
-        # 'TrustRegionAdaptiveTempBOv2': 'Experiments/pop_40_f/ESPopulation_evol_4+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209173952/4-23_TrustRegionAdaptiveTempBOv2_0.0807.py',
-        # 'BayesLocalAdaptiveAnnealBOv1': 'Experiments/pop_40_temp/ESPopulation_evol_10+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208164605/3-24_BayesLocalAdaptiveAnnealBOv1_0.0827.py',
-
-        # 'EnsembleLocalSearchBOv1': 'Experiments/test_cands/EnsembleLocalSearchBOv1.py',
+        # 'ABETSALSDE_ARM_MBO': 'Experiments/6-93_ABETSALSDE_ARM_MBO_0.1813.py',
     }
 
     file_map = _file_map
@@ -321,8 +272,8 @@ def main():
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
-    debug_algo_eval()
-    # eval_final_algo()
+    # debug_algo_eval()
+    eval_final_algo()
 
 if __name__ == "__main__":
     use_mpi = False
@@ -337,7 +288,7 @@ if __name__ == "__main__":
     if use_mpi:
         from llamea.evaluator.MPITaskManager import start_mpi_task_manager 
 
-        with start_mpi_task_manager(result_recv_buffer_size=1024*100) as task_manager:
+        with start_mpi_task_manager(result_recv_buffer_size=1024*1000) as task_manager:
             if task_manager.is_master:
                 main()
     else:
