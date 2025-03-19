@@ -649,6 +649,7 @@ class EvaluatorBasicResult:
         self.id = None
         self.name = None
         self.optimal_value = None
+        self.optimal_x = None
         self.bounds = None
         self.budget = None
         self.captured_output = None

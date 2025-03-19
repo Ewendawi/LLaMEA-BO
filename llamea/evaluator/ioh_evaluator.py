@@ -28,6 +28,7 @@ class IOHObjectiveFn:
 
         self.obj_fn = get_problem(problem_id, instance_id, dim)
         self.optimal_value = self.obj_fn.optimum.y
+        self.optimal_x = self.obj_fn.optimum.x
         self.name = f"F{problem_id}-{self.obj_fn.problems[problem_id]}"
 
         lb = self.obj_fn.bounds.lb
@@ -268,6 +269,7 @@ class IOHEvaluator(AbstractEvaluator):
             eval_basic_result.name = obj_fn.name
             eval_basic_result.bounds = obj_fn.bounds
             eval_basic_result.optimal_value = obj_fn.optimal_value
+            eval_basic_result.optimal_x = obj_fn.optimal_x
             eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
             eval_basic_result.x_hist = x_hist
 
