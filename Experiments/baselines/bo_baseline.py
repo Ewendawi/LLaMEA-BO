@@ -71,6 +71,8 @@ class BLHEBO:
         from hebo.design_space.design_space import DesignSpace
 
         critic = getattr(self, "_injected_critic", None)
+        if critic is not None:
+            critic.n_init = self.n_init
         X_hist = None
         y_hist = None
 
