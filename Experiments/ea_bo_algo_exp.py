@@ -170,6 +170,7 @@ def debug_algo_eval():
     evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget, dim=dim)
     evaluator.inject_critic = True
     evaluator.ignore_over_budget = True
+    evaluator.ignore_metric = True
 
     file_map = {
         # 'BLTuRBO1': 'LLAMBO/Experiments/baselines/bo_baseline.py',
@@ -224,6 +225,7 @@ def eval_final_algo():
     budget = 10 * dim + 50
     evaluator = get_IOHEvaluator_for_final_eval(dim=dim, budget=budget)
     evaluator.inject_critic = True
+    evaluator.ignore_metric = True
     evaluator.ignore_over_budget = True
 
     # problems = list(range(1, 25))
@@ -255,15 +257,18 @@ def eval_final_algo():
     }
 
     _file_map = {
-        # 'AdaptiveTrustRegionOptimisticHybridBO': 'Experiments/2-33_AdaptiveTrustRegionOptimisticHybridBO_0.2043.py',
+        'AdaptiveTrustRegionOptimisticHybridBO': 'Experiments/2-33_AdaptiveTrustRegionOptimisticHybridBO_0.2043.py',
 
-        # 'AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE': 'Experiments/5-88_AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE_0.2138.py',
+        'AdaptiveEvolutionaryParetoTrustRegionBO': 'Experiments/4-61_AdaptiveEvolutionaryParetoTrustRegionBO_0.1827.py',
 
-        # 'ATRBO': 'Experiments/0-2_ATRBO_0.0905.py',
+        'AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE': 'Experiments/5-88_AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE_0.2138.py',
 
-        # 'ABETSALSDE_ARM_MBO': 'Experiments/6-93_ABETSALSDE_ARM_MBO_0.1813.py',
+        'ATRBO': 'Experiments/0-2_ATRBO_0.0905.py',
+
+        'ABETSALSDE_ARM_MBO': 'Experiments/6-93_ABETSALSDE_ARM_MBO_0.1813.py',
     }
 
+    file_map = _bl_file_map
     file_map = _file_map
 
     run_algo_eval_from_file_map(evaluator, file_map, plot=False, save=True, options=options)
@@ -288,7 +293,7 @@ if __name__ == "__main__":
     if use_mpi:
         from llamea.evaluator.MPITaskManager import start_mpi_task_manager 
 
-        with start_mpi_task_manager(result_recv_buffer_size=1024*1000) as task_manager:
+        with start_mpi_task_manager(result_recv_buffer_size=1024*1024*50) as task_manager:
             if task_manager.is_master:
                 main()
     else:

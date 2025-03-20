@@ -119,7 +119,7 @@ class IOHObjectiveFn:
             return np.array(y).reshape(-1,1)
         return y
 
-def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, cls_init_kwargs=None, cls_call_kwargs=None, ignore_over_budget:bool=False, inject_critic:bool=False, ignore_capture:bool=True) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]: 
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, cls_init_kwargs=None, cls_call_kwargs=None, ignore_over_budget:bool=False, inject_critic:bool=False, ignore_capture:bool=True, ignore_metric=False) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]: 
 
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
     obj_fn.ignore_over_budget = ignore_over_budget
@@ -142,7 +142,7 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     if cls_call_kwargs is not None:
         call_kwargs.update(cls_call_kwargs)
 
-    res, captured_output, err, critic = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, inject_critic=inject_critic)
+    res, captured_output, err, critic = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, inject_critic=inject_critic, ignore_metric=ignore_metric)
     exec_time = time.perf_counter() - start_time
 
     # unset the unpicklable object
@@ -280,7 +280,8 @@ class IOHEvaluator(AbstractEvaluator):
                 eval_basic_result.uncertainty_list = critic.uncertainty_list
                 eval_basic_result.uncertainty_list_on_train = critic.uncertainty_list_on_train
                 eval_basic_result.search_result = critic.search_result
-                eval_basic_result.update_coverage()
+                if not self.ignore_metric:
+                    eval_basic_result.update_coverage()
                 eval_basic_result.fill_short_data(obj_fn.budget)
 
             eval_basic_result.y_aoc_from_ioh = obj_fn.aoc
@@ -380,7 +381,8 @@ class IOHEvaluator(AbstractEvaluator):
                 "inject_critic": self.inject_critic,
                 "cls_init_kwargs": cls_init_kwargs,
                 "cls_call_kwargs": cls_call_kwargs,
-                'ignore_capture': self.ignore_capture
+                'ignore_capture': self.ignore_capture,
+                'ignore_metric': self.ignore_metric,
             }
             new_param.update(param)
             params.append(new_param)

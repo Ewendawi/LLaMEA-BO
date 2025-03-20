@@ -71,7 +71,7 @@ def critic_wrapper(func):
             if _injected_critic.n_init == 0 and hasattr(self, "n_init"):
                 _injected_critic.n_init = self.n_init
 
-        if _injected_critic is not None:
+        if _injected_critic is not None and not _injected_critic.ignore_metric:
             if func.__name__ == "_update_eval_points":
                 try:
                     next_X = args[0]
@@ -90,7 +90,7 @@ def critic_wrapper(func):
 
         res = func(self, *args, **kwargs)
 
-        if _injected_critic is not None:
+        if _injected_critic is not None and not _injected_critic.ignore_metric:
             if func.__name__ == "_fit_model":
                 try:
                     new_X = args[0]
@@ -134,9 +134,10 @@ class AlgorithmCritic:
         self.bounds = bounds
         self.n_init = 0
         self.maximize = False
+        self.ignore_metric = False
         
         self.n_test_x = 1000
-        self.test_x = self._sample_points(self.n_test_x)
+        self.test_x = None
         self.test_y = None
 
         self.r_2_list = []
@@ -157,10 +158,18 @@ class AlgorithmCritic:
         sample = sampler.random(n_points)
         return qmc.scale(sample, self.bounds[0], self.bounds[1])
 
+    def clear(self):
+        self.test_x = None
+        self.test_y = None
+
     def update_test_y(self, func):
+        self.test_x = self._sample_points(self.n_test_x)
         self.test_y = func.stateless_call(self.test_x)
 
     def update_after_eval(self, x, y, next_x, next_y, n_evals):
+        if self.ignore_metric:
+            return
+
         # n_evals should include the evaluation of next_x
         
         # inverse the y to treat the problem as minimization
@@ -175,6 +184,8 @@ class AlgorithmCritic:
 
 # model related
     def update_after_model_fit_temp(self, model, new_X, new_y):
+        if self.ignore_metric:
+            return
         r2 = self._get_model_r2(model)
         self.temp_r2_list.append(r2)
         r2_on_train = self._get_model_r2(model, new_X, new_y)
@@ -186,6 +197,8 @@ class AlgorithmCritic:
         self.temp_uncertainty_list_on_train.append(uncertainty_on_train)
 
     def update_after_model_fit_with_temp(self, n_evals):
+        if self.ignore_metric:
+            return
         mean_r2 = np.mean(self.temp_r2_list)
         self._update_r2(mean_r2, n_evals, self.r_2_list)
         self.temp_r2_list = []
@@ -203,6 +216,9 @@ class AlgorithmCritic:
         self.temp_uncertainty_list_on_train = []
 
     def update_after_model_fit(self, model, n_evals, new_X, new_y):
+        if self.ignore_metric:
+            return
+
         r_squared_on_train = self._get_model_r2(model, new_X, new_y)
         self._update_r2(r_squared_on_train, n_evals, self.r_2_list_on_train)
         r_squared = self._get_model_r2(model)

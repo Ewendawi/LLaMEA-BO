@@ -2,17 +2,20 @@
 #SBATCH --time=08:11:15
 #SBATCH -N 2
 #SBATCH --ntasks-per-node=1
-#SBATCH --output=LLAMBO/Experiments/jobs/bo_algo_eval.log
-#SBATCH --job-name=bo_algo_eval
+#SBATCH --output=LLAMBO/Experiments/jobs/bo_algo_eval_40.log
+#SBATCH --job-name=40_algo_eval
+# SBATCH -C TitanX
+# SBATCH --gres=gpu:1
 
 . /etc/bashrc
 . /etc/profile.d/lmod.sh
 
 module load openmpi/gcc/64
+# module load cuda12.6/toolkit/12.6
 module load slurm 
 
 APP=python
-ARGS="LLAMBO/Experiments/ea_bo_algo_exp.py"
+# ARGS="LLAMBO/Experiments/ea_bo_algo_exp.py"
 # ARGS='LLAMBO/Experiments/jobs/mpi_py_test.py'
 
 # ARGS="-m mpi4py.futures LLAMBO/Experiments/ea_bo_algo_exp.py"

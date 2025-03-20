@@ -303,11 +303,15 @@ class MPITaskManager(metaclass=Singleton):
                     else:
                         result_package = self.comm.recv(source=worker_rank, tag=Tags.RESULT.value, status=status)
                         data_size = status.Get_count(MPI.BYTE)
+                    logger.debug("Received result from worker %s with size %s", worker_rank, data_size)
+                    self._process_result(worker_rank, result_package)
                 except MPI.Exception as e:
                     logger.error("Received failed result from worker %s", worker_rank)
-                    raise e
-                logger.debug("Received result from worker %s with size %s", worker_rank, data_size)
-                self._process_result(worker_rank, result_package)
+                    logger.error(e)
+                    # add the task back to the queue
+                    task = self.active_tasks[worker_rank]
+                    self.task_queue.append(task)
+
                 if worker_rank in self.active_tasks:
                     del self.active_tasks[worker_rank]
                 self.workers_status[worker_rank] = Status.IDLE
@@ -464,7 +468,7 @@ def start_mpi_task_manager(result_recv_buffer_size=None, use_sub_process_worker=
         if task_manager.shutdown_requested or task_manager.excuting:
             raise RuntimeError("Task manager is already executing tasks or shutting down")
 
-        if result_recv_buffer_size is not None:
+        if result_recv_buffer_size is not None and result_recv_buffer_size > 0:
             task_manager.create_result_recv_buffer(result_recv_buffer_size)
 
         yield task_manager

@@ -131,7 +131,7 @@ def inject_critic_func(cls_instance, init_kwargs, call_kwargs) -> any:
 
     return critic
 
-def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None, inject_critic=False) -> tuple[any, str, str, any]:
+def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None, inject_critic=False, ignore_metric=False) -> tuple[any, str, str, any]:
     captured_output = io.StringIO()
     res = None
     err = None
@@ -146,6 +146,7 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
             inject_critic_cls(cls)
             cls_instance = cls(**init_kwargs)
             critic = inject_critic_func(cls_instance, init_kwargs, call_kwargs)
+            critic.ignore_metric = ignore_metric
 
             if code is None:
                 try:
@@ -193,16 +194,20 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
         except Exception as e:
             formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
             err = TrackExecExceptionWrapper(e, formatted_traceback)
+        
+        if critic is not None:
+            critic.clear()
 
     return res, captured_output.getvalue(), err, critic
 
-def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, cls=None, inject_critic=False):
+def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, cls=None, inject_critic=False, ignore_metric=False) -> tuple[any, str, str, any]:
     params = {
             "code": code,
             "cls_name": cls_name,
             "cls": cls,
             "init_kwargs": init_kwargs,
             "call_kwargs": call_kwargs,
-            "inject_critic": inject_critic
+            "inject_critic": inject_critic,
+            "ignore_metric": ignore_metric,
     }
     return __default_exec(**params)
