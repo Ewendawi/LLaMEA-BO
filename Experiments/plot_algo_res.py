@@ -895,15 +895,14 @@ def plot_project_tr():
     plt.show()
 
 
-def extract_algo_result():
-    dir_path = "Experiments/final_eval_res_40dim"
+def extract_algo_result(dir_path:str):
     file_paths = []
     if not os.path.isdir(dir_path):
         raise ValueError(f"Invalid directory path: {dir_path}")
     for file in os.listdir(dir_path):
         if file.endswith(".pkl"):
             file_paths.append(os.path.join(dir_path, file))
-    
+
     res_list = []
     for file_path in file_paths:
         with open(file_path, "rb") as f:
@@ -942,15 +941,15 @@ def extract_algo_result():
 
     res_df = _process_algo_result(res_list, column_name_map)
     algos = res_df['algorithm'].unique()
-    filter_intace_id = 4
-    filter_exec_id = 0
-    filter_problem_id = 4
+    # filter_intace_id = 4
+    # filter_exec_id = 0
+    # filter_problem_id = 4
 
     df_data = []
     for algo in algos:
         # filter by algo , instance_id, exec_id to create a new dataframe
         _temp_df = res_df[
-            (res_df['algorithm'] == algo) 
+            (res_df['algorithm'] == algo)
             # & ((res_df['instance_id'] == filter_intace_id) | (res_df['instance_id'] == 5))
             # & (res_df['exec_id'] == filter_exec_id)
             # & ((res_df['problem_id'] == 4) | (res_df['problem_id'] == 5))
@@ -973,6 +972,8 @@ def extract_algo_result():
                     'Run ID': run_id
                 })
     _new_df = pd.DataFrame(df_data)
+    dir_path = f"Experiments/extracted_res"
+    os.makedirs(dir_path, exist_ok=True)
     _new_df.to_csv(f"Experiments/extracted_res/{dim}D_ioh.csv", index=False)
 
 def plot_algo_0220():
