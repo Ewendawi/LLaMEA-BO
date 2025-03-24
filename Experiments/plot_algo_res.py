@@ -138,6 +138,25 @@ def plot_contour(problem_id, instance, points, x1_range=None, x2_range=None, lev
 
 # plot_contour(2, 1, [(0, 0), (1, 1), (-1, -1)])
 
+def _shorthand_algo_name(algo:str):
+    if 'EvolutionaryBO' in algo:
+        return 'TREvol'
+    elif 'Optimistic' in algo:
+        return 'TROptimistic'
+    elif 'Pareto' in algo:
+        return 'TRPareto'
+    elif 'ARM' in algo:
+        return 'ARM'
+    elif 'MaternVanilla' in algo:
+        return 'VanillaBO'
+
+    if 'BL' in algo:
+        return algo.replace("BL", "")
+
+    if 'A_' in algo:
+        return algo.replace("A_", "")
+
+    return algo
 
 def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
     # dynamic access from EvaluatorBasicResult. None means it should be handled separately
@@ -199,16 +218,10 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
         return np.nan if _target is None else _target
 
     def _algo_to_name(algo:str):
-        short_name = algo
-        if 'EvolutionaryBO' in algo:
-            short_name = 'TREvol'
-        elif 'Optimistic' in algo:
-            short_name = 'TROptimistic'
-        elif 'Pareto' in algo:
-            short_name = 'TRPareto'
-        elif 'ARM' in algo:
-            short_name = 'ARM'
-        return f'A_{algo}', algo, f'{short_name}'
+        o_algo = algo
+        if 'BL' not in algo:
+            o_algo = f"A_{algo}"
+        return o_algo, algo 
 
     def res_to_row(res, algo:str):
         res_id = res.id
@@ -220,7 +233,7 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
 
         loss = res.y_hist - res.optimal_value
 
-        algo_id, algo_name, algo_short_name = _algo_to_name(algo)
+        algo_id, algo_name = _algo_to_name(algo)
 
         for column_name, column_path in column_name_map.items():
             if column_path is None:
@@ -228,8 +241,6 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
                     row[column_name] = algo_id
                 elif column_name == 'algorithm_name':
                     row[column_name] = algo_name
-                elif column_name == 'algorithm_short_name':
-                    row[column_name] = algo_short_name
                 elif column_name == 'problem_id':
                     row[column_name] = problem_id
                 elif column_name == 'instance_id':
@@ -282,42 +293,51 @@ def _plot_algo_aoc_on_problems(res_df:pd.DataFrame):
         labels=[labels],
         colors=[colors],
         show_inside_box=True,
-        plot_type="violin",
         title="AOC Catorized by Problems",
         figsize=(15, 9),
     )
 
-def _plot_algo_aoc(res_df:pd.DataFrame, dim:int):
-    all_aoc_df = res_df.groupby(['algorithm', 'instance_id', 'exec_id'])[['y_aoc', 'log_y_aoc']].agg(np.mean).reset_index()
+def _plot_algo_aoc(res_df:pd.DataFrame, dim:int, problem_filters=None, file_name=None):
+    # filter the problem in problem_filters
+    all_aoc_df = res_df
+    if problem_filters is not None:
+        all_aoc_df = all_aoc_df[~all_aoc_df['problem_id'].isin(problem_filters)]
+
+    all_aoc_df = all_aoc_df.groupby(['algorithm', 'instance_id', 'exec_id'])[['y_aoc', 'log_y_aoc']].agg(np.mean).reset_index()
     all_aoc_df = all_aoc_df.groupby(['algorithm'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
     prop_cycle = plt.rcParams['axes.prop_cycle']
     _default_colors = prop_cycle.by_key()['color']
     colors = []
     labels = []
     all_log_plot_data = []
-    
+
     for algo in all_aoc_df['algorithm']:
         _temp_df = all_aoc_df[all_aoc_df['algorithm'] == algo].agg(list)
         all_log_plot_data.append(_temp_df['log_y_aoc'].values[0])
-        labels.append(algo)
+
+        short_algo = _shorthand_algo_name(algo)
+        labels.append(short_algo)
 
         if 'BL' in algo:
             colors.append(_default_colors[0])
         else:
             colors.append(_default_colors[1])
-    labels = [label.replace("BL", "") for label in labels]
-    labels = [label.replace("A_", "") for label in labels]
-    labels = [label[:16] for label in labels]
 
     # plot aoc
+    title = f"AOC on {dim}D Problems"
+    if problem_filters is not None:
+        title += " Excluding "
+        title += ", ".join([f"F{problem_id}" for problem_id in problem_filters])
     plot_box_violin(
         data=[all_log_plot_data],
         labels=[labels],
+        label_fontsize=8,
         colors=[colors],
         show_inside_box=True,
-        plot_type="violin",
-        title=f"AOC on {dim}D Problems",
-        figsize=(15, 9),
+        title=title,
+        figsize=(8, 4),
+        show=False,
+        filename=file_name,
     )
 
 def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int):
@@ -325,7 +345,7 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int):
     problem_id_list.sort()
     aoc_df = res_df.groupby(['algorithm','problem_id'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
     #(problem, data)
-    
+
     aoc_plot_data = []
     log_plot_data = []
     labels = []
@@ -339,9 +359,8 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int):
 
         _labels = _temp_df['algorithm'].to_list()
         labels.append(_labels)
-        _labels = [label.replace("BL", "") for label in _labels]
-        _labels = [label.replace("A_", "") for label in _labels]
-        short_labels.append([label[:16] for label in _labels])
+
+        short_labels.append([_shorthand_algo_name(label) for label in _labels])
 
     prop_cycle = plt.rcParams['axes.prop_cycle']
     _default_colors = prop_cycle.by_key()['color']
@@ -362,16 +381,26 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int):
         _sub_titles = sub_titles[i:i+step]
         _colors = colors[i:i+step]
 
+        title = f"AOC on {dim}D Problems"
+        file_name = None
+        if step == 1:
+            title = f"AOC on {sub_titles[i]}({dim}D)"
+            _sub_titles = None
+            dir_name = f"algo_aoc_{dim}D"
+            os.makedirs(dir_name, exist_ok=True)
+            file_name = f"{dir_name}/algo_aoc_{dim}D_F{problem_id_list[i]}"
+
         plot_box_violin(data=_plot_data,
                         labels=_labels,
                         sub_titles=_sub_titles,
-                        title=f"AOC on {dim}D Problems",
-                        plot_type="violin",
-                        label_fontsize=8, 
+                        title=title,
+                        label_fontsize=8,
                         show_inside_box=True,
                         colors=_colors,
                         n_cols=2,
-                        figsize=(15, 9),
+                        figsize=(8, 4),
+                        show=False,
+                        filename=file_name,
                         )
 
 def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
@@ -455,6 +484,7 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
 
     y_df = res_df
     problem_ids = y_df['problem_id'].unique()
+    problem_ids.sort()
 
     loss_upper_bounds = {}
 
@@ -476,11 +506,11 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
         y_df['best_loss'] = y_df['loss'].apply(np.minimum.accumulate)
     
     # copy each row in y_df with new algorithm name
-    for i, _row in y_df.iterrows():
-        _algo = _row['algorithm']
-        _new_row = _row.copy()
-        _new_row['algorithm'] = _algo + f"_{i}"
-        y_df.loc[len(y_df)] = _new_row
+    # for i, _row in y_df.iterrows():
+    #     _algo = _row['algorithm']
+    #     _new_row = _row.copy()
+    #     _new_row['algorithm'] = _algo + f"_{i}"
+    #     y_df.loc[len(y_df)] = _new_row
 
     y_df = y_df.groupby(['algorithm', 'problem_id'])[data_cols].agg(mean_std_agg).reset_index()
     y_df[data_cols].applymap(lambda x: x[0] if isinstance(x, list) else x)
@@ -573,17 +603,17 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
             
             # fill the area between mean - std and mean + std
             if col not in non_fill_cols:
-                std_array = np.array([ele[1] for ele in data])
+                # std_array = np.array([ele[1] for ele in data])
                 max_array = np.array([ele[2] for ele in data])
                 min_array = np.array([ele[3] for ele in data])
 
-                _upper_bound = mean_array + std_array
-                upper_bound = np.clip(_upper_bound, None, max_array)
+                # _upper_bound = mean_array + std_array
+                # upper_bound = np.clip(_upper_bound, None, max_array)
 
-                _lower_bound = mean_array - std_array
-                lower_bound = np.clip(_lower_bound, min_array, None)
+                # _lower_bound = mean_array - std_array
+                # lower_bound = np.clip(_lower_bound, min_array, None)
 
-                plot_filling.append(list(zip(lower_bound, upper_bound)))
+                plot_filling.append(list(zip(min_array, max_array)))
             else:
                 plot_filling.append(None)
 
@@ -621,23 +651,25 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
             _labels = _temp_df['algorithm'].to_list()
             _colors = _default_colors[:len(_labels)]
             _labels = [ele for i, ele in enumerate(_labels) if i not in empty_indexs]
-            _labels = [label[:10] for label in _labels]
             _colors = [color for i, color in enumerate(_colors) if i not in empty_indexs]
             colors.append(_colors)
             _line_styles = ['--' if 'BL' in _label else '-' for _label in _labels]
             line_styles.append(_line_styles)
-            _labels = [label.replace("BL", "") for label in _labels]
-            _labels = [label.replace("A_", "") for label in _labels]
+
+            _labels = [_shorthand_algo_name(label) for label in _labels]
             labels.append(_labels)
 
             _sub_title = data_col_map.get(col, col)
+            _sub_title = f"Loss On F{problem_id}({dim}D)"
+            sub_titles.append(_sub_title)
+
             if col in y_scale_cols:
                 _y_scale, _y_scale_kwargs = y_scale_cols[col]
                 y_scales.append((_y_scale, _y_scale_kwargs))
-                sub_titles.append(_sub_title + f"({_y_scale})")
+                # sub_titles.append(_sub_title + f"({_y_scale})")
             else:
                 y_scales.append(None)
-                sub_titles.append(_sub_title)
+                # sub_titles.append(_sub_title)
 
             if col == 'best_loss':
                 best_loss_plot_data.append(plot_data[-1])
@@ -654,6 +686,9 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
 
         # if not seperated_plot:
         #     continue
+        dir_name = f"algo_loss_{dim}D"
+        os.makedirs(dir_name, exist_ok=True)
+        file_name = f"algo_loss_{dim}D/algo_loss_{dim}D_F{problem_id}"
 
         plot_lines(
             y=plot_data, x=x_data, 
@@ -661,20 +696,23 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
             baselines=baselines,
             baseline_labels=baseline_labels,
             colors=colors,
-            labels=labels, 
+            labels=labels,
             line_styles=line_styles,
             label_fontsize=8,
-            linewidth=1.5,
+            linewidth=1.2,
             filling=plot_filling,
             x_dot=x_dots,
             n_cols=3,
             sub_titles=sub_titles,
             sub_title_fontsize=10,
-            title=f"F{problem_id}({dim}D)",
-            figsize=(15, 9),
-        ) 
+            # title=f"F{problem_id}({dim}D)",
+            figsize=(8, 6),
+            show=False,
+            filename=file_name,
+        )
 
     if not seperated_plot:
+        file_name = f"algo_loss_{dim}D"
         plot_lines(
             y=best_loss_plot_data, x=best_loss_x_data,
             y_scales=best_loss_y_scales,
@@ -693,6 +731,8 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
             sub_title_fontsize=10,
             title=f"Best Loss({dim}D)",
             figsize=(15, 9),
+            show=False,
+            filename=file_name,
         )
 
 def plot_algo_result(results:list[EvaluatorResult]):
@@ -704,10 +744,15 @@ def plot_algo_result(results:list[EvaluatorResult]):
             dim = result.result[0].best_x.shape[0]
             break
 
-    
-    # _plot_algo_aoc(res_df, dim=dim)
+
+    _plot_algo_aoc(res_df, dim=dim, file_name=f"algo_aoc_{dim}D")
+    problem_filters = [4, 8, 9, 19, 20, 24]
+    _plot_algo_aoc(res_df, dim=dim, problem_filters=problem_filters, file_name=f"algo_aoc_{dim}D_except")
+
     # _plot_algo_aoc_on_problems(res_df)
-    # _plot_algo_problem_aoc(res_df, dim=dim)
+
+    _plot_algo_problem_aoc(res_df, dim=dim)
+
     _plot_algo_iter(res_df, dim=dim)
 
 
@@ -742,7 +787,7 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None):
                     res_list.append(target.eval_result)
             
     plot_algo_result(results=res_list)
-    
+
 
 
 def plot_project_tr():
@@ -909,7 +954,7 @@ def extract_algo_result():
             # & ((res_df['instance_id'] == filter_intace_id) | (res_df['instance_id'] == 5))
             # & (res_df['exec_id'] == filter_exec_id)
             # & ((res_df['problem_id'] == 4) | (res_df['problem_id'] == 5))
-            ]
+        ]
 
         for _, row in _temp_df.iterrows():
             _y_hist = row['y_hist'].tolist()
@@ -946,7 +991,7 @@ def plot_algo_0220():
         # 'Experiments/final_eval_res/BLCMAES_0.0490_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216014349.pkl',
 
         # 'Experiments/final_eval_res/ATRBO_0.1236_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222082510.pkl',
-        
+
         # 'Experiments/final_eval_res/ATRBO_DKAI_0.1242_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222114050.pkl',
 
         # 'Experiments/final_eval_res/ARSUAEBO_0.0828_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0221171337.pkl',
@@ -962,8 +1007,7 @@ def plot_algo_0220():
         # 'Experiments/final_eval_res/AdaptiveTrustRegionOptimisticHybridBO_0.2401_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0310124027.pkl',
     ] 
 
-    dir_path = 'Experiments/final_eval_res_40dim'
-    dir_path = None
+    dir_path = 'Experiments/final_eval_res_5dim'
     pop_path = None
 
     plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)

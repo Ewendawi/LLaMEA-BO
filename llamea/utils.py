@@ -718,7 +718,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 # get the color from the line
                 # color = ax.get_lines()[-1].get_color()
                 _dot_x = _dot_x.astype(np.float64) + np.random.uniform(-0.2, 0.2, len(_dot_x))
-                ax.scatter(_dot_x, _dot_y, facecolors='none', edgecolors=_color, s=70, linewidths=linewidth+0.5)
+                ax.scatter(_dot_x, _dot_y, facecolors='none', edgecolors=_color, s=linewidth*60, linewidths=linewidth+0.5)
             
         _baseline = baselines[i] if baselines is not None else None
         if _baseline is not None:
@@ -758,7 +758,10 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
 
     
     if filename:
-        plt.savefig(filename, dpi=300)
+        _name = filename + ".png"
+        plt.savefig(_name)
+        __name = filename + ".pdf"
+        plt.savefig(__name)
 
 
     if show:
@@ -834,15 +837,14 @@ def test_group_bar():
 def plot_box_violin(
     data:list[np.ndarray],
     labels: list[list[str]], 
-    long_labels: list[str] = None,
     label_fontsize:int = 9,
     sub_titles: list[str] = None,
     x_labels: list[str] = None,
     y_labels: list[str] = None,
-    title = "", 
-    plot_type:str = "violin",
+    title = "",
     colors: list[list] = None,
     show_inside_box:bool = False,
+    show_scatter:bool = False,
     n_cols:int = 1, figsize:tuple[int,int] = (10, 6), 
     show:bool = True,
     filename=None):
@@ -871,10 +873,10 @@ def plot_box_violin(
         _colors = colors[i] if colors is not None else None
 
         sub_title = sub_titles[i] if sub_titles is not None else ""
-        if show_inside_box:
-            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=False, showextrema=False, widths=0.7)
+        if show_inside_box or show_scatter:
+            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=False, showextrema=False, widths=0.8)
         else:
-            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=True, showextrema=True, widths=0.7)
+            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=True, showextrema=True, widths=0.8)
 
         box_colors = []
         for _pc_i, pc in enumerate(_violin_parts['bodies']):
@@ -901,28 +903,33 @@ def plot_box_violin(
                 # _color = mcolors.to_rgba(_color)
                 _ori_alpha = _color[0,3]
                 _color[:,3] = 1.0
-                
+
                 box.set_facecolor(_color)
-                box.set_edgecolor(_color)  
-                box.set_alpha(_ori_alpha+0.1)         
+                box.set_edgecolor(_color)
+                box.set_alpha(_ori_alpha+0.1)
 
                 _median = _box_parts['medians'][_box_i]
-                _median.set_color(_color) 
+                _median.set_color(_color)
 
                 _cap1 = _box_parts['caps'][_box_i*2]
-                _cap1.set_color(_color) 
+                _cap1.set_color(_color)
                 _cap2 = _box_parts['caps'][_box_i * 2 + 1]
-                _cap2.set_color(_color) 
+                _cap2.set_color(_color)
 
                 _whisker1 = _box_parts['whiskers'][_box_i * 2]
-                _whisker1.set_color(_color) 
+                _whisker1.set_color(_color)
                 _whisker2 = _box_parts['whiskers'][_box_i * 2 + 1]
-                _whisker2.set_color(_color) 
+                _whisker2.set_color(_color)
+        elif show_scatter:
+            for _scatter_i, scatter in enumerate(data[i]):
+                _x = np.full(len(scatter), _scatter_i + 1)
+                ax.scatter(_x, scatter, color=box_colors[_scatter_i], alpha=0.5)
 
         ax.set_title(sub_title)
+        ax.tick_params(axis='y', labelsize=label_fontsize+1)
         ax.yaxis.grid(True)
 
-        _labels = _plot_get_element_from_list(labels, i, None) 
+        _labels = _plot_get_element_from_list(labels, i, None)
         if _labels is not None:
             ax.set_xticks([y + 1 for y in range(len(data[i]))], labels=_labels, fontsize=label_fontsize)
         _x_labels = _plot_get_element_from_list(x_labels, i, "")
@@ -930,21 +937,25 @@ def plot_box_violin(
         _y_labels = _plot_get_element_from_list(y_labels, i, "")
         ax.set_ylabel(_y_labels, fontsize=label_fontsize)
 
-    fig.suptitle(title)
+    fig.suptitle(title, fontsize=label_fontsize+2)
     fig.tight_layout()
     if filename:
-        plt.savefig(filename, dpi=300)
+        _name = filename + ".png"
+        plt.savefig(_name)
+
+        _name = filename + ".pdf"
+        plt.savefig(_name)
     if show:
         plt.show()
 
 def plot_voilin_style_scatter(
         data:list[np.ndarray],
-        labels: list[list[str]], 
+        labels: list[list[str]],
         label_fontsize:int = 9,
         sub_titles: list[str] = None,
         x_labels: list[str] = None,
         y_labels: list[str] = None,
-        title = "", 
+        title = "",
         y_lim:tuple[float,float] = None,
         margin:float = 0.5,
         colors: list[list] = None,

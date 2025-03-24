@@ -27,19 +27,18 @@ def combine_acc(column='y_aoc', maximum=True, max_n_iter=None, iter_column='n_it
         _n_iters.sort()
         _aoc = df_series[column].copy()
 
+        replacement = 0
+        if not maximum:
+            _max = np.max(_aoc)
+            replacement = _max
+
         if max_n_iter is not None and max_n_iter > _n_iters[-1]:
             _n_iters.append(max_n_iter)
-            if maximum:
-                _aoc.append(0)
-            else:
-                _aoc.append(np.inf)
-        
+            _aoc.append(replacement)
+
         for i, _n_iter in enumerate(_n_iters):
             n_fill = _n_iter - len(_contents) - 1
-            if maximum:
-                _contents.extend([0] * n_fill)
-            else:
-                _contents.extend([np.inf] * n_fill)
+            _contents.extend([replacement] * n_fill)
             _contents.append(_aoc[i])
         if maximum:
             _acc = np.maximum.accumulate(_contents)
@@ -195,25 +194,26 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
         _max_aoc_list = strategy_df['log_y_aoc'].values[0]
         _volin_y.append(np.array(_max_aoc_list))
 
-    plot_voilin_style_scatter(
-        data=[_volin_y],
-        labels=[unique_strategies],
-        n_cols=4,
-        title="AOC",
-        label_fontsize=10,
-        figsize=(14, 8),
-        )
+    # plot_voilin_style_scatter(
+    #     data=[_volin_y],
+    #     labels=[unique_strategies],
+    #     n_cols=4,
+    #     title="AOC",
+    #     label_fontsize=10,
+    #     figsize=(14, 8),
+    #     )
 
     plot_box_violin(
         data=[_volin_y],
         labels=[unique_strategies],
-        plot_type="violin",
+        y_labels=['AOC'],
+        show_scatter=True,
         n_cols=4,
-        title="AOC",
         label_fontsize=10,
-        figsize=(14, 8),
+        figsize=(8, 6),
+        filename='es_aoc_voilin',
         )
-        
+
 def _group_plus_aoc(strategy_group:dict, strategy:str, y_aoc:np.ndarray, log_y_aoc:np.ndarray, std_y_aoc:np.ndarray, std_log_y_aoc:np.ndarray):
     # same n_parent: 4, 8, 12, 20
     # n_offspring: mu > lambda, mu <= lambda
@@ -263,7 +263,6 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
     aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_iter', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
 
     # aoc_df = aoc_df.groupby(['strategy', 'n_strategy', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
-    # aoc_df = aoc_df.groupby(['strategy', 'n_strategy',])[['n_iter',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
     # iter_column = 'n_iter'
 
     aoc_df = aoc_df.groupby(['strategy', 'n_strategy',])[['n_ind',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
@@ -276,12 +275,12 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
 
     strategy_group = {}
 
-    strategy_aoc = [] 
+    strategy_aoc = []
     strategy_filling = []
 
     strategy_log_aoc = []
     strategy_log_filling = []
-    
+
     labels = []
 
     for strategy in unique_strategies:
@@ -303,7 +302,7 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
 
         if group_fn is not None:
             group_fn(strategy_group, strategy, y_aoc, log_y_aoc, std_y_aoc, std_log_y_aoc)
-    
+
     plot_y = []
     sub_titles = []
     fillings = []
@@ -331,14 +330,15 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         y = plot_y,
         x = x,
         labels = plot_labels,
-        filling= fillings,
+        y_labels=['AOC'],
+        filling=fillings,
         sub_titles=sub_titles,
         y_scales=y_scale,
-        linewidth=2,
+        linewidth=1.5,
         n_cols=3,
-        label_fontsize=10,
-        figsize=(15, 9),
-        title="AOC",
+        label_fontsize=9,
+        figsize=(8, 6),
+        filename='es_aoc_lines',
         )
 
 
@@ -820,8 +820,9 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
     aoc_df['acc_log_y_aoc'] = aoc_df.apply(combine_acc('log_y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
     aoc_df['acc_loss'] = aoc_df.apply(combine_acc('loss', maximum=False, max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
 
-    loss_upper_cliper = clip_upper_factory(bound_type='median')
-    
+    # loss_upper_cliper = clip_upper_factory(bound_type='median')
+    loss_upper_cliper = None
+
     problem_log_aoc = []
     problem_log_aoc_filling = []
     problem_loss = []
@@ -831,15 +832,15 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
     problem_group = {}
 
     unique_problems = aoc_df['problem_id'].unique()
-    
+
     for problem in unique_problems:
         problem_df = aoc_df[aoc_df['problem_id'] == problem]
-        unique_strategies = problem_df['strategy'].unique()     
+        unique_strategies = problem_df['strategy'].unique()
         _log_aoc = []
         _log_aoc_filling = []
         _loss = []
         _loss_filling = []
-        _labels = []    
+        _labels = []
         strategy_group_in_problem = {}
         for strategy in unique_strategies:
             strategy_df = problem_df[problem_df['strategy'] == strategy]
@@ -855,8 +856,11 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
                 acc_loss, _upper_bound = loss_upper_cliper(acc_loss)
             loss = np.mean(acc_loss, axis=0)
             std_loss = np.std(acc_loss, axis=0)
+            max_loss = np.max(acc_loss, axis=0)
+            min_loss = np.min(acc_loss, axis=0)
             _loss.append(loss)
-            _loss_filling.append((np.clip(loss + std_loss, 0, _upper_bound), np.clip(loss - std_loss, 0, _upper_bound)))
+            # _loss_filling.append((np.clip(loss + std_loss, 0, _upper_bound), np.clip(loss - std_loss, 0, _upper_bound)))
+            _loss_filling.append((min_loss, max_loss))
 
             _labels.append(strategy)
 
@@ -869,7 +873,7 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
         problem_log_aoc_filling.append(_log_aoc_filling)
         problem_loss.append(_loss)
         problem_loss_filling.append(_loss_filling)
-        labels.append(_labels) 
+        labels.append(_labels)
 
     if len(problem_group) > 0:
         for problem, strategy_group in problem_group.items():
@@ -884,13 +888,13 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
                 fillings.append(group_ele['aoc_filling'])
                 sub_titles.append(f"{group_ele['name']}(AOC)")
                 plot_labels.append(group_ele['labels'])
-                y_scale.append(("log", {}))
+                y_scale.append(("linear", {}))
 
                 plot_y.append(np.array(group_ele['loss']))
                 fillings.append(group_ele['loss_filling'])
                 sub_titles.append(f"{group_ele['name']}(Loss)")
                 plot_labels.append(group_ele['labels'])
-                y_scale.append(("linear", {}))
+                y_scale.append(("symlog", {}))
 
             x_base = np.arange(len(problem_log_aoc[0][0]), dtype=np.int16)
             x = np.tile(x_base, (len(plot_y), 1))
@@ -900,7 +904,7 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
                 labels = plot_labels,
                 filling=fillings,
                 sub_titles=sub_titles,
-                # y_scales=y_scale,
+                y_scales=y_scale,
                 title=title,
                 n_cols=4,
                 figsize=(15, 9),
@@ -909,21 +913,25 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
         aoc_and_loss = []
         subtitles = []
         filling = []
+        y_scale = []
         n_cols = 5
 
         aoc_and_loss.extend(problem_log_aoc)
         subtitles.extend([f"F{problem}-AOC" for problem in unique_problems])
         filling.extend(problem_log_aoc_filling)
+        y_scale.extend([("linear", {}) for _ in range(len(unique_problems))])
+
         aoc_and_loss.extend(problem_loss)
         subtitles.extend([f"F{problem}-Loss" for problem in unique_problems])
         filling.extend(problem_loss_filling)
+        y_scale.extend([("symlog", {}) for _ in range(len(unique_problems))])
 
         # step n_cols
         # for i in range(0, len(unique_problems), n_cols):
         #     aoc_and_loss.extend(problem_log_aoc[i:i+n_cols])
         #     subtitles.extend([f"F{problem}-AOC" for problem in unique_problems[i:i+n_cols]])
         #     filling.extend(problem_log_aoc_filling[i:i+n_cols])
-            
+
         #     aoc_and_loss.extend(problem_loss[i:i+n_cols])
         #     subtitles.extend([f"F{problem}-Loss" for problem in unique_problems[i:i+n_cols]])
         #     filling.extend(problem_loss_filling[i:i+n_cols])
@@ -932,12 +940,12 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
         #     aoc_and_loss.append(problem_log_aoc[i])
         #     subtitles.append(f"F{problem}-AOC")
         #     filling.append(problem_log_aoc_filling[i])
-            
+
         #     aoc_and_loss.append(problem_loss[i])
         #     subtitles.append(f"F{problem}-Loss")
         #     filling.append(problem_loss_filling[i])
 
-    
+
         labels = labels * 2
 
         plot_y = np.array(aoc_and_loss)
@@ -950,9 +958,11 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
             x = x,
             labels = labels,
             filling=filling,
-            sub_titles=subtitles, 
+            y_scales=y_scale,
+            sub_titles=subtitles,
             n_cols=n_cols,
-            figsize=(15, 9)
+            figsize=(15, 9),
+            filename='es_problem_aoc_loss',
             )
 
 def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strategies:list[str]):
@@ -1128,7 +1138,7 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
 
 def plot_search_result(results:list[tuple[str,Population]], save_name=None):
     res_df = _process_search_result(results, save_name=save_name)
-    
+
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
 
@@ -1144,8 +1154,8 @@ def plot_search_result(results:list[tuple[str,Population]], save_name=None):
     # _plot_search_error_type(err_df, unique_strategies=unique_strategies)
     # _plot_search_error_rate_by_generation(err_df, unique_strategies)
 
-    # _plot_search_problem_aoc_and_loss(res_df)
-    
+    _plot_search_problem_aoc_and_loss(res_df)
+
 def plot_search():
     # file_paths = [
     #     # ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0121222958.pkl", "bo"),
