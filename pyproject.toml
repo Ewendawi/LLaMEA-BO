@@ -1,12 +1,10 @@
 [tool.poetry]
-name = "llamea"
-version = "0.9.3"
+name = "llambo"
+version = "0.0.1"
 description = ""
-authors = ["Niki van Stein <n.van.stein@liacs.leidenuniv.nl>"]
+authors = []
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/nikivanstein/LLaMEA"
-repository = "https://github.com/nikivanstein/LLaMEA"
 
 [tool.poetry.dependencies]
 python = "^3.10"

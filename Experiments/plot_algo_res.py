@@ -13,16 +13,16 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from ioh import get_problem
 
-from llamea.utils import setup_logger
-from llamea.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
+from llambo.utils import setup_logger
+from llambo.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
 
-from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
+from llambo.prompt_generators.abstract_prompt_generator import ResponseHandler
 
-from llamea.evaluator.injected_critic import FunctionProfiler
-from llamea.evaluator.ioh_evaluator import IOHEvaluator 
-from llamea.evaluator.evaluator_result import EvaluatorResult
+from llambo.evaluator.injected_critic import FunctionProfiler
+from llambo.evaluator.ioh_evaluator import IOHEvaluator 
+from llambo.evaluator.evaluator_result import EvaluatorResult
 
-from llamea.population.es_population import ESPopulation
+from llambo.population.es_population import ESPopulation
 
 
 def dynamical_access(obj, attr_path):
@@ -1021,4 +1021,5 @@ if __name__ == "__main__":
 
     # plot_algo_0220()
 
-    extract_algo_result()
+    dir_path = 'Experiments/final_eval_res_40dim_0320'
+    extract_algo_result(dir_path=dir_path)

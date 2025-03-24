@@ -3,16 +3,16 @@ import getopt
 import sys
 import logging
 import pickle
-import json 
+import json
 import torch
 import numpy as np
-from llamea import LLaMBO
-from llamea.llm import LLMmanager, LLMS
-from llamea.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator, GenerationTask
-from llamea.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
-from llamea.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
-from llamea.utils import setup_logger
-from llamea.individual import Individual
+from llambo import LLaMBO
+from llambo.llm import LLMmanager, LLMS
+from llambo.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator, GenerationTask
+from llambo.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
+from llambo.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
+from llambo.utils import setup_logger
+from llambo.individual import Individual
 
 # Utils
 def get_IOHEvaluator_for_final_eval():
@@ -331,7 +331,7 @@ def run_mu_lambda_exp(
     if options is not None:
         if 'es_pop_is_elitism' in options:
             p_name = f'{n_parent}-{n_offspring}'
-        
+
     population.name = f"evol_{p_name}"
 
     _run_exp(
@@ -393,7 +393,7 @@ def get_llm():
     # MODEL = 'llama-3.3-70b-versatile'
     # MODEL = 'deepseek-r1-distill-llama-70b'
     # MODEL = 'deepseek-r1-distill-qwen-32b'
-    
+
     # MODEL = 'o_gemini-flash-1.5-8b-exp'
     # MODEL = 'o_gemini-2.0-flash-exp'
 
@@ -509,7 +509,7 @@ if __name__ == "__main__":
     setup_logger(level=logging.INFO)
     
     if use_mpi:
-        from llamea.evaluator.MPITaskManager import start_mpi_task_manager 
+        from llambo.evaluator.MPITaskManager import start_mpi_task_manager 
 
         with start_mpi_task_manager(result_recv_buffer_size=1024*100) as task_manager:
             if task_manager.is_master:

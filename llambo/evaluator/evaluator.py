@@ -22,20 +22,9 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def problem_name(self) -> str:
-        pass
-
-    @abstractmethod
     def problem_dim(self) -> int:
         pass
 
     @abstractmethod
-    def eval_bugdet(self) -> int:
-        pass
-
-    @abstractmethod
     def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
-        pass
-
-    def evaluate_others(self) -> list[EvaluatorResult]:
         pass

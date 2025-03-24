@@ -2,8 +2,8 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any
-from llamea.evaluator import EvaluatorResult
-from llamea.population import Population #FIXME: prompt generators should not be coupled with the individual and population classes
+from llambo.evaluator import EvaluatorResult
+from llambo.population import Population #FIXME: prompt generators should not be coupled with the individual and population classes
 
 class GenerationTask(Enum):
     """Enum class for generation tasks."""
@@ -82,7 +82,7 @@ class PromptGenerator(ABC):
     def response_format(self, task:GenerationTask, extra:str="") -> str:
         pass
 
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, 
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult,
                                    other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
         pass
 
@@ -101,8 +101,3 @@ class PromptGenerator(ABC):
     def get_return_checker(self) -> ResponseImpReturnChecker:
         return None
 
-    def update_sharedbroad(self, sharedbroad: Any, population:Population) -> None:
-        pass
-
-    def get_prompt_sharedbroad(self) -> Any:
-        return None

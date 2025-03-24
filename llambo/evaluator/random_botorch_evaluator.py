@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from botorch.test_functions import synthetic
 from botorch.test_functions.synthetic import SyntheticTestFunction, ConstrainedSyntheticTestFunction
-from llamea.utils import BOOverBudgetException
+from llambo.utils import BOOverBudgetException
 from .evaluator import AbstractEvaluator 
 from .evaluator_result import EvaluatorResult, EvaluatorBasicResult
 from .exec_utils import default_exec

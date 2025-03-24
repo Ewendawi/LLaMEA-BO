@@ -122,7 +122,7 @@ class GoogleGenAIClient(LLMClient):
                 else:
                     user_contents.append(types.Part.from_text(text=_msg['content']))
                     user_contents.append(_msg['content'])
-            
+
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents= user_contents,
@@ -285,17 +285,24 @@ class RequestClient(LLMClient):
             return res
 
 class LLMmanager:
-    def __init__(self, model_key: str):
-        if model_key not in LLMS:
-            raise ValueError(f"Invalid model key: {model_key}")
+    def __init__(self, model_key: str = None, model_name: str = None, api_key: str = None, base_url: str = None, client_str: str = None):
+        if model_key is None:
+            if model_name is None or api_key is None:
+                raise ValueError("model_name and api_key must be provided.")
 
-        _model = LLMS[model_key]
+            _model = (model_name, api_key, base_url, 5, client_str)
+        else:
+            if model_key not in LLMS:
+                raise ValueError(f"Invalid model key: {model_key}")
+
+            _model = LLMS[model_key]
+
         api_key = _model[1]
         model_name = _model[0]
         base_url = _model[2]
         client_str = _model[4]
 
-        if client_str is None:
+        if client_str == "openai":
             self.client = OpenAIClient(api_key, model_name, base_url)
         elif client_str == "openrouter":
             self.client = OpenAIClient(api_key, model_name, base_url)

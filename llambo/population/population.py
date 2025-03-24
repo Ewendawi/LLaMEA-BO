@@ -147,6 +147,8 @@ class Population(ABC):
                 f.write(prompt)
 
             raw_res = handler.raw_response
+            if raw_res is None:
+                raw_res = ''
             if handler.feedback:
                 raw_res += f'\n## Feedback\n {handler.feedback}'
             elif handler.error:
@@ -190,8 +192,8 @@ class Population(ABC):
             raise FileNotFoundError(f"File {filepath} not found")
         return None
 
-        
-        
+
+
 # Utility functions
 import torch
 from transformers import AutoTokenizer, AutoModel
@@ -568,7 +570,7 @@ def test_diversity_awarness_selection_fn():
     descs2 = [
         "A Bayesian Optimization algorithm that combines Thompson sampling and Expected Improvement with an ensemble of GPs, adaptive batch sizes, trust region based local search, and dynamic adjustment of exploration/exploitation balance, and incorporates a warm restart strategy.",
         "A Bayesian optimization algorithm that adaptively balances exploration and exploitation using a dynamic trust region with a mixed batch strategy, local search, adaptive kernel length scale and focuses on exploration when progress stagnates."
-    ] 
+    ]
     scores2 = [0.8, 0.6]
 
     class test_res:

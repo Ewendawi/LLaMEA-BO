@@ -9,7 +9,7 @@ import numpy as np
 from ioh import get_problem, logger
 from misc import aoc_logger, correct_aoc
 
-from llamea.utils import BOOverBudgetException
+from llambo.utils import BOOverBudgetException
 
 from .evaluator import AbstractEvaluator
 from .evaluator_result import EvaluatorResult, EvaluatorBasicResult
@@ -400,7 +400,7 @@ class IOHEvaluator(AbstractEvaluator):
 
         if use_mpi:
             from mpi4py import MPI
-            from llamea.evaluator.MPITaskManager import MPITaskManager, MPIFuture
+            from llambo.evaluator.MPITaskManager import MPITaskManager, MPIFuture
 
             comm = MPI.COMM_WORLD
             size = comm.Get_size()

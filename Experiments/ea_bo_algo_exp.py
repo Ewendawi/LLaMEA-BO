@@ -9,9 +9,9 @@ import pathlib
 
 import numpy as np
 
-from llamea.utils import setup_logger
-from llamea.evaluator.injected_critic import FunctionProfiler
-from llamea.evaluator.ioh_evaluator import IOHEvaluator 
+from llambo.utils import setup_logger
+from llambo.evaluator.injected_critic import FunctionProfiler
+from llambo.evaluator.ioh_evaluator import IOHEvaluator 
 
 from Experiments.plot_algo_res import plot_algo_result, plot_contour
 
@@ -291,7 +291,7 @@ if __name__ == "__main__":
     
 
     if use_mpi:
-        from llamea.evaluator.MPITaskManager import start_mpi_task_manager 
+        from llambo.evaluator.MPITaskManager import start_mpi_task_manager 
 
         with start_mpi_task_manager(result_recv_buffer_size=1024*1024*50) as task_manager:
             if task_manager.is_master:

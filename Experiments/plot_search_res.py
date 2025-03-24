@@ -9,13 +9,13 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from llamea.utils import IndividualLogger
-from llamea.prompt_generators.abstract_prompt_generator import ResponseHandler
-from llamea.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing, plot_voilin_style_scatter
-from llamea.population.population import Population, desc_similarity, code_diff_similarity, code_bert_similarity
-from llamea.population.es_population import ESPopulation
-from llamea.evaluator.evaluator_result import EvaluatorResult
-from llamea.utils import setup_logger
+from llambo.utils import IndividualLogger
+from llambo.prompt_generators.abstract_prompt_generator import ResponseHandler
+from llambo.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing, plot_voilin_style_scatter
+from llambo.population.population import Population, desc_similarity, code_diff_similarity, code_bert_similarity
+from llambo.population.es_population import ESPopulation
+from llambo.evaluator.evaluator_result import EvaluatorResult
+from llambo.utils import setup_logger
 
 
 # utils
@@ -557,7 +557,6 @@ def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]
     plot_box_violin(
         data=[y_err_rates],
         labels=[unique_strategies],
-        plot_type="violin",
         n_cols=4,
         label_fontsize=10,
         title="Error rate by strategy",
@@ -1156,7 +1155,7 @@ def plot_search_result(results:list[tuple[str,Population]], save_name=None):
 
     _plot_search_problem_aoc_and_loss(res_df)
 
-def plot_search():
+def plot_search_0112():
     # file_paths = [
     #     # ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0121222958.pkl", "bo"),
     #     ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0124195614.pkl", "es-1+1"),
@@ -1339,7 +1338,7 @@ def plot_light_evol_and_final():
                    fig_size=(15,9))
 
 
-def plot_search_0209(dir_path, add_cr_rate=False, file_paths=None, save_name=None, extract_fn=None):
+def plot_search(dir_path, add_cr_rate=False, file_paths=None, save_name=None, extract_fn=None):
     if file_paths is None:
         file_paths = []
         for dir_name in os.listdir(dir_path):
@@ -1473,9 +1472,9 @@ if __name__ == "__main__":
 
     extract_fn = _extract_fn
 
-    # save_name = None
+    save_name = 'Experiments/pop_100_tkcr/df_res_03241329.pkl'
     # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
 
-    plot_search_0209(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name, extract_fn=extract_fn)
+    plot_search(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name, extract_fn=extract_fn)
 
     pass

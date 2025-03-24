@@ -2,7 +2,7 @@
 import random
 import re
 import numpy as np
-from llamea.evaluator import EvaluatorResult
+from llambo.evaluator import EvaluatorResult
 from .abstract_prompt_generator import PromptGenerator, GenerationTask, ResponseImpReturnChecker, ResponseHandler
 
 
