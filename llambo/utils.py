@@ -264,7 +264,7 @@ def remove_comments(code):
     result = []
     in_string = False
     string_char = None  # Tracks whether we're in ' or " string
-    
+
     i = 0
     while i < len(code):
         # Handle strings (both single and double quotes)
@@ -275,7 +275,7 @@ def remove_comments(code):
             elif string_char == code[i]:  # Matching quote found
                 in_string = False
             result.append(code[i])
-                
+
         # Handle single-line comments
         elif not in_string and code[i] == '#':
             while i < len(code) and code[i] != '\n':
@@ -283,13 +283,13 @@ def remove_comments(code):
             if i < len(code):
                 result.append('\n')
             continue
-                
+
         # Add normal characters
         else:
             result.append(code[i])
-            
+
         i += 1
-            
+
     return ''.join(result)
 
 def remove_empty_lines_in_function(code):
@@ -297,13 +297,13 @@ def remove_empty_lines_in_function(code):
     result = []
     in_function = False
     current_indent = 0
-    
+
     for line in lines:
         # Check if line contains only whitespace
         is_empty = not line.strip()
         # Get the indentation level
         indent = len(line) - len(line.lstrip())
-        
+
         # Detect function start
         if line.lstrip().startswith('def '):
             in_function = True
@@ -326,6 +326,19 @@ def remove_empty_lines_in_function(code):
     
     return '\n'.join(result)
 
+class RenameUnpickler(pickle.Unpickler):
+
+    @classmethod
+    def unpickle(cls, file):
+        unpicker = cls(file)
+        return unpicker.load()
+
+    def find_class(self, module, name):
+        renamed_module = module
+        if "llamea" in module:
+            renamed_module = module.replace("llamea", "llambo")
+
+        return super().find_class(renamed_module, name)
 
 # Example usage
 def test_remove_comments():

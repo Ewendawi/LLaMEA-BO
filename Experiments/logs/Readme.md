@@ -19,10 +19,12 @@ For example:
 ### IOH Benchmark Data
 
 The directory contains benchmark results in IOH Profiler format, organized by problem dimension:
-- `5D_ioh.csv` - 5-dimensional benchmark results
-- `10D_ioh.csv` - 10-dimensional benchmark results
-- `20D_ioh.csv` - 20-dimensional benchmark results
-- `40D_ioh.csv` - 40-dimensional benchmark results
+- `5D_ioh_*.csv` - 5-dimensional benchmark results
+- `10D_ioh_*.csv` - 10-dimensional benchmark results
+- `20D_ioh_*.csv` - 20-dimensional benchmark results
+- `40D_ioh_*.csv` - 40-dimensional benchmark results
+- `*D_ioh_loss.csv` - The benchmark results of the loss
+- `*D_ioh_fx.csv` - The benchmark results of the function value
 
 These files can be directly imported into [IOHanalyzer](https://iohanalyzer.liacs.nl/) for visualization and analysis.
 

@@ -15,7 +15,7 @@ from llambo.utils import plot_group_bars, plot_lines, plot_box_violin, moving_av
 from llambo.population.population import Population, desc_similarity, code_diff_similarity, code_bert_similarity
 from llambo.population.es_population import ESPopulation
 from llambo.evaluator.evaluator_result import EvaluatorResult
-from llambo.utils import setup_logger
+from llambo.utils import setup_logger, RenameUnpickler
 
 
 # utils
@@ -415,7 +415,7 @@ def _plot_serach_pop_similarity(results:list[tuple[str,Population]], unique_stra
     
     if _load:
         with open(_save_name, 'rb') as f:
-            sim_data = pickle.load(f)
+            sim_data = RenameUnpickler(f).unpickle()
     else:
         strategy_group = {}
         for strategy_name, pop in results:
@@ -1320,7 +1320,7 @@ def plot_light_evol_and_final():
     for group_name, file_paths in file_paths:
         _temp = [0,0]
         for file_path in file_paths:
-            target = pickle.load(open(file_path, "rb"))
+            target = RenameUnpickler.unpickle(open(file_path, "rb"))
             if isinstance(target, EvaluatorResult):
                 _temp[1] = target.score
             elif isinstance(target, ResponseHandler):
@@ -1359,7 +1359,7 @@ def plot_search(dir_path, add_cr_rate=False, file_paths=None, save_name=None, ex
     pop_list = []
     best_pop_map = {}
     for file_path in file_paths:
-        pop = pickle.load(open(file_path, "rb"))
+        pop = RenameUnpickler.unpickle(open(file_path, "rb"))
         n_parent = pop.n_parent
         n_offspring = pop.n_offspring
         cr_rate = pop.cross_over_rate
@@ -1388,7 +1388,7 @@ def plot_search(dir_path, add_cr_rate=False, file_paths=None, save_name=None, ex
 def update_aoc_for_res():
     file_path = 'Experiments/ESPopulation_evol_4-16_final_0222112835.pkl'
     with open(file_path, 'rb') as f:
-        res = pickle.load(f)
+        res = RenameUnpickler.unpickle(f)
 
     for key, ind in res.individuals.items():
         hanlder = Population.get_handler_from_individual(ind)
@@ -1477,4 +1477,3 @@ if __name__ == "__main__":
 
     plot_search(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name, extract_fn=extract_fn)
 
-    pass

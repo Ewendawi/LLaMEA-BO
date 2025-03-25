@@ -11,7 +11,7 @@ from llambo.llm import LLMmanager, LLMS
 from llambo.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator, GenerationTask
 from llambo.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
 from llambo.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
-from llambo.utils import setup_logger
+from llambo.utils import setup_logger, RenameUnpickler
 from llambo.individual import Individual
 
 # Utils
@@ -207,7 +207,7 @@ def _run_exp(prompt_generator:PromptGenerator,
                         logging.warning("Warmstart handler path not exist: %s", _handler)
                         continue
                     with open(_handler, "rb") as f:
-                        handler = pickle.load(f)
+                        handler = RenameUnpickler.unpickle(f)
                 ind = Individual()
                 Population.set_handler_to_individual(ind, handler)
                 ind.fitness = handler.eval_result.score
@@ -285,12 +285,9 @@ def tune_algo(file_path, cls_name, res_path, params, should_eval=False, plot=Fal
             pickle.dump(res, f)
 
     with open(res_path, "rb") as f:
-        res = pickle.load(f)
+        res = RenameUnpickler.unpickle(f)
 
     logging.info("Results: %s", res)
-
-    if plot:
-        plot_algo_result([res])
 
     if pop_path is not None and os.path.exists(pop_path):
         population = Population.load(pop_path)

@@ -13,7 +13,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from ioh import get_problem
 
-from llambo.utils import setup_logger
+from llambo.utils import setup_logger, RenameUnpickler
 from llambo.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
 
 from llambo.prompt_generators.abstract_prompt_generator import ResponseHandler
@@ -776,7 +776,7 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
     res_list = []
     if pop_path is not None:
         with open(pop_path, "rb") as f:
-            pop = pickle.load(f)
+            pop = RenameUnpickler.unpickle(f)
             all_inds = pop.all_individuals()
             all_handlers = [ESPopulation.get_handler_from_individual(ind) for ind in all_inds]
             for handler in all_handlers:
@@ -790,18 +790,18 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
         for file in os.listdir(dir_path):
             if file.endswith(".pkl"):
                 file_paths.append(os.path.join(dir_path, file))
-    
+
     if len(res_list) == 0:
         for file_path in file_paths:
             with open(file_path, "rb") as f:
-                target = pickle.load(f)
+                target = RenameUnpickler.unpickle(f)
                 if target.error is not None:
                     continue
                 if isinstance(target, EvaluatorResult):
                     res_list.append(target)
                 elif isinstance(target, ResponseHandler):
                     res_list.append(target.eval_result)
-            
+
     plot_algo_result(results=res_list, fig_dir=fig_dir)
 
 
@@ -922,7 +922,8 @@ def extract_algo_result(dir_path:str):
     res_list = []
     for file_path in file_paths:
         with open(file_path, "rb") as f:
-            target = pickle.load(f)
+            unpickler = RenameUnpickler(f)
+            target = unpickler.load()
             if target.error is not None:
                 continue
             if isinstance(target, EvaluatorResult):
@@ -961,7 +962,8 @@ def extract_algo_result(dir_path:str):
     # filter_exec_id = 0
     # filter_problem_id = 4
 
-    df_data = []
+    df_y_data = []
+    df_loss_data = []
     for algo in algos:
         # filter by algo , instance_id, exec_id to create a new dataframe
         _temp_df = res_df[
@@ -971,24 +973,48 @@ def extract_algo_result(dir_path:str):
             # & ((res_df['problem_id'] == 4) | (res_df['problem_id'] == 5))
         ]
 
+        instance_ids = _temp_df['instance_id'].unique()
+        exec_ids = _temp_df['exec_id'].unique()
+        # map their combination to run_id
+        counter = 0
+        run_id_map = {}
+        for instance_id in instance_ids:
+            for exec_id in exec_ids:
+                run_id_map[(instance_id, exec_id)] = counter
+                counter += 1
+
         for _, row in _temp_df.iterrows():
             _y_hist = row['y_hist'].tolist()
+            _loss_list = row['loss'].tolist()
             p_id = row['problem_id']
             instance_id = row['instance_id']
             f_id = f"{p_id}_{instance_id}"
             algo_id = row['algorithm_name'].replace("BL", "")
-            run_id = row['exec_id']
+            exec_id = row['exec_id']
             for j, y in enumerate(_y_hist):
-                df_data.append({
+                df_y_data.append({
                     'Evaluation counter': j + 1,
                     'Function values': y,
                     'Function ID': f_id,
                     'Algorithm ID': algo_id,
                     'Problem dimension': dim,
+                    'Run ID': exec_id
+                })
+            run_id = run_id_map[(instance_id, exec_id)]
+            for j, loss in enumerate(_loss_list):
+                df_loss_data.append({
+                    'Evaluation counter': j + 1,
+                    'Loss': loss,
+                    'Function ID': p_id,
+                    'Algorithm ID': algo_id,
+                    'Problem dimension': dim,
                     'Run ID': run_id
                 })
-    _new_df = pd.DataFrame(df_data)
-    _new_df.to_csv(f"{dir_path}/ioh.csv", index=False)
+    _new_y_df = pd.DataFrame(df_y_data)
+    _new_y_df.to_csv(f"{dir_path}/ioh_fx.csv", index=False)
+
+    _new_loss_df = pd.DataFrame(df_loss_data)
+    _new_loss_df.to_csv(f"{dir_path}/ioh_loss.csv", index=False)
 
 def plot_algo_0220():
     file_paths = [
@@ -1035,5 +1061,5 @@ if __name__ == "__main__":
 
     # plot_algo_0220()
 
-    dir_path = 'Experiments/final_eval_res_40dim_0320'
+    dir_path = 'Experiments/final_eval_res_5dim'
     extract_algo_result(dir_path=dir_path)
