@@ -7,8 +7,8 @@ class AbstractEvaluator(ABC):
     def __init__(self):
         self.return_checker:Callable[[tuple], str] = lambda x: ""
         self.ignore_over_budget = False
-        self.inject_critic = False
-        self.ignore_metric = False
+        self.inject_critic = True
+        self.ignore_metric = True
         self.ignore_capture = True
 
         self.max_eval_workers = 0

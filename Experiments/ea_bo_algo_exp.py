@@ -74,9 +74,8 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
         is_baseline = options.get("is_baseline", False)
         if is_baseline:
             extra_init_params = baseline_algo_eval_param(evaluator.dim, evaluator.budget)
-            if options is not None:
-                if 'device' in options:
-                    extra_init_params['device'] = options['device']
+            if 'device' in options:
+                extra_init_params['device'] = options['device']
 
         if 'max_eval_workers' in options:
             evaluator.max_eval_workers = options['max_eval_workers']

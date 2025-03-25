@@ -297,11 +297,15 @@ def _plot_algo_aoc_on_problems(res_df:pd.DataFrame):
         figsize=(15, 9),
     )
 
-def _plot_algo_aoc(res_df:pd.DataFrame, dim:int, problem_filters=None, file_name=None):
+def _plot_algo_aoc(res_df:pd.DataFrame, dim:int, problem_filters=None, file_name=None, fig_dir=None):
     # filter the problem in problem_filters
     all_aoc_df = res_df
     if problem_filters is not None:
         all_aoc_df = all_aoc_df[~all_aoc_df['problem_id'].isin(problem_filters)]
+
+    if all_aoc_df.shape[0] == 0:
+        logging.warning("No data to plot")
+        return
 
     all_aoc_df = all_aoc_df.groupby(['algorithm', 'instance_id', 'exec_id'])[['y_aoc', 'log_y_aoc']].agg(np.mean).reset_index()
     all_aoc_df = all_aoc_df.groupby(['algorithm'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
@@ -328,6 +332,9 @@ def _plot_algo_aoc(res_df:pd.DataFrame, dim:int, problem_filters=None, file_name
     if problem_filters is not None:
         title += " Excluding "
         title += ", ".join([f"F{problem_id}" for problem_id in problem_filters])
+
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
     plot_box_violin(
         data=[all_log_plot_data],
         labels=[labels],
@@ -340,7 +347,7 @@ def _plot_algo_aoc(res_df:pd.DataFrame, dim:int, problem_filters=None, file_name
         filename=file_name,
     )
 
-def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int):
+def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int, fig_dir=None):
     problem_id_list = res_df['problem_id'].unique()
     problem_id_list.sort()
     aoc_df = res_df.groupby(['algorithm','problem_id'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
@@ -387,6 +394,8 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int):
             title = f"AOC on {sub_titles[i]}({dim}D)"
             _sub_titles = None
             dir_name = f"algo_aoc_{dim}D"
+            if fig_dir is not None:
+                dir_name = os.path.join(fig_dir, dir_name)
             os.makedirs(dir_name, exist_ok=True)
             file_name = f"{dir_name}/algo_aoc_{dim}D_F{problem_id_list[i]}"
 
@@ -434,7 +443,7 @@ def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
             return gaussian_smoothing(data, sigma)
     return _smooth_data
 
-def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
+def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
     # handle y
     data_col_map = {
         'n_init': '',
@@ -687,8 +696,11 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
         # if not seperated_plot:
         #     continue
         dir_name = f"algo_loss_{dim}D"
+        if fig_dir is not None:
+            dir_name = os.path.join(fig_dir, dir_name)
         os.makedirs(dir_name, exist_ok=True)
-        file_name = f"algo_loss_{dim}D/algo_loss_{dim}D_F{problem_id}"
+        file_name = f"{dir_name}/algo_loss_{dim}D_F{problem_id}"
+
 
         plot_lines(
             y=plot_data, x=x_data, 
@@ -713,6 +725,8 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
 
     if not seperated_plot:
         file_name = f"algo_loss_{dim}D"
+        if fig_dir is not None:
+            file_name = os.path.join(fig_dir, file_name)
         plot_lines(
             y=best_loss_plot_data, x=best_loss_x_data,
             y_scales=best_loss_y_scales,
@@ -735,7 +749,7 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int):
             filename=file_name,
         )
 
-def plot_algo_result(results:list[EvaluatorResult]):
+def plot_algo_result(results:list[EvaluatorResult], fig_dir=None):
     res_df = _process_algo_result(results)
 
     dim = 0
@@ -744,19 +758,21 @@ def plot_algo_result(results:list[EvaluatorResult]):
             dim = result.result[0].best_x.shape[0]
             break
 
+    if fig_dir is not None:
+        os.makedirs(fig_dir, exist_ok=True)
 
-    _plot_algo_aoc(res_df, dim=dim, file_name=f"algo_aoc_{dim}D")
+    _plot_algo_aoc(res_df, dim=dim, file_name=f"algo_aoc_{dim}D", fig_dir=fig_dir)
     problem_filters = [4, 8, 9, 19, 20, 24]
-    _plot_algo_aoc(res_df, dim=dim, problem_filters=problem_filters, file_name=f"algo_aoc_{dim}D_except")
+    _plot_algo_aoc(res_df, dim=dim, problem_filters=problem_filters, file_name=f"algo_aoc_{dim}D_except", fig_dir=fig_dir)
 
     # _plot_algo_aoc_on_problems(res_df)
 
-    _plot_algo_problem_aoc(res_df, dim=dim)
+    _plot_algo_problem_aoc(res_df, dim=dim, fig_dir=fig_dir)
 
-    _plot_algo_iter(res_df, dim=dim)
+    _plot_algo_iter(res_df, dim=dim, fig_dir=fig_dir)
 
 
-def plot_algo(file_paths=None, dir_path=None, pop_path=None):
+def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
     res_list = []
     if pop_path is not None:
         with open(pop_path, "rb") as f:
@@ -786,7 +802,7 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None):
                 elif isinstance(target, ResponseHandler):
                     res_list.append(target.eval_result)
             
-    plot_algo_result(results=res_list)
+    plot_algo_result(results=res_list, fig_dir=fig_dir)
 
 
 
@@ -972,9 +988,7 @@ def extract_algo_result(dir_path:str):
                     'Run ID': run_id
                 })
     _new_df = pd.DataFrame(df_data)
-    dir_path = f"Experiments/extracted_res"
-    os.makedirs(dir_path, exist_ok=True)
-    _new_df.to_csv(f"Experiments/extracted_res/{dim}D_ioh.csv", index=False)
+    _new_df.to_csv(f"{dir_path}/ioh.csv", index=False)
 
 def plot_algo_0220():
     file_paths = [
