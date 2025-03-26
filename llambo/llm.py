@@ -25,29 +25,14 @@ ONEHUB_API_KEY = os.getenv("ONEHUB_API_KEY")
 ONEHUB_BASE_URL = os.getenv("ONEHUB_BASE_URL")
 
 LLMS = {
-    "mixtral-8x7b-32768": ('mixtral-8x7b-32768', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 2, 'groq'),
     'llama3-70b-8192': ('llama3-70b-8192', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 2, 'groq'),
     "llama-3.3-70b-versatile": ('llama-3.3-70b-versatile', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 15, 'groq'),
-    'deepseek-r1-distill-llama-70b': ('deepseek-r1-distill-llama-70b', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 5, 'groq'),
-    'deepseek-r1-distill-qwen-32b': ('deepseek-r1-distill-qwen-32b', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 5, 'groq'),
 
-    "gemini-1.5-flash": ('gemini-1.5-flash', GEMINI_API_KEY, GEMINI_BASE_URL, 5, 'google'),
     "gemini-2.0-flash-exp": ('gemini-2.0-flash-exp', GEMINI_API_KEY, GEMINI_BASE_URL, 10, 'google'),
-    "gemini-2.0-flash": ('gemini-2.0-flash', GEMINI_API_KEY, GEMINI_BASE_URL, 10, 'google'),
-    'gemini-2.0-pro-exp' : ('gemini-2.0-pro-exp-02-05', GEMINI_API_KEY, GEMINI_BASE_URL, 5, 'google'),
-    'gemini-2.0-flash-thinking': ('gemini-2.0-flash-thinking-exp-01-21', GEMINI_API_KEY, GEMINI_BASE_URL, 5, 'google'),
 
     'onehub-gemini-2.0-flash': ('gemini-2.0-flash-exp', ONEHUB_API_KEY, ONEHUB_BASE_URL, 5, None),
     'onehub-gemma2-9b-it': ('gemma2-9b-it', ONEHUB_API_KEY, ONEHUB_BASE_URL, 5, None),
 
-    'deepseek/deepseek-chat': ('deepseek/deepseek-chat', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 2, 'openrouter'),
-    'o_gemini-flash-1.5-8b-exp': ('google/gemini-flash-1.5-8b-exp', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
-    'o_gemini-flash-1.5-exp': ('google/gemini-flash-1.5-exp', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
-    'o_gemini-2.0-flash-exp': ('google/gemini-2.0-flash-exp:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
-    'o_gemini-exp-1206': ('google/gemini-exp-1206:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
-    'o_gemini-exp-1121': ('google/gemini-exp-1121:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5),
-    'o_gemini-2.0-flash-thinking-exp': ('google/gemini-2.0-flash-thinking-exp:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
-    'o_llama-3.1-405b-instruct': ('meta-llama/llama-3.1-405b-instruct:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
     'o_deepseek-chat-v3': ('deepseek/deepseek-chat-v3-0324:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
 }
 

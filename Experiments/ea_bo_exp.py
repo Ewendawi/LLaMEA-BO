@@ -377,46 +377,14 @@ def tune_vanilla_bo(params):
     tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
 
 def get_llm():
-    # MODEL = 'deepseek/deepseek-chat'
-
     MODEL = 'gemini-2.0-flash-exp'
-    # MODEL = 'gemini-2.0-flash'
-    # MODEL = 'gemini-1.5-flash'
-    # MODEL = 'gemini-2.0-pro-exp'
-    # MODEL = 'gemini-2.0-flash-thinking-exp'
-    # MODEL = 'gemini-exp-1206'
-
-    # MODEL = 'llama3-70b-8192'
-    # MODEL = 'llama-3.3-70b-versatile'
-    # MODEL = 'deepseek-r1-distill-llama-70b'
-    # MODEL = 'deepseek-r1-distill-qwen-32b'
-
-    # MODEL = 'o_gemini-flash-1.5-8b-exp'
-    # MODEL = 'o_gemini-2.0-flash-exp'
-
-    # MODEL = 'onehub-gemini-2.0-flash'
-    # MODEL = 'onehub-gemma2-9b-it'
 
     llm = LLMmanager(model_key=MODEL)
 
     return llm
 
-def mock_res_provider(*args, **kwargs):
+def mock_res_provider():
     file_list = [
-        'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208014955/0-1_AdaGPUCBBOv2_respond.md',
-
-        'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208020129/1-4_AdaptiveBayesBOv5_respond.md',
-
-        'Experiments/pop_temp/ESPopulation_evol_4+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208020829/1-5_BayesTrustRegionAdaptiveBOv1_respond.md',
-
-        'Experiments/pop_temp/ESPopulation_evol_4+2_IOHEvaluator_f4_f10_dim-5_budget-100_instances-[1]_repeat-2_0208020829/0-4_BayesTrustRegionBOv1_respond.md',
-
-        'Experiments/pop_temp/ESPopulation_evol_2+2_IOHEvaluator_f4_f10_dim-5_budget-60_instances-[1]_repeat-2_0208010238/0-2_EfficientHybridBOv1_respond.md',
-    ]
-    file_list = [
-        '/home/hpcl2325/Experiments/pop_40_4-16/ESPopulation_evol_4-16_0222061618/1-3_HTRBO_0.0563_respond.md',
-        '/home/hpcl2325/Experiments/pop_40_4-16/ESPopulation_evol_4-16_0222063254/0-1_EHBO_0.0479_respond.md',
-        '/home/hpcl2325/Experiments/pop_40_4-16/ESPopulation_evol_4-16_0222063254/1-7_ATRBO_DKRA_0.0696_respond.md',
     ]
     file_path = np.random.choice(file_list, size=1)[0] 
     # file_path = np.random.choice(file_list, size=1, p=[0.25, 0.25, 0.25, 0.25])[0]
