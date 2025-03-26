@@ -101,9 +101,6 @@ class RandomBoTorchTestEvaluator(AbstractEvaluator):
         except Exception:
             pass
 
-    def problem_dim(self) -> int:
-        return self.dim
-
     def eval_bugdet(self) -> int:
         return self.budget
 

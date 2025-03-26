@@ -1,12 +1,35 @@
 from typing import Any
 import io
 import contextlib
-import concurrent.futures
 import sys
 import traceback
 import re
 import inspect
-from .injected_critic import AlgorithmCritic, critic_wrapper, set_inject_maximize, get_inject_maximize
+import logging
+from abc import ABC 
+import torch
+
+class ExecInjector(ABC):
+    @classmethod
+    def inject_code_with_device(cls, code, device) -> str:
+        # search whether the code include "cuda"
+        if torch.cuda.is_available():
+            if "cuda" not in code:
+                raise Exception("CUDA is available but the code does not use 'cuda'.")
+            else:
+                if device is not None and device not in code:
+                    code = code.replace("\"cuda\"", f"\"{device}\"")
+                    logging.info("replaced 'cuda' with '%s'", device)
+        return code
+
+    def inject_cls(self, cls, code) -> str:
+        return code
+
+    def inject_instance(self, cls_instance, code, init_kwargs, call_kwargs) -> Any:
+        return cls_instance
+
+    def clear(self):
+        pass
 
 class TrackExecExceptionWrapper:
     def __init__(self, error, _traceback):
@@ -76,62 +99,7 @@ def get_code_snippet(code_str, error_line, context_lines):
             formatted_code.append(f"{i:4} | {line}\n")
     return formatted_code
 
-def __inject_critic_code(code: str) -> str:
-    # Add the critic_wrapper function to the code
-    critic_wrapper_code = inspect.getsource(critic_wrapper)
-    critic_wrapper_code_lines = critic_wrapper_code.splitlines(keepends=True)
-
-    lines = code.splitlines(keepends=True)
-    new_lines = []
-
-    for line in lines:
-        # find the first class in the code. then inject the critic_wrapper function above it
-        if re.search(r'^class\s+(\w+)', line):
-            new_lines.extend(critic_wrapper_code_lines)
-            new_lines.append("\n")
-        elif re.search(r'def\s+_update_eval_points', line):
-            stripped_text   = line.lstrip()
-            n_blank_spaces  = len(line) - len(stripped_text)
-            decrator_line = " " * n_blank_spaces + '@critic_wrapper'
-            new_lines.append(decrator_line)
-            new_lines.append('\n')
-        elif re.search(r'def\s+_fit_model', line):
-            stripped_text   = line.lstrip()
-            n_blank_spaces  = len(line) - len(stripped_text)
-            decrator_line = " " * n_blank_spaces + '@critic_wrapper'
-            new_lines.append(decrator_line)
-            new_lines.append('\n')
-
-        new_lines.append(line)
-
-    return "".join(new_lines)
-
-def inject_critic_cls(cls):
-    methods = ['_update_eval_points', '_fit_model']
-    for method in methods:
-        original_method = getattr(cls, method, None)
-        if original_method is None or original_method.__name__ == 'injected_wrapper':
-            continue
-        decorated_method = critic_wrapper(original_method)
-        setattr(cls, method, decorated_method)
-
-def inject_critic_func(cls_instance, init_kwargs, call_kwargs) -> any:
-    critic = None
-    if not hasattr(cls_instance, "_injected_critic"):
-        setattr(cls_instance, "_injected_critic", None)
-    if cls_instance._injected_critic is None:
-        dim = init_kwargs.get("dim", 1)
-        func = call_kwargs.get("func", None)
-        bounds = func.bounds if func is not None else None
-        critic = AlgorithmCritic(dim=dim, bounds=bounds, optimal_value=func.optimal_value, critic_y_range=400)
-        critic.update_test_y(func)
-        critic.search_result.init_grid(bounds=bounds, dim=dim, budget=func.budget)
-
-        cls_instance._injected_critic = critic
-
-    return critic
-
-def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None, inject_critic=False, ignore_metric=False) -> tuple[any, str, str, any]:
+def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None, injector:ExecInjector=None) -> tuple[any, str, str, any]:
     captured_output = io.StringIO()
     res = None
     err = None
@@ -141,39 +109,26 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
     if call_kwargs is None:
         call_kwargs = {}
 
-    def _inject_critic_and_init(cls, init_kwargs, call_kwargs, code=None):
-        if inject_critic:
-            inject_critic_cls(cls)
-            cls_instance = cls(**init_kwargs)
-            critic = inject_critic_func(cls_instance, init_kwargs, call_kwargs)
-            critic.ignore_metric = ignore_metric
-
+    def _inject_and_init(cls, code, init_kwargs, call_kwargs):
+        if injector:
             if code is None:
                 try:
                     code = inspect.getsource(cls)
-                except:
+                except Exception:
                     pass
 
-            is_maximize = get_inject_maximize(cls_instance)
-            if not is_maximize and code is not None and 'botorch' in code:
-                is_maximize = True
-            
-            if is_maximize:
-                critic.maximize = True
-                obj_fn = call_kwargs.get("func", None)
-                if obj_fn is not None and hasattr(obj_fn, "maximize"):
-                    obj_fn.maximize = True
+            injector.inject_cls(cls, code)
+            cls_instance = cls(**init_kwargs)
+            injector.inject_instance(cls_instance, code, init_kwargs, call_kwargs)
         else:
             cls_instance = cls(**init_kwargs)
-            critic = None
-        return cls_instance, critic
+        return cls_instance
 
-    critic = None
     if cls is not None:
         # helper for debugging
-        cls_instance, critic = _inject_critic_and_init(cls, init_kwargs, call_kwargs, code)
+        cls_instance = _inject_and_init(cls, code, init_kwargs, call_kwargs)
 
-        should_capture_output = call_kwargs.pop("capture_output", True) 
+        should_capture_output = call_kwargs.pop("capture_output", True)
         if should_capture_output:
             with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
                 res = cls_instance(**call_kwargs)
@@ -189,25 +144,24 @@ def __default_exec(code, cls_name, cls=None, init_kwargs=None, call_kwargs=None,
             else:
                 with contextlib.redirect_stderr(captured_output), contextlib.redirect_stdout(captured_output):
                     _cls = namespace[cls_name]
-                    cls_instance, critic = _inject_critic_and_init(_cls, init_kwargs, call_kwargs, code)
+                    cls_instance = _inject_and_init(_cls, code, init_kwargs, call_kwargs)
                     res = cls_instance(**call_kwargs)
         except Exception as e:
             formatted_traceback = format_track_exec_with_code(cls_name, code, sys.exc_info())
             err = TrackExecExceptionWrapper(e, formatted_traceback)
-        
-        if critic is not None:
-            critic.clear()
 
-    return res, captured_output.getvalue(), err, critic
+    if injector is not None:
+        injector.clear()
 
-def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, cls=None, inject_critic=False, ignore_metric=False) -> tuple[any, str, str, any]:
+    return res, captured_output.getvalue(), err, injector
+
+def default_exec(code, cls_name, init_kwargs=None, call_kwargs=None, cls=None, injector:ExecInjector=None) -> tuple[any, str, str, any]:
     params = {
             "code": code,
             "cls_name": cls_name,
             "cls": cls,
             "init_kwargs": init_kwargs,
             "call_kwargs": call_kwargs,
-            "inject_critic": inject_critic,
-            "ignore_metric": ignore_metric,
+            "injector": injector
     }
     return __default_exec(**params)

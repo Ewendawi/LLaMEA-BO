@@ -665,7 +665,6 @@ class EvaluatorBasicResult:
 
         self.y_aoc = 0.0
         self.log_y_aoc = 0.0
-        self.y_aoc_from_ioh = 0.0  ##deprecated
 
         self.n_initial_points = 0
         self.non_init_y_aoc = 0.0

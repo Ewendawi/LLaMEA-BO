@@ -106,8 +106,9 @@ def _run_exp(prompt_generator:PromptGenerator,
                 evaluator = get_IOHEvaluator_for_evol()
             elif eval_overwrite_type == 'final_eval':
                 evaluator = get_IOHEvaluator_for_final_eval()
-        if "eval_inject_critic" in options:
-            evaluator.inject_critic = options["eval_inject_critic"]
+
+        if "eval_gpu_name" in options:
+            evaluator.gpu_name = options["eval_gpu_name"]
 
         if "time_out_per_eval" in options:
             evaluator.timeout = options["time_out_per_eval"]
@@ -239,7 +240,7 @@ def _run_exp(prompt_generator:PromptGenerator,
     option_str = json.dumps(options, indent=4)
     log_str = f"""Start running evolutions: 
 n_generation:{n_generations}, n_population:{n_population}
-n_query_threads:{n_query_threads}, gpu_name:{gpu_name}, max_interval:{max_interval}
+n_query_threads:{n_query_threads}, max_interval:{max_interval}
 {llm.model_name()}
 {prompt_generator}
 {evaluator}
@@ -436,8 +437,6 @@ def main():
         "n_query_threads": 0,
         "max_interval": 5,
 
-        "gpu_name": None,
-
         "llm": get_llm(),
         "prompt_generator": get_bo_prompt_generator(),
         "evaluator": get_IOHEvaluator_for_evol(),
@@ -467,7 +466,7 @@ def main():
             # 'use_mpi': True,
             # 'use_mpi_future': True,
 
-            'eval_inject_critic': False,
+            # 'eval_gpu_name': None,
             'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
             'test_eval_problems': [4], # [4, 10],
             # 'test_eval_problems': [2, 4, 8, 14, 15, 23],

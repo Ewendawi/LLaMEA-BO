@@ -18,7 +18,7 @@ from llambo.utils import plot_group_bars, plot_lines, plot_box_violin, moving_av
 
 from llambo.prompt_generators.abstract_prompt_generator import ResponseHandler
 
-from llambo.evaluator.injected_critic import FunctionProfiler
+from llambo.evaluator.bo_injector import FunctionProfiler
 from llambo.evaluator.ioh_evaluator import IOHEvaluator 
 from llambo.evaluator.evaluator_result import EvaluatorResult
 

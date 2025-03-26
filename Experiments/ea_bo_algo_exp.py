@@ -10,8 +10,8 @@ import pathlib
 import numpy as np
 
 from llambo.utils import setup_logger
-from llambo.evaluator.injected_critic import FunctionProfiler
-from llambo.evaluator.ioh_evaluator import IOHEvaluator 
+from llambo.evaluator.bo_injector import FunctionProfiler, BOInjector
+from llambo.evaluator.ioh_evaluator import IOHEvaluator
 
 from Experiments.plot_algo_res import plot_algo_result, plot_contour
 
@@ -70,6 +70,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
 
     _ignore_cls = False
     extra_init_params = {}
+    injector = BOInjector()
     if options is not None:
         is_baseline = options.get("is_baseline", False)
         if is_baseline:
@@ -91,6 +92,9 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
 
         if 'ignore_cls' in options:
             _ignore_cls = options['ignore_cls']
+
+        if 'ignore_external_metric' in options:
+            injector.ignore_metric = options['ignore_external_metric']
     
     if _ignore_cls:
         algo_cls = None
@@ -100,6 +104,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
         cls_name=cls_name,
         cls=algo_cls,
         cls_init_kwargs=extra_init_params,
+        injector = injector
     )
     if save:
         save_dir = 'Experiments/algo_eval_res'
@@ -243,6 +248,7 @@ def eval_final_algo():
         # 'use_mpi': True,
         # 'use_mpi_future': True,
         'ignore_cls': True, # the module with dynamic import can't be pickled
+        'ignore_external_metric': False,
     }
     _bl_file_map = {
         # 'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',

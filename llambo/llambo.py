@@ -48,7 +48,6 @@ class LLaMBO:
                        response_handler:ResponseHandler,
                        task:GenerationTask,
                        evaluator:AbstractEvaluator,
-                       gpu_name:str=None,
                        retry:int=3,
                        options=None,
                        ) -> ResponseHandler:
@@ -91,15 +90,6 @@ class LLaMBO:
 
         if response_handler.error:
             return response_handler
-
-        # search whether the code include "cuda"
-        if torch.cuda.is_available(): 
-            if "cuda" not in response_handler.code:
-                raise Exception("CUDA is available but the code does not use 'cuda'.")
-            else:
-                if gpu_name is not None and gpu_name not in response_handler.code:
-                    response_handler.code = response_handler.code.replace("\"cuda\"", f"\"{gpu_name}\"")
-                    logging.info("replaced 'cuda' with '%s'", gpu_name)
 
         res = evaluator.evaluate(code=response_handler.code, cls_name=response_handler.code_name)
 
@@ -228,7 +218,6 @@ class LLaMBO:
                         "task": current_task,
                         "evaluator": _evaluator,
                         "retry": n_retry,
-                        "gpu_name": gpu_name,
                         'options': options,
                     }
                     params.append((kwargs, query_item))

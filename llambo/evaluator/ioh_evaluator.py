@@ -6,14 +6,13 @@ import os
 import concurrent.futures
 from tqdm import tqdm
 import numpy as np
-from ioh import get_problem, logger
-from misc import aoc_logger, correct_aoc
+from ioh import get_problem 
 
 from llambo.utils import BOOverBudgetException
 
 from .evaluator import AbstractEvaluator
 from .evaluator_result import EvaluatorResult, EvaluatorBasicResult
-from .exec_utils import default_exec
+from .exec_utils import default_exec, ExecInjector
 
 _logger = logging.getLogger(__name__)
 
@@ -38,7 +37,6 @@ class IOHObjectiveFn:
 
         self.x_hist = None
         self.y_hist = None
-        self.aoc = 0.0
 
         self.progress_bar = None
         self.show_progress_bar = show_progress_bar
@@ -119,14 +117,14 @@ class IOHObjectiveFn:
             return np.array(y).reshape(-1,1)
         return y
 
-def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, cls_init_kwargs=None, cls_call_kwargs=None, ignore_over_budget:bool=False, inject_critic:bool=False, ignore_capture:bool=True, ignore_metric=False) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]: 
+def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_name, cls=None, cls_init_kwargs=None, cls_call_kwargs=None, 
+                       ignore_over_budget:bool=False, ignore_capture:bool=True,
+                       injector=None,
+                       ) -> tuple[Any, str, str, float, IOHObjectiveFn, Any]:
 
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
     obj_fn.ignore_over_budget = ignore_over_budget
 
-    l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
-    obj_fn.obj_fn.attach_logger(l2)
-        
     start_time = time.perf_counter()
 
     init_kwargs = {
@@ -142,18 +140,15 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     if cls_call_kwargs is not None:
         call_kwargs.update(cls_call_kwargs)
 
-    res, captured_output, err, critic = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, inject_critic=inject_critic, ignore_metric=ignore_metric)
+    res, captured_output, err, new_injector = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, injector=injector) 
     exec_time = time.perf_counter() - start_time
 
-    # unset the unpicklable object
-    aoc = correct_aoc(obj_fn.obj_fn, l2, budget)
-    obj_fn.aoc = aoc
     obj_fn.reset()
 
     if ignore_capture:
         captured_output = None
 
-    return res, captured_output, err, exec_time, obj_fn, critic
+    return res, captured_output, err, exec_time, obj_fn, new_injector
 
 
 class IOHEvaluator(AbstractEvaluator):
@@ -228,9 +223,6 @@ class IOHEvaluator(AbstractEvaluator):
         problem_name = "_".join([f"f{problem}" for problem in self.problems])
         self._problem_name = problem_name
 
-    def problem_dim(self) -> int:
-        return self.dim
-
     def eval_bugdet(self) -> int:
         return self.budget
 
@@ -241,7 +233,7 @@ class IOHEvaluator(AbstractEvaluator):
         prompt = f'Problems from the BBOB test suite with dimensions {self.dim}\n'
         return prompt
 
-    def __process_results(self, res, captured_output, err, exec_time, obj_fn, critic) -> EvaluatorBasicResult:
+    def __process_results(self, res, captured_output, err, exec_time, obj_fn, injector) -> EvaluatorBasicResult:
         eval_basic_result = EvaluatorBasicResult()
         eval_basic_result.id = f"{obj_fn.problem_id}-{obj_fn.instance_id}-{obj_fn.exec_id}"
         eval_basic_result.budget = obj_fn.budget
@@ -273,18 +265,19 @@ class IOHEvaluator(AbstractEvaluator):
             eval_basic_result.y_hist = y_hist.reshape(-1) if len(y_hist.shape) > 1 else y_hist
             eval_basic_result.x_hist = x_hist
 
-            if critic is not None:
-                eval_basic_result.n_initial_points = critic.n_init
-                eval_basic_result.r2_list = critic.r_2_list
-                eval_basic_result.r2_list_on_train = critic.r_2_list_on_train
-                eval_basic_result.uncertainty_list = critic.uncertainty_list
-                eval_basic_result.uncertainty_list_on_train = critic.uncertainty_list_on_train
-                eval_basic_result.search_result = critic.search_result
-                if not self.ignore_metric:
+            if injector is not None:
+                if injector.critic is not None:
+                    critic = injector.critic
+                    eval_basic_result.n_initial_points = critic.n_init
+                    eval_basic_result.r2_list = critic.r_2_list
+                    eval_basic_result.r2_list_on_train = critic.r_2_list_on_train
+                    eval_basic_result.uncertainty_list = critic.uncertainty_list
+                    eval_basic_result.uncertainty_list_on_train = critic.uncertainty_list_on_train
+                    eval_basic_result.search_result = critic.search_result
+                if not injector.ignore_metric:
                     eval_basic_result.update_coverage()
                 eval_basic_result.fill_short_data(obj_fn.budget)
 
-            eval_basic_result.y_aoc_from_ioh = obj_fn.aoc
             eval_basic_result.update_stats()
             eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8)
 
@@ -344,7 +337,7 @@ class IOHEvaluator(AbstractEvaluator):
                 if eval_result.error is not None:
                     _should_cancel = True
                     break
-        except TimeoutError as e:
+        except TimeoutError :
             _err = TimeoutError("Evaluation timed out (%d)", timeout)
             _err_type = "Timeout"
             eval_result.error = _err
@@ -362,7 +355,7 @@ class IOHEvaluator(AbstractEvaluator):
 
         return eval_result
             
-    def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None, injector=None) -> EvaluatorResult:
         """Evaluate an individual."""
         eval_result = EvaluatorResult()
         eval_result.name = cls_name
@@ -371,6 +364,9 @@ class IOHEvaluator(AbstractEvaluator):
             eval_result.error_type = "NoCodeGenerated"
             return eval_result
 
+        if self.gpu_name is not None and code is not None:
+            code = ExecInjector.inject_code_with_device(code, self.gpu_name)
+
         params = []
         for param in self.obj_fn_params:
             new_param = {
@@ -378,11 +374,9 @@ class IOHEvaluator(AbstractEvaluator):
                 "cls_name": cls_name,
                 "cls": cls,
                 "ignore_over_budget": self.ignore_over_budget,
-                "inject_critic": self.inject_critic,
                 "cls_init_kwargs": cls_init_kwargs,
                 "cls_call_kwargs": cls_call_kwargs,
-                'ignore_capture': self.ignore_capture,
-                'ignore_metric': self.ignore_metric,
+                'injector': injector,
             }
             new_param.update(param)
             params.append(new_param)
@@ -417,7 +411,6 @@ class IOHEvaluator(AbstractEvaluator):
             
             comm = MPI.COMM_WORLD
             size = comm.Get_size()
-            rank = comm.Get_rank()
 
             if size < 2:
                 raise ValueError("Requires at least 2 MPI processes.")
@@ -474,16 +467,3 @@ class IOHEvaluator(AbstractEvaluator):
 
         return eval_result
 
-    @classmethod
-    def evaluate_from_cls(cls, bo_cls_list:list, problems:list[int]=None, dim:int = 5, budget:int = 40, repeat:int=1, instances:list[list[int]]=None) -> list[EvaluatorResult]:
-        res_list = []
-        for bo_cls in bo_cls_list:
-            evaluator = cls(dim=dim, budget=budget, problems=problems, repeat=repeat, instances=instances)
-            evaluator.ignore_over_budget = True
-            evaluator.inject_critic = True
-            cls_call_kwargs = {
-                "capture_output": False,
-            }
-            res = evaluator.evaluate(None, bo_cls.__name__, cls=bo_cls, cls_call_kwargs=cls_call_kwargs)
-            res_list.append(res)
-        return res_list

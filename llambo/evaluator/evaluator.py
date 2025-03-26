@@ -7,10 +7,9 @@ class AbstractEvaluator(ABC):
     def __init__(self):
         self.return_checker:Callable[[tuple], str] = lambda x: ""
         self.ignore_over_budget = False
-        self.inject_critic = True
-        self.ignore_metric = True
         self.ignore_capture = True
 
+        self.gpu_name = None
         self.max_eval_workers = 0
         self.use_multi_process = False
         self.timeout = None
@@ -22,9 +21,5 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def problem_dim(self) -> int:
-        pass
-
-    @abstractmethod
-    def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None) -> EvaluatorResult:
+    def evaluate(self, code, cls_name, cls=None, cls_init_kwargs:dict[str, Any]=None, cls_call_kwargs:dict[str, Any]=None, injector=None) -> EvaluatorResult:
         pass

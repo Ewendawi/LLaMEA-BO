@@ -1,6 +1,8 @@
 import logging
 import time
 import functools
+import inspect
+import re
 from types import FunctionType
 import numpy as np
 import torch
@@ -11,7 +13,7 @@ from sklearn.metrics import r2_score
 from sklearn.gaussian_process import GaussianProcessRegressor
 from scipy.stats import qmc
 from .evaluator_result import EvaluatorSearchResult
-
+from .exec_utils import ExecInjector
 
 class FunctionProfiler:
     def __init__(self):
@@ -67,7 +69,7 @@ def critic_wrapper(func):
     def injected_wrapper(self, *args, **kwargs):
         _injected_critic = None
         if hasattr(self, "_injected_critic"):
-            _injected_critic = self._injected_critic
+            _injected_critic = getattr(self, "_injected_critic")
             if _injected_critic.n_init == 0 and hasattr(self, "n_init"):
                 _injected_critic.n_init = self.n_init
 
@@ -101,8 +103,6 @@ def critic_wrapper(func):
                     model = res
                     if hasattr(self, "n_evals"):
                         n_evals = self.n_evals
-                    if isinstance(model, tuple):
-                        model = model[0]
                     _injected_critic.update_after_model_fit(model, n_evals, new_X, new_y)
                 except Exception as e:
                     logging.error("Error in _fit_model wrapper: %s", e)
@@ -113,18 +113,91 @@ def set_inject_maximize(cls_instance, maximize):
     if cls_instance is None:
         return
     if hasattr(cls_instance, "_inject_maximize"):
-        cls_instance._inject_maximize = maximize
+        setattr(cls_instance, "_inject_maximize", maximize)
     else:
         setattr(cls_instance, "_inject_maximize", maximize)
 
 def get_inject_maximize(cls_instance):
     if cls_instance is None:
         return False
-    if hasattr(cls_instance, "_is_maximization"):
-        return cls_instance._is_maximization()
+    if hasattr(cls_instance, "is_maximization"):
+        return cls_instance.is_maximization()
     if hasattr(cls_instance, "_inject_maximize"):
-        return cls_instance._inject_maximize
+        return getattr(cls_instance, "_inject_maximize")
     return False
+
+class BOInjector(ExecInjector):
+    def __init__(self):
+        self.ignore_metric = True
+        self.critic = None
+
+    def inject_cls(self, cls, code):
+        methods = ['_update_eval_points', '_fit_model']
+        for method in methods:
+            original_method = getattr(cls, method, None)
+            if original_method is None or original_method.__name__ == 'injected_wrapper':
+                continue
+            decorated_method = critic_wrapper(original_method)
+            setattr(cls, method, decorated_method)
+        return code
+
+    def inject_instance(self, cls_instance, code, init_kwargs, call_kwargs):
+        if not hasattr(cls_instance, "_injected_critic"):
+            dim = init_kwargs.get("dim", 1)
+            func = call_kwargs.get("func", None)
+            bounds = func.bounds if func is not None else None
+            critic = AlgorithmCritic(dim=dim, bounds=bounds, optimal_value=func.optimal_value, critic_y_range=400)
+            critic.update_test_y(func)
+            critic.search_result.init_grid(bounds=bounds, dim=dim, budget=func.budget)
+            critic.ignore_metric = self.ignore_metric
+
+            setattr(cls_instance, "_injected_critic", critic)
+
+            is_maximize = get_inject_maximize(cls_instance)
+            if not is_maximize and code is not None and 'botorch' in code:
+                is_maximize = True
+            
+            if is_maximize:
+                critic.maximize = True
+                obj_fn = call_kwargs.get("func", None)
+                if obj_fn is not None and hasattr(obj_fn, "maximize"):
+                    obj_fn.maximize = True
+
+            self.critic = critic
+
+    def inject_code(self, code: str) -> str:
+        # Add the critic_wrapper function to the code
+        critic_wrapper_code = inspect.getsource(critic_wrapper)
+        critic_wrapper_code_lines = critic_wrapper_code.splitlines(keepends=True)
+
+        lines = code.splitlines(keepends=True)
+        new_lines = []
+
+        for line in lines:
+            # find the first class in the code. then inject the critic_wrapper function above it
+            if re.search(r'^class\s+(\w+)', line):
+                new_lines.extend(critic_wrapper_code_lines)
+                new_lines.append("\n")
+            elif re.search(r'def\s+_update_eval_points', line):
+                stripped_text   = line.lstrip()
+                n_blank_spaces  = len(line) - len(stripped_text)
+                decrator_line = " " * n_blank_spaces + '@critic_wrapper'
+                new_lines.append(decrator_line)
+                new_lines.append('\n')
+            elif re.search(r'def\s+_fit_model', line):
+                stripped_text   = line.lstrip()
+                n_blank_spaces  = len(line) - len(stripped_text)
+                decrator_line = " " * n_blank_spaces + '@critic_wrapper'
+                new_lines.append(decrator_line)
+                new_lines.append('\n')
+
+            new_lines.append(line)
+
+        return "".join(new_lines)
+
+    def clear(self):
+        if self.critic is not None:
+            self.critic.clear()
 
 class AlgorithmCritic:
     # - r2 from surrogate model
@@ -257,7 +330,7 @@ class AlgorithmCritic:
             eval_y = self.test_y 
 
         r_squared = 0.0
-        if isinstance(model, list):
+        if isinstance(model, list) or isinstance(model, tuple):
             r_squared_list = [_get_single_model_r2(m, eval_x, eval_y) for m in model]
             r_squared = np.mean(r_squared_list)
         else:
