@@ -172,9 +172,7 @@ def debug_algo_eval():
     budget = 100
 
     evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget, dim=dim)
-    evaluator.inject_critic = True
     evaluator.ignore_over_budget = True
-    evaluator.ignore_metric = True
 
     file_map = {
         # 'BLTuRBO1': 'LLAMBO/Experiments/baselines/bo_baseline.py',
@@ -187,15 +185,12 @@ def debug_algo_eval():
     cls_list = [
         # VanillaBO,
         # BLRandomSearch,
-        BLCMAES,
+        # BLCMAES,
         # BLHEBO,
         # BLMaternVanillaBO,
         # BLTuRBO1,
         # BLTuRBOM,
         # BLSKOpt,
-        # EnsembleLocalSearchBOv1,
-        # EnsembleDeepKernelAdaptiveTSLocalSearchARDv1,
-        # GP_Matern_EI_MSL_SobolBOv1,
     ]
 
     options = {
@@ -207,6 +202,7 @@ def debug_algo_eval():
         # 'use_mpi_future': True,
         # 'time_profile': True,
         # 'ignore_cls': True, # the module with dynamic import can't be pickled
+        # 'ignore_external_metric': False,
     }
 
     plot = False
@@ -228,8 +224,6 @@ def eval_final_algo():
     dim = 10
     budget = 10 * dim + 50
     evaluator = get_IOHEvaluator_for_final_eval(dim=dim, budget=budget)
-    evaluator.inject_critic = True
-    evaluator.ignore_metric = True
     evaluator.ignore_over_budget = True
 
     # problems = list(range(1, 25))

@@ -70,28 +70,28 @@ class ResponseImpReturnChecker(ABC):
 
 class PromptGenerator(ABC):
     """Abstract base class for prompt generators."""
-    def task_description(self, task:GenerationTask, extra:str="") -> str:
+    def task_description(self, task:GenerationTask) -> str:
         pass
 
-    def task_instruction(self, task:GenerationTask, extra:str="") -> str:
+    def task_instruction(self, task:GenerationTask) -> str:
         """explicit COT of the task accomplishment"""
 
-    def code_structure(self, extra:str="") -> str:
+    def code_structure(self)-> str:
         pass
 
-    def response_format(self, task:GenerationTask, extra:str="") -> str:
+    def response_format(self, task:GenerationTask) -> str:
         pass
 
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult,
-                                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+    @abstractmethod
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, options=None) -> str:
         pass
 
     @abstractmethod
     def get_prompt(self, task:GenerationTask, problem_desc:str,
                    candidates:list[ResponseHandler]= None,
                    population:Population = None,
-                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
-                   sharedborad=None) -> tuple[str, str]:
+                   options:dict = None
+                   ) -> tuple[str, str]:
         pass
 
     @abstractmethod

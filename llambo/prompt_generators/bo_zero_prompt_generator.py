@@ -68,8 +68,8 @@ class BoZeroPromptGenerator(PromptGenerator):
     def get_prompt(self, task:GenerationTask, problem_desc:str,
                    candidates:list[BoZeroResponseHandler]= None,
                    population= None,
-                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
-                   sharedborad:Any=None) -> tuple[str, str]:
+                   options:dict = None
+                   ) -> tuple[str, str]:
 
         if task != GenerationTask.INITIALIZE_SOLUTION:
             if candidates is None or len(candidates) == 0:
@@ -97,7 +97,7 @@ class BoZeroPromptGenerator(PromptGenerator):
             candidate = candidates[0]
             problem_prompt = f"""### Problem Description\n{problem_desc}"""
             final_prompt += f"{problem_prompt}\n"
-            feedback_prompt = self.evaluation_feedback_prompt(candidate.eval_result, other_results)
+            feedback_prompt = self.evaluation_feedback_prompt(candidate.eval_result)
             final_prompt += f"{feedback_prompt}\n"
             final_prompt += f"### Solution\n```python\n{candidate.code}\n```\n"
 
@@ -106,7 +106,7 @@ class BoZeroPromptGenerator(PromptGenerator):
 
         return "", final_prompt
 
-    def task_description(self, task:GenerationTask, extra:str="") -> str:
+    def task_description(self, task:GenerationTask) -> str:
         desc = """## Task Description\n"""
         if task == GenerationTask.INITIALIZE_SOLUTION:
             desc += "You will be given minimization optimization problems. Your tasks are to analyze the problem, design a feasible Bayesian Optimization algorithm, and implement it."
@@ -114,10 +114,9 @@ class BoZeroPromptGenerator(PromptGenerator):
             desc += "You will be given a Bayesian Optimization solution with errors. Your task is to identify and correct the errors in the provided solution."
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
             desc += "You will be given a Bayesian Optimization solution with evaluation feedback. Your task is to optimize the performance of the solution."
-        desc += extra
         return desc
 
-    def task_instruction(self, task:GenerationTask, extra:str="") -> str:
+    def task_instruction(self, task:GenerationTask) -> str:
         desc = """## Task Instruction\n"""
         if task == GenerationTask.INITIALIZE_SOLUTION:
             desc += "You need to act as a computer scientist and programmer independently.\n"
@@ -131,7 +130,6 @@ class BoZeroPromptGenerator(PromptGenerator):
             desc += "You need to act as a computer scientist, and programmer independently.\n"
             desc += self.task_instruction_for_scientist(task)
             desc += self.task_instruction_for_programmer(task, self.use_botorch)
-        desc += extra
         return desc
 
     def task_instruction_for_scientist(self, task:GenerationTask) -> str:
@@ -196,7 +194,7 @@ class BoZeroPromptGenerator(PromptGenerator):
 
         return feedback_prompt
 
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, options:dict=None) -> str:
         if eval_res is None or len(eval_res.result) == 0:
             return ""
         final_feedback_prompt = "### Feedback\n"
@@ -210,7 +208,7 @@ class BoZeroPromptGenerator(PromptGenerator):
                 if result.optimal_value is not None:
                     final_feedback_prompt += f"- {result.name}: {result.optimal_value}\n"
 
-        last_feedback, other_res = other_results
+        last_feedback = options.get("last_feedback", None)
         res_name = None
         last_res_name = None
         if last_feedback is not None:
@@ -218,6 +216,8 @@ class BoZeroPromptGenerator(PromptGenerator):
             last_res_name = f"{last_feedback.name}(Before Optimization)" if last_feedback is not None else None
         final_feedback_prompt += self.__get_result_feedback(eval_res, res_name)
         final_feedback_prompt += self.__get_result_feedback(last_feedback, last_res_name)
+
+        other_res = options.get("other_res", None)
         if other_res is not None:
             for other in other_res:
                 final_feedback_prompt += self.__get_result_feedback(other, f"{other.name}(Baseline)")

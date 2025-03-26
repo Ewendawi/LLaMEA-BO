@@ -591,12 +591,12 @@ def test_diversity_awarness_selection_fn():
         Population.set_handler_to_individual(last, res)
         last_inds.append(last)
 
-        next = Individual()
+        _next = Individual()
         res = Res_handler()
         res.desc = descs2[i]
         res.eval_result.score = scores2[i]
-        Population.set_handler_to_individual(next, res)
-        next_inds.append(next)
+        Population.set_handler_to_individual(_next, res)
+        next_inds.append(_next)
         
     selected = diversity_awarness_selection_fn(last_inds=last_inds, next_inds=next_inds, n_parent=2)
     assert len(selected) == 2

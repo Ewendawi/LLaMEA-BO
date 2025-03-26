@@ -117,7 +117,7 @@ class LLaMBO:
             ind.fitness = handler.eval_result.score if handler.eval_result else -np.inf
         else:
             ind.fitness = handler.eval_result.score
-            feedback = promptor.evaluation_feedback_prompt(handler.eval_result, None)
+            feedback = promptor.evaluation_feedback_prompt(handler.eval_result)
             handler.feedback = feedback
             ind.feedback = feedback
 
@@ -141,7 +141,6 @@ class LLaMBO:
                        n_retry: int = 3,
                        n_query_threads: int = 0,
                        max_interval: int = 0,
-                       gpu_name: str = None,
                        options=None,
                        ):
 
@@ -181,8 +180,6 @@ class LLaMBO:
                     current_task = self.update_current_task(query_item=query_item, generation=current_generation)
 
                     # Get prompt
-                    other_results = (None, None)
-
                     parent_handlers = [Population.get_handler_from_individual(p) for p in query_item.parent if p is not None]
                     _promptor = population.get_promptor(query_item=query_item)
                     if _promptor is None:
@@ -203,8 +200,7 @@ class LLaMBO:
                         task=current_task,
                         problem_desc=_problem_description,
                         candidates=parent_handlers,
-                        population=population,
-                        other_results=other_results)
+                        population=population)
                     session_messages = [
                         {"role": "system", "content": role_setting},
                         {"role": "user", "content": prompt},

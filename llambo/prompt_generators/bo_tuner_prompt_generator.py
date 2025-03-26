@@ -62,8 +62,8 @@ class TunerPromptGenerator(PromptGenerator):
     def get_prompt(self, task:GenerationTask, problem_desc:str,
                    candidates:list[TunerResponseHandler]= None,
                    population:Population= None,
-                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
-                   sharedborad:Any=None) -> tuple[str, str]:
+                   options:dict= None,
+                   ) -> tuple[str, str]:
 
         if candidates is None or len(candidates) == 0:
             raise ValueError("No candidates provided.")
@@ -96,7 +96,7 @@ class TunerPromptGenerator(PromptGenerator):
                     break
             if ignored:
                 continue
-            feedback = self.evaluation_feedback_prompt(handler.eval_result, None)
+            feedback = self.evaluation_feedback_prompt(handler.eval_result)
             other_solutions_prompt += f"## {handler.code_name}\n{handler.reason}\n{feedback}\n"
 
         if len(other_solutions_prompt) > 0:
@@ -120,13 +120,13 @@ class TunerPromptGenerator(PromptGenerator):
             else:
                 feedback = f"An error occurred : {candidate.error}"
         else:
-            feedback = self.evaluation_feedback_prompt(candidate.eval_result, None)
+            feedback = self.evaluation_feedback_prompt(candidate.eval_result)
 
         desc = candidate.reason
         
         return f"{solution}\n{feedback}\n{desc}\n"
 
-    def task_description(self, task:GenerationTask, extra:str="") -> str:
+    def task_description(self, task:GenerationTask) -> str:
         lib_prompt = "As an expert of numpy, scipy, scikit-learn, torch, gpytorch and botorch, you are allowed to use these libraries."
         problem_desc = "24 noiseless functions"
         task_prompt = f"""
@@ -149,7 +149,7 @@ The code should contain an `__init__(self, budget, dim)` function and the functi
 """
         return task_prompt
     
-    def response_format(self, task:GenerationTask, extra:str="") -> str:
+    def response_format(self, task:GenerationTask) -> str:
         output_format_prompt = """
 Give the response in the format:
 ## Justifications 
@@ -162,7 +162,7 @@ Give the response in the format:
 """
         return output_format_prompt
 
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, options:dict= None) -> str:
         if eval_res is None or len(eval_res.result) == 0:
             return ""
 

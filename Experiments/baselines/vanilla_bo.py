@@ -113,7 +113,7 @@ class VanillaBO:
             if "cuda" in self.device:
                 torch.cuda.manual_seed(seed)
 
-    def _is_maximization(self) -> bool:
+    def is_maximization(self) -> bool:
         return True
 
     def _sample_points(self, n_points: int) -> torch.Tensor:

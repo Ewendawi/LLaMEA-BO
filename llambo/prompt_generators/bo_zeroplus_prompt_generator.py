@@ -280,8 +280,8 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
     def get_prompt(self, task:GenerationTask, problem_desc:str, 
                    candidates:list[BoZeroPlusResponseHandler]= None,
                    population=None,
-                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
-                   sharedborad:ZeroPlusBOPromptSharedboard=None) -> tuple[str, str]:
+                   options=None,
+                   ) -> tuple[str, str]:
         if task == GenerationTask.INITIALIZE_SOLUTION:
             final_prompt = ""
 
@@ -337,16 +337,11 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
             problem_prompt = f"""### Problem Description\n{problem_desc}"""
             final_prompt += f"{problem_prompt}\n"
 
-            feedback_prompt = self.evaluation_feedback_prompt(candidate.eval_result, other_results)
+            feedback_prompt = self.evaluation_feedback_prompt(candidate.eval_result)
             final_prompt += f"{feedback_prompt}\n"
 
             previous_problem_analysis = candidate.problem_analysis
             previous_proposed_techniques = candidate.proposed_strategies
-            if sharedborad is not None:
-                if sharedborad.last_problem_analysis():
-                    previous_problem_analysis = sharedborad.last_problem_analysis()
-                if sharedborad.last_tech_base():
-                    previous_proposed_techniques = sharedborad.last_tech_base()
             if len(previous_problem_analysis) > 0:
                 final_prompt += f"""### Problem Analysis\n{previous_problem_analysis}\n"""
             if len(previous_problem_analysis) > 0:
@@ -358,7 +353,7 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
 
         return "", final_prompt
 
-    def task_description(self, task:GenerationTask, extra:str="") -> str:
+    def task_description(self, task:GenerationTask) -> str:
         desc = """## Task Description\n"""
         if task == GenerationTask.INITIALIZE_SOLUTION:
             desc += "You will be given minimization optimization problems. Your tasks are to analyze the problem, design a feasible Bayesian Optimization algorithm, and implement it."
@@ -366,10 +361,9 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
             desc += "You will be given a Bayesian Optimization solution with errors. Your task is to identify and correct the errors in the provided solution."
         elif task == GenerationTask.OPTIMIZE_PERFORMANCE:
             desc += "You will be given a Bayesian Optimization solution with evaluation feedback, problem analysis, and other information. Your task is to optimize the performance of the solution."
-        desc += extra
         return desc
 
-    def task_instruction(self, task:GenerationTask, extra:str="") -> str:
+    def task_instruction(self, task:GenerationTask) -> str:
         desc = """## Task Instruction\n"""
         if task == GenerationTask.INITIALIZE_SOLUTION:
             desc += "You need to act as a mathematician, computer scientist, and programmer independently.\n"
@@ -385,7 +379,6 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
             desc += self.task_instruction_for_mathematician(task)
             desc += self.task_instruction_for_scientist(task, self.aggressiveness)
             desc += self.task_instruction_for_programmer(task, self.use_botorch)
-        desc += extra
         return desc
 
     def task_instruction_for_mathematician(self, task:GenerationTask) -> str:
@@ -508,7 +501,7 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
 
         return feedback_prompt
 
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, options=None) -> str:
         if eval_res is None or len(eval_res.result) == 0:
             return ""
         final_feedback_prompt = "### Feedback\n"
@@ -522,7 +515,7 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
                 if result.optimal_value is not None:
                     final_feedback_prompt += f"- {result.name}: {result.optimal_value}\n"
 
-        last_feedback, other_res = other_results
+        last_feedback = None if options is None else options.get("last_feedback", None)
         res_name = None
         last_res_name = None
         if last_feedback is not None:
@@ -531,6 +524,7 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
         final_feedback_prompt += self.__get_result_feedback(eval_res, res_name)
         final_feedback_prompt += self.__get_result_feedback(last_feedback, last_res_name)
 
+        other_res = None if options is None else options.get("other_res", None)
         if other_res is not None:
             for other in other_res:
                 final_feedback_prompt += self.__get_result_feedback(other, f"{other.name}(Baseline)")
@@ -546,7 +540,7 @@ class BoZeroPlusPromptGenerator(PromptGenerator):
 """
         return final_feedback_prompt
 
-    def code_structure(self, extra:str="") -> str:
+    def code_structure(self) -> str:
         # botorch_import = "from botorch.fit import fit_gpytorch_mll //If you are using BoTorch, otherwise remove this line" if self.use_botorch else ""
         prompt_list_tech = """# add the docstring of the class here"""
         return f"""## Code Structure Guide
@@ -599,7 +593,6 @@ class <AlgorithmName>:
 
     ## You are free to add additional methods as needed and modify the existing ones except for the optimize method and __init__ method.
     ## Rename the class based on the characteristics of the algorithm as '<anyName>BO'
-    {extra}
 ```
 """
 

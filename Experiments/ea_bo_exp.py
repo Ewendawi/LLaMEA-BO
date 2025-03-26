@@ -253,7 +253,6 @@ n_query_threads:{n_query_threads}, max_interval:{max_interval}
                         n_generation=n_generations, n_population=n_population,
                         n_retry=5,
                         n_query_threads=n_query_threads,
-                        gpu_name=gpu_name,
                         max_interval=max_interval,
                         options=evol_options)
 

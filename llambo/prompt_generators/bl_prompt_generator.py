@@ -74,8 +74,8 @@ class BaselinePromptGenerator(PromptGenerator):
     def get_prompt(self, task:GenerationTask, problem_desc:str,
                    candidates:list[BaselineResponseHandler]= None,
                    population:Population= None,
-                   other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None,
-                   sharedborad:Any=None) -> tuple[str, str]:
+                   options:dict = None
+                   ) -> tuple[str, str]:
 
         if task != GenerationTask.INITIALIZE_SOLUTION:
             if candidates is None or len(candidates) == 0:
@@ -150,23 +150,22 @@ class BaselinePromptGenerator(PromptGenerator):
             else:
                 feedback = f"An error occurred : {candidate.error}"
         else:
-            feedback = self.evaluation_feedback_prompt(candidate.eval_result, None)
+            feedback = self.evaluation_feedback_prompt(candidate.eval_result)
 
         
         return f"{description}\nWith code:\n{solution}\n{feedback}\n"
 
-    def task_description(self, task:GenerationTask, extra:str="") -> str:
+    def task_description(self, task:GenerationTask) -> str:
         if self.is_bo:
-            return self.__bo_task_description(task, extra)
-        return self.__task_description(task, extra)
+            return self.__bo_task_description(task)
+        return self.__task_description(task)
 
-    def __bo_task_description(self, task, extra = ""):
+    def __bo_task_description(self, task):
         # lib_prompt = "As an expert of numpy, scipy, scikit-learn, you are allowed to use these libraries."
         lib_prompt = "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries."
         if torch.cuda.is_available():
             lib_prompt = "As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries, and using GPU for acceleration is mandatory."
         # problem_desc = "one noiseless functions:f6-Attractive Sector Function"
-        problem_desc = "24 noiseless functions"
         task_prompt = f"""
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of {self.problem_desc}. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
@@ -177,7 +176,7 @@ Give an excellent, novel and computationally efficient Bayesian Optimization alg
 """
         return task_prompt
 
-    def __task_description(self, task:GenerationTask, extra:str="") -> str:
+    def __task_description(self, task:GenerationTask) -> str:
         task_prompt = """
 The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
 The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
@@ -185,7 +184,7 @@ Give an excellent, novel and computationally efficient heuristic algorithm to so
 """
         return task_prompt
 
-    def response_format(self, task:GenerationTask, extra:str="") -> str:
+    def response_format(self, task:GenerationTask) -> str:
         output_format_prompt = """
 Give the response in the format:
 # Description 
@@ -197,12 +196,12 @@ Give the response in the format:
 """
         return output_format_prompt
 
-    def code_structure(self, extra = ""):
+    def code_structure(self):
         if self.is_bo:
-            return self.__bo_code_structure(extra)
-        return self.__code_structure(extra)
+            return self.__bo_code_structure()
+        return self.__code_structure()
 
-    def __code_structure(self, extra:str="") -> str:
+    def __code_structure(self) -> str:
         return """
 ```python
 import numpy as np
@@ -229,8 +228,8 @@ class RandomSearch:
 ```
 """
 
-    def __bo_code_structure(self, extra:str="") -> str:
-        return f"""
+    def __bo_code_structure(self) -> str:
+        return """
 ```python
 from collections.abc import Callable
 from scipy.stats import qmc #If you are using QMC sampling, qmc from scipy is encouraged. Remove this line if you have better alternatives.
@@ -298,18 +297,17 @@ class <AlgorithmName>:
             self._update_eval_points()
 
         return best_y, best_x
-    {extra}
 ```
 """
 
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, options:dict = None) -> str:
         if eval_res is None or len(eval_res.result) == 0:
             return ""
 
         algorithm_name = eval_res.name
         aocs = []
         grouped_aocs = []
-        for i in range(5):
+        for _ in range(5):
             grouped_aocs.append([])
         for res in eval_res.result:
             aoc = res.log_y_aoc
@@ -373,7 +371,7 @@ The mean AOCC score of the algorithm {algorithm_name} on Separable functions was
         return BaselineResponseHandler()
 
 class LightBaselinePromptGenerator(BaselinePromptGenerator):
-    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, other_results:tuple[EvaluatorResult,list[EvaluatorResult]]= None) -> str:
+    def evaluation_feedback_prompt(self, eval_res:EvaluatorResult, options:dict = None) -> str:
         if eval_res is None or len(eval_res.result) == 0:
             return ""
 

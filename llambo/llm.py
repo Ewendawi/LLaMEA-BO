@@ -48,6 +48,7 @@ LLMS = {
     'o_gemini-exp-1121': ('google/gemini-exp-1121:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5),
     'o_gemini-2.0-flash-thinking-exp': ('google/gemini-2.0-flash-thinking-exp:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
     'o_llama-3.1-405b-instruct': ('meta-llama/llama-3.1-405b-instruct:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+    'o_deepseek-chat-v3': ('deepseek/deepseek-chat-v3-0324:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
 }
 
 class LLMClientResponse:
