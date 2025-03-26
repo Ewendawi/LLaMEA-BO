@@ -304,6 +304,9 @@ class EvaluatorSearchResult:
         self.acq_exploration_scores = []
         self.acq_exploration_validity = []
         self.acq_exploration_improvement = []
+
+        self.kappa_list = []
+        self.trust_region_radius_list = []
         
     
     def fill_short_data(self, length):
@@ -329,6 +332,9 @@ class EvaluatorSearchResult:
         self.acq_exploration_scores = _fill_nan(self.acq_exploration_scores, length)
         self.acq_exploitation_validity = _fill_nan(self.acq_exploitation_validity, length)
         self.acq_exploration_validity = _fill_nan(self.acq_exploration_validity, length)
+
+        self.kappa_list = _fill_nan(self.kappa_list, length)
+        self.trust_region_radius_list = _fill_nan(self.trust_region_radius_list, length)
 
     def init_grid(self, budget, dim, bounds):
         self.soft_n_grid = budget * 2

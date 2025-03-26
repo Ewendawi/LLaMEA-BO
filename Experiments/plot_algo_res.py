@@ -181,6 +181,9 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
         'r2_on_train' : 'r2_list_on_train',
         'uncertainty' : 'uncertainty_list',
         'uncertainty_on_train' : 'uncertainty_list_on_train',
+
+        'kappa' : 'search_result.kappa_list',
+        'tr_radius' : 'search_result.trust_region_radius_list',
         
         'grid_coverage' : 'search_result.coverage_grid_list',   
         'acq_grid_coverage' : 'search_result.iter_coverage_grid_list',
@@ -254,6 +257,9 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
             else:
                 value = dynamical_access(res, column_path)
                 non_none_value = _none_to_nan(value)
+                if isinstance(non_none_value, list):
+                    non_none_value = np.array(non_none_value)
+                    row[column_name] = non_none_value
                 row[column_name] = non_none_value
         return row
 
@@ -453,9 +459,12 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
         'best_loss': 'Best Loss',
 
         # 'r2': 'R2 on test',
-        # 'r2_on_train' : 'R2 on train',
+        # 'r2_on_train' : 'R2 on X',
         # 'uncertainty' : 'Uncertainty on test',
-        # 'uncertainty_on_train' : 'Uncertainty on train',
+        # 'uncertainty_on_train' : 'Uncertainty on X',
+
+        # 'kappa': 'Kappa',
+        # 'tr_radius': 'Trust Region Radius',
 
         # 'grid_coverage' : 'Grid Coverage',
 
@@ -508,7 +517,7 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
             # _p_df[clip_col] = 
         y_df[y_df['problem_id'] == problem_id] = _p_df
 
-    y_df = y_df.groupby(['algorithm', 'problem_id', 'instance_id'])[data_cols].agg(np.mean).reset_index()
+    y_df = y_df.groupby(['algorithm', 'problem_id', 'instance_id'])[data_cols].agg(np.nanmean).reset_index()
     # y_df = y_df.groupby(['algorithm', 'problem_id', 'exec_id'])[data_cols].agg(np.mean).reset_index()
     
     if 'loss' in data_cols:
@@ -669,7 +678,7 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
             labels.append(_labels)
 
             _sub_title = data_col_map.get(col, col)
-            _sub_title = f"Loss On F{problem_id}({dim}D)"
+            _sub_title = f"{_sub_title} On F{problem_id}({dim}D)"
             sub_titles.append(_sub_title)
 
             if col in y_scale_cols:

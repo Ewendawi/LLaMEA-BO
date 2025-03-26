@@ -89,6 +89,23 @@ def critic_wrapper(func):
                     _injected_critic.update_after_eval(X, y, next_X, next_y, n_evals)
                 except Exception as e:
                     logging.error("Error in _update_eval_points wrapper: %s", e)
+            elif func.__name__ == "_fit_model":
+                n_evals = None
+                if hasattr(self, "n_evals"):
+                    n_evals = self.n_evals
+                if hasattr(self, "kappa"):
+                    kappa = self.kappa
+                    if n_evals and len(_injected_critic.search_result.kappa_list) < n_evals:
+                        len_diff = n_evals - len(_injected_critic.search_result.kappa_list)
+                        _injected_critic.search_result.kappa_list.extend([kappa] * len_diff)
+                    _injected_critic.search_result.kappa_list.append(kappa)
+
+                if hasattr(self, "trust_region_radius"):
+                    trust_region_radius = self.trust_region_radius
+                    if n_evals and len(_injected_critic.trust_region_radius_list.kappa_list) < n_evals:
+                        len_diff = n_evals - len(_injected_critic.search_result.trust_region_radius_list)
+                        _injected_critic.search_result.trust_region_radius_list.extend([trust_region_radius] * len_diff)
+                    _injected_critic.search_result.trust_region_radius_list.append(trust_region_radius)
 
         res = func(self, *args, **kwargs)
 

@@ -70,6 +70,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
 
     _ignore_cls = False
     extra_init_params = {}
+    call_params = {}
     injector = BOInjector()
     if options is not None:
         is_baseline = options.get("is_baseline", False)
@@ -95,6 +96,9 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
 
         if 'ignore_external_metric' in options:
             injector.ignore_metric = options['ignore_external_metric']
+
+        if 'capture_output' in options:
+            call_params['capture_output'] = options['capture_output']
     
     if _ignore_cls:
         algo_cls = None
@@ -104,6 +108,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
         cls_name=cls_name,
         cls=algo_cls,
         cls_init_kwargs=extra_init_params,
+        cls_call_kwargs=call_params, 
         injector = injector
     )
     if save:
@@ -203,20 +208,21 @@ def debug_algo_eval():
         # 'time_profile': True,
         # 'ignore_cls': True, # the module with dynamic import can't be pickled
         # 'ignore_external_metric': False,
+        # 'capture_output': False,
     }
 
     plot = False
     res_list = run_algo_eval_from_file_map(evaluator, file_map, cls_list=cls_list, plot=plot, save=False, options=options)
 
     for res in res_list:
-        for i, r in enumerate(res.result):
+        for _, r in enumerate(res.result):
             _x_hist = r.x_hist
             if _x_hist.shape[1] == 2:
                 r_id = r.id
                 r_split = r_id.split("-")
                 problem_id = int(r_split[0])
                 instance_id = int(r_split[1])
-                repeat_id = int(r_split[2])
+                # repeat_id = int(r_split[2])
                 title = f'{res.name} on F{problem_id} instance {instance_id}'
                 plot_contour(problem_id=problem_id, instance=instance_id, title=title, points=_x_hist)
 
