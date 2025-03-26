@@ -79,7 +79,7 @@ class LLMClient(ABC):
         self,
         messages: list[dict[str, str]],
         **kwargs: Any,
-    ) -> str:
+    ) -> LLMClientResponse:
         """Generate a raw completion from the LLM.
         """
 
@@ -97,7 +97,7 @@ class GoogleGenAIClient(LLMClient):
         self,
         messages: list[dict[str, str]],
         **kwargs: Any,
-    ) -> str:
+    ) -> LLMClientResponse:
         """Generate a raw completion using Google's GenAI API."""
         try:
             sys_prompt = None
@@ -171,7 +171,7 @@ class AISuiteClient(LLMClient):
         self,
         messages: list[dict[str, str]],
         **kwargs: Any,
-    ) -> str:
+    ) -> LLMClientResponse:
         """Generate a raw completion using AISuite's API."""
         res = None
         try:
@@ -196,6 +196,7 @@ class AISuiteClient(LLMClient):
 
             return res
         except Exception as e:
+            res = LLMClientResponse(None)
             res.error = e
             return res
 
@@ -210,7 +211,7 @@ class OpenAIClient(LLMClient):
         self,
         messages: list[dict[str, str]],
         **kwargs: Any,
-    ) -> str:
+    ) -> LLMClientResponse:
         """Generate a raw completion using OpenAI's API."""
         res = None
         try:
@@ -225,10 +226,8 @@ class OpenAIClient(LLMClient):
             res.response_token_count = response.usage.completion_tokens
             return res
         except Exception as e:
-            if hasattr(response, "error"):
-                res.error = response.error
-            else:
-                res.error = e
+            res = LLMClientResponse(None)
+            res.error = e
             return res
 
 class RequestClient(LLMClient):
@@ -236,7 +235,7 @@ class RequestClient(LLMClient):
         self,
         messages: list[dict[str, str]],
         **kwargs: Any,
-    ) -> str:
+    ) -> LLMClientResponse:
         url = self.base_url + "/chat/completions"
         payload = {
             "model": self.model_name,
@@ -261,13 +260,8 @@ class RequestClient(LLMClient):
                 res.response_token_count = json_res["usage"]["completion_tokens"]
             return res
         except Exception as e:
-            if res is None:
-                res = LLMClientResponse(None)
-                
-            if hasattr(response, "error"):
-                res.error = response.error
-            else:
-                res.error = e
+            res = LLMClientResponse(None)
+            res.error = e
             return res
 
 class LLMmanager:

@@ -16,7 +16,7 @@ APP=python
 # ARGS="-m mpi4py.futures LLAMBO/Experiments/ea_bo_exp.py"
 
 ARGS="LLAMBO/Experiments/ea_bo_exp.py --mpi"
-# ARGS="LLAMBO/llamea/evaluator/MPITaskManager.py --mpi"
+# ARGS="LLAMBO/llambo/evaluator/MPITaskManager.py --mpi"
 
 # ARGS="LLAMBO/Experiments/ea_bo_exp.py"
 
