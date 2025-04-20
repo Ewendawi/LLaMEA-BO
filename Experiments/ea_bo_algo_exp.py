@@ -184,7 +184,7 @@ def debug_algo_eval():
         # 'BLHEBO': 'LLAMBO/Experiments/baselines/bo_baseline.py',
     }
 
-    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO, BLCMAES, BLHEBO
+    from Experiments.baselines.bo_baseline import BLTuRBO1, BLTuRBOM, BLRandomSearch, BLSKOpt, BLMaternVanillaBO, BLScaledVanillaBO, BLCMAES, BLHEBO, BLVanillaEIBO
     from Experiments.baselines.vanilla_bo import VanillaBO
 
     cls_list = [
@@ -196,6 +196,7 @@ def debug_algo_eval():
         # BLTuRBO1,
         # BLTuRBOM,
         # BLSKOpt,
+        BLVanillaEIBO,
     ]
 
     options = {

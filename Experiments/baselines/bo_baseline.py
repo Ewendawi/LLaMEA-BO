@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from skopt import gp_minimize
 from Experiments.baselines.TuRBO.turbo import Turbo1, TurboM
-from Experiments.baselines.vanilla_bo import VanillaBO
+from Experiments.baselines.vanilla_bo import VanillaBO, VanillaEIBO
 
 class BLRandomSearch:
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, **kwargs):
@@ -257,3 +257,6 @@ class BLScaledVanillaBO(VanillaBO):
     def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
         super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device, surrogate_model="ScaleKernel")
 
+class BLVanillaEIBO(VanillaEIBO):
+    def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
+        super().__init__(budget=budget, dim=dim, bounds=bounds, n_init=n_init, seed=seed, device=device)

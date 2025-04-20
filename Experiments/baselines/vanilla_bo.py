@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from scipy.stats import qmc
 from botorch.models import SingleTaskGP
-from botorch.acquisition import qLogNoisyExpectedImprovement, qLogExpectedImprovement, qUpperConfidenceBound, LogExpectedImprovement
+from botorch.acquisition import qLogNoisyExpectedImprovement, qLogExpectedImprovement, qUpperConfidenceBound, LogExpectedImprovement, qExpectedImprovement
 from botorch.optim.optimize import optimize_acqf
 from botorch.fit import fit_gpytorch_mll, fit_gpytorch_mll_torch
 from botorch.sampling import SobolQMCNormalSampler
@@ -16,6 +16,8 @@ from gpytorch.constraints import GreaterThan, Interval
 from gpytorch.priors import LogNormalPrior, GammaPrior
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
+from torch.quasirandom import SobolEngine
+
 
 class VanillaUCB:
     def __init__(self,
@@ -293,4 +295,82 @@ class VanillaBO:
             self.n_evals += batch_size
             self._update_eval_points(next_points, next_evaluations)
 
+        return best_y.cpu().numpy().item(), best_x.cpu().numpy().flatten()
+
+
+
+class VanillaEIBO:
+    def __init__(self, budget:int, dim:int, bounds:np.ndarray=None, n_init:int=None, seed:int=None, device:str="cpu"):
+        self.budget = budget
+        self.dim = dim
+        self.bounds = bounds
+        if bounds is None:
+            self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
+        self.n_init = n_init
+        if n_init is None:
+            self.n_init = int(dim * 2.5) + 5
+        self.seed = seed
+        self.device = device
+
+        self.n_evals = 0
+
+        if seed is not None:
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            if "cuda" in self.device:
+                torch.cuda.manual_seed(seed)
+
+    def is_maximization(self) -> bool:
+        return True
+
+    def _sample_points(self, n_points: int, seed=0) -> torch.Tensor:
+        sobol = SobolEngine(dimension=self.dim, scramble=True, seed=seed)
+        X_init = sobol.draw(n=n_points).to(dtype=torch.float64, device=self.device)
+        return X_init
+
+
+    def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:
+        X_ei = self._sample_points(self.n_init)
+        Y_ei = torch.tensor(
+            [func(x) for x in X_ei.cpu().numpy()], dtype=torch.float64, device=self.device
+        ).unsqueeze(-1)
+        self.n_evals = self.n_init
+
+        batch_size = 4
+        NUM_RESTARTS = 10 
+        RAW_SAMPLES = 512 
+
+        while self.n_evals < self.budget:
+            train_Y = (Y_ei - Y_ei.mean()) / Y_ei.std()
+            likelihood = GaussianLikelihood(noise_constraint=Interval(1e-8, 1e-3))
+            model = SingleTaskGP(X_ei, train_Y, likelihood=likelihood)
+            mll = ExactMarginalLogLikelihood(model.likelihood, model)
+            fit_gpytorch_mll(mll)
+
+            # Create a batch
+            ei = qExpectedImprovement(model, train_Y.max())
+            candidate, acq_value = optimize_acqf(
+                ei,
+                bounds=torch.stack(
+                    [
+                        torch.zeros(self.dim, dtype=torch.float64, device=self.device),
+                        torch.ones(self.dim, dtype=torch.float64, device=self.device),
+                    ]
+                ),
+                q=batch_size,
+                num_restarts=NUM_RESTARTS,
+                raw_samples=RAW_SAMPLES,
+            )
+            Y_next = torch.tensor(
+                [func(x) for x in candidate.cpu().numpy()], dtype=torch.float64, device=self.device
+            ).unsqueeze(-1)
+
+            # Append data
+            X_ei = torch.cat((X_ei, candidate), axis=0)
+            Y_ei = torch.cat((Y_ei, Y_next), axis=0)
+
+            self.n_evals += batch_size
+        
+        best_y = Y_ei.max()
+        best_x = X_ei[Y_ei.argmax()]
         return best_y.cpu().numpy().item(), best_x.cpu().numpy().flatten()
