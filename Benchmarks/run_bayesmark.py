@@ -370,20 +370,22 @@ if __name__ == '__main__':
     from Experiments.logs.algorithms_logs.ABETSALSDE_ARM_MBO import ABETSALSDE_ARM_MBO
 
     bo_cls_list = [
-        ATRBO,
+        # ATRBO,
         # AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE,
         # AdaptiveTrustRegionOptimisticHybridBO,
         # AdaptiveEvolutionaryParetoTrustRegionBO, 
-        # ABETSALSDE_ARM_MBO
+        ABETSALSDE_ARM_MBO
         ]
     bo_wrappers = [bayesmarkBO_wrapper(bo_cls) for bo_cls in bo_cls_list]
 
     datasets = ["digits", "wine", "diabetes", "iris", "breast", "Griewank", "KTablet", "Rosenbrock"]
-    datasets = ['Griewank']
-    models = ["RandomForest", "SVM", "DecisionTree", "MLP_SGD", "AdaBoost"]
+    models = [
+        "RandomForest", 
+        "SVM", "DecisionTree", "MLP_SGD", "AdaBoost"
+        ]
 
     for bo_cls in bo_wrappers:
         for dataset in datasets:
             for model in models:
-                _run_bayesmark_exp(bo_cls, dataset, model, num_seeds=1)
+                _run_bayesmark_exp(bo_cls, dataset, model, num_seeds=5)
     logger.info('All experiments completed.')
