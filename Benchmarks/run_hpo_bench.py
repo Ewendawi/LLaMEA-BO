@@ -1,49 +1,19 @@
 import os
-import pickle
+import openml
 import json
 import logging
-import warnings
-import random
+import subprocess
+import sys
 import pandas as pd
 import numpy as np
-import functools
-from collections.abc import Callable
-from Benchmarks.LLAMBO.bayesmark.bbox_utils import get_bayesmark_func
-from sklearn.metrics import get_scorer
-from sklearn.model_selection import cross_val_score
+from Benchmarks.LLAMBO.hpo_bench.tabular_benchmarks import HPOBench
+from Benchmarks.run_bayesmark import bayesmarkBO_wrapper
 
 from llambo.utils import setup_logger
 
-def update_init(self, init_X):
-    self.init_X = init_X
-
-def func_wrapper(func):
-    functools.wraps(func)
-
-    def wrapper(self, *args, **kwargs):
-        if func.__name__ == "_sample_points":
-            if self.n_evals == 0 and self.init_X is not None:
-                return self.init_X
-            else:
-                return func(self, *args, **kwargs)
-        elif func.__name__ == "_evaluate_points":
-            if self.n_evals == 0: 
-                return self.init_y
-            else:
-                return func(self, *args, **kwargs)
-        elif func.__name__ == "__init__":
-            func(self, *args, **kwargs)
-            self.init_X = None
-        else:
-            return func(self, *args, **kwargs)
-    return wrapper
-
-def bayesmarkBO_wrapper(cls):
-    setattr(cls, '__init__', func_wrapper(cls.__init__))
-    setattr(cls, 'update_init', update_init)
-    setattr(cls, '_sample_points', func_wrapper(cls._sample_points))
-    # setattr(cls, '_evaluate_points', func_wrapper(cls._evaluate_points))
-    return cls
+import warnings
+# ignore future warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 logger = logging.getLogger(__name__)
@@ -54,39 +24,44 @@ def setup_logging(log_name):
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     logger.setLevel(logging.INFO)
-
-BAYESMARK_TASK_MAP = {
-    'breast': ['classification', 'accuracy'],
-    'digits': ['classification', 'accuracy'],
-    'wine': ['classification', 'accuracy'],
-    'iris': ['classification', 'accuracy'],
-    'diabetes': ['regression', 'neg_mean_squared_error'],
+    
+DATASET_MAP = {
+    "credit_g": [0, 31],    # [dataset id, openml task id]
+    "vehicle": [1, 53],
+    "kc1": [2, 3917],
+    "phoneme": [3, 9952],
+    "blood_transfusion": [4, 10101],
+    "australian": [5, 146818],
+    "car": [6, 146821],
+    "segment": [7, 146822],
 }
 
-PRIVATE_TASK_MAP = {
-    'Griewank': ['regression', 'neg_mean_squared_error'],
-    'KTablet': ['regression', 'neg_mean_squared_error'],
-    'Rosenbrock': ['regression', 'neg_mean_squared_error'],
+MODEL_MAP = {
+    'rf': 'Random Forest',
+    'nn': 'Multilayer Perceptron',
+    'xgb': 'XGBoost'
 }
 
-class BayesmarkExpRunner:
+
+class HPOExpRunner:
     def __init__(self, task_context, dataset, seed):
+        model = task_context['model']
+        self.hpo_bench = HPOBench(model, dataset)
         self.seed = seed
-        self.model = task_context['model']
-        self.task = task_context['task']
-        self.metric = task_context['metric']
-        self.dataset = dataset
-        self.hyperparameter_constraints = task_context['hyperparameter_constraints']
-        self.bbox_func = get_bayesmark_func(self.model, self.task, dataset['test_y'])
+        self.config_path = f'Benchmarks/LLAMBO/hpo_bench/configs/{model}/config{seed}.json'
 
+        self.hyperparameter_constraints = task_context['hyperparameter_constraints']
         self.ordered_hyperparams = list(self.hyperparameter_constraints.keys())
         self.bounds = []
         lower_bounds = []
         upper_bounds = []
         for hyperparam in self.ordered_hyperparams:
             constraint = self.hyperparameter_constraints[hyperparam]
-            lower_bounds.append(constraint[2][0])
-            upper_bounds.append(constraint[2][1])
+            values = constraint[2]
+            lower_bounds.append(values[0])
+            upper_bounds.append(values[-1])
+            # lower_bounds.append(values[0] - (values[1] - values[0]) * 0.5)
+            # upper_bounds.append(values[-1] + (values[-1] - values[-2]) * 0.5)
         
         self.bounds = np.array([lower_bounds, upper_bounds])
 
@@ -142,14 +117,33 @@ class BayesmarkExpRunner:
         Args: n_samples (int)
         Returns: list of dictionaries, each dictionary is a point to be evaluated
         '''
+        # load initial configs
+        with open(self.config_path, 'r') as f:
+            configs = json.load(f)
 
-        # Read from fixed initialization points (all baselines see same init points)
-        init_configs = pd.read_json(f'Benchmarks/LLAMBO/bayesmark/configs/{self.model}/{self.seed}.json').head(n_samples)
-        init_configs = init_configs.to_dict(orient='records')
-
+        assert isinstance(configs, list)
+        init_configs = []
+        for i, config in enumerate(configs):
+            assert isinstance(config, dict)
+            
+            if i < n_samples:
+                init_configs.append(self.hpo_bench.ordinal_to_real(config))
+        
         assert len(init_configs) == n_samples
 
         return init_configs
+    
+    def _find_nearest_neighbor(self, config):
+        discrete_grid = self.hpo_bench._value_range
+        nearest_config = {}
+        for key in config:
+            if key in discrete_grid:
+                # Find the nearest value in the grid for the current key
+                nearest_value = min(discrete_grid[key], key=lambda x: abs(x - config[key]))
+                nearest_config[key] = nearest_value
+            else:
+                raise ValueError(f"Key '{key}' not found in the discrete grid.")
+        return nearest_config
 
     def obj_func_wrapper(self, x):
         '''
@@ -158,8 +152,8 @@ class BayesmarkExpRunner:
         Returns: fvals (dict), dictionary containing evaluation results
         '''
         config = self.x_to_config(x)
-        _, fvals = self.evaluate_point(config)
-        self.x_hist.append(config)
+        nearest_config, fvals = self.evaluate_point(config)
+        self.x_hist.append(nearest_config)
         self.fvals_hist.append(fvals)
         return -fvals['score']
         
@@ -168,107 +162,103 @@ class BayesmarkExpRunner:
         Evaluate a single point on bbox
         Args: candidate_config (dict), dictionary containing point to be evaluated
         Returns: (dict, dict), first dictionary is candidate_config (the evaluated point), second dictionary is fvals (the evaluation results)
-        fvals can contain an arbitrary number of items, but also must contain 'score' (which is what LLAMBO optimizer tries to optimize)
+        Example fval:
         fvals = {
-            'score': float,                     -> 'score' is what the LLAMBO optimizer tries to optimize
+            'score': float,
             'generalization_score': float
         }
         '''
-        np.random.seed(self.seed)
-        random.seed(self.seed)
+        # find nearest neighbor
+        nearest_config = self._find_nearest_neighbor(candidate_config)
+        # evaluate nearest neighbor
+        fvals = self.hpo_bench.complete_call(nearest_config)
+        return nearest_config, fvals
 
-        X_train, X_test, y_train, y_test = self.dataset['train_x'], self.dataset['test_x'], self.dataset['train_y'], self.dataset['test_y']
+def download_dataset():
+    urls = {
+        "xgb": "https://ndownloader.figshare.com/files/30469920",
+        "svm": "https://ndownloader.figshare.com/files/30379359",
+        "lr": "https://ndownloader.figshare.com/files/30379038",
+        "rf": "https://ndownloader.figshare.com/files/30469089",
+        "nn": "https://ndownloader.figshare.com/files/30379005"
+    }
+    base_output_dir = "hpo_bench/hpo_benchmarks"
+    if not os.path.exists(base_output_dir):
+        os.makedirs(base_output_dir, exist_ok=True)
 
-        for hyperparam, value in candidate_config.items():
-            if self.hyperparameter_constraints[hyperparam][0] == 'int':
-                candidate_config[hyperparam] = int(value)
+    files = os.listdir(base_output_dir)
+    if len(files) > 0:
+        print(f"Found existing files in {base_output_dir}.")
+        return
 
-        if self.task == 'regression':
-            mean_ = np.mean(y_train)
-            std_ = np.std(y_train)
-            y_train = (y_train - mean_) / std_
-            y_test = (y_test - mean_) / std_
+    for name, url in urls.items():
+        print(f"Processing Benchmark: {name.upper()}")
 
-        model = self.bbox_func(**candidate_config)
-        scorer = get_scorer(self.metric)
+        benchmark_output_dir = f'{base_output_dir}/hpo-bench-{name}'
+        os.makedirs(benchmark_output_dir, exist_ok=True)
+        temp_zip_path = f'{benchmark_output_dir}/{name}.zip'
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', category=UserWarning)
-            S = cross_val_score(model, X_train, y_train, scoring=scorer, cv=5)
-        cv_score = np.mean(S)
-        
-        model = self.bbox_func(**candidate_config) 
-        model.fit(X_train, y_train)
-        generalization_score = scorer(model, X_test, y_test)
+        print(f"Downloading from {url}...")
 
-        if self.metric == 'neg_mean_squared_error':
-            cv_score = -cv_score
-            generalization_score = -generalization_score
+        curl_command = [
+            'curl', '-L', '-#', '-o', str(temp_zip_path), url
+        ]
 
-        return candidate_config, {'score': cv_score, 'generalization_score': generalization_score}
+        subprocess.run(curl_command, check=True, stdout=sys.stdout, stderr=sys.stderr)
+        print(f"Downloaded {temp_zip_path}")
+
+        print(f"Unzipping {temp_zip_path}...")
+        unzip_command = [
+            'unzip', '-o', str(temp_zip_path), '-d', str(benchmark_output_dir)
+        ]
+        subprocess.run(unzip_command, check=True, text=True, capture_output=True)
+
+        os.remove(temp_zip_path)
+        print(f"Removed {temp_zip_path}")
 
 
-def _run_bayesmark_exp(bo_cls, dataset, model, num_seeds = 5, budget = 30, n_initial_samples = 5):
-    if dataset is None:
-        raise ValueError("dataset must be a string")
-    if model is None:
-        raise ValueError("model must be a string")
-    
-    if num_seeds is not None and isinstance(num_seeds, int) and (num_seeds < 1 or num_seeds > 10):
-        raise ValueError("num_seeds must be an integer between 1 and 10")
-
+def run_hpo_benchmarks(bo_cls, dataset_name, model, seeds_to_run, n_initial_samples=5, budget=30):
+    num_seeds = len(seeds_to_run)
+    dataset = DATASET_MAP[dataset_name][0]
+    algo = bo_cls.__name__
     algo_cls = bo_cls
-    algo = algo_cls.__name__
-
-    # Load training and testing data
-    if dataset in BAYESMARK_TASK_MAP:
-        TASK_MAP = BAYESMARK_TASK_MAP
-        pickle_fpath = f'Benchmarks/LLAMBO/bayesmark/data/{dataset}.pickle'
-        with open(pickle_fpath, 'rb') as f:
-            data = pickle.load(f)
-        X_train = data['train_x']
-        y_train = data['train_y']
-    elif dataset in PRIVATE_TASK_MAP: 
-        TASK_MAP = PRIVATE_TASK_MAP
-        pickle_fpath = f'Benchmarks/LLAMBO/custom_dataset/{dataset}.pickle'
-        with open(pickle_fpath, 'rb') as f:
-            data = pickle.load(f)
-        X_train = data['train_x']
-        y_train = data['train_y']
-    else:
-        raise ValueError(f'Invalid dataset: {dataset}')
-
 
     # Describe task context
     task_context = {}
     task_context['model'] = model
-    task_context['task'] = TASK_MAP[dataset][0]
-    task_context['tot_feats'] = X_train.shape[1]
-    task_context['cat_feats'] = 0       # bayesmark datasets only have numerical features
-    task_context['num_feats'] = X_train.shape[1]
-    task_context['n_classes'] = len(np.unique(y_train))
-    task_context['metric'] = TASK_MAP[dataset][1]
-    task_context['lower_is_better'] = True if 'neg' in task_context['metric'] else False
-    task_context['num_samples'] = X_train.shape[0]
-    with open('Benchmarks/LLAMBO/hp_configurations/bayesmark.json', 'r') as f:
+    task_context['task'] = 'classification' # hpo_bech datasets are all classification
+
+    task = openml.tasks.get_task(DATASET_MAP[dataset_name][1])
+    dataset_ = task.get_dataset()
+    X, y, categorical_mask, _ = dataset_.get_data(target=dataset_.default_target_attribute)
+
+    task_context['tot_feats'] = X.shape[1]
+    task_context['cat_feats'] = len(categorical_mask)
+    task_context['num_feats'] = X.shape[1] - len(categorical_mask)
+    task_context['n_classes'] = len(np.unique(y))
+    task_context['metric'] = "accuracy"
+    task_context['lower_is_better'] = False
+    task_context['num_samples'] = X.shape[0]
+    with open('Benchmarks/LLAMBO/hp_configurations/hpobench.json', 'r') as f:
         task_context['hyperparameter_constraints'] = json.load(f)[model]
 
     # define result save directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    save_res_dir = f'{script_dir}/bayesmark_results/{dataset}/{model}'
+    save_res_dir = f'{script_dir}/hpo_results/{dataset_name}/{model}'
     if not os.path.exists(save_res_dir):
         os.makedirs(save_res_dir)
     # define logging directory
-    logging_fpath = f'{script_dir}/bayesmark_logs/{dataset}/{model}_{algo}.log'
+    logging_fpath = f'{script_dir}/hpo_logs/{dataset_name}/{model}.log'
     if not os.path.exists(os.path.dirname(logging_fpath)):
         os.makedirs(os.path.dirname(logging_fpath))
     setup_logging(logging_fpath)
-    
-    for seed in range(num_seeds):
-        logger.info('Executing %s to tune %s on %s with seed %d / %d...', algo, model, dataset, seed+1, num_seeds)
+
+    for seed in seeds_to_run:
+        logger.info('Executing %s to tune %s on %s with seed %d / %d...', algo, model, dataset_name, seed+1, num_seeds)
         logger.info('Task context: %s', task_context)
 
-        benchmark = BayesmarkExpRunner(task_context, data, seed)
+        # instantiate benchmark
+        benchmark = HPOExpRunner(task_context, dataset, seed)
 
         dim = len(benchmark.ordered_hyperparams)
         init_config = benchmark.generate_initialization(n_initial_samples)
@@ -295,14 +285,14 @@ def _run_bayesmark_exp(bo_cls, dataset, model, num_seeds = 5, budget = 30, n_ini
         df_hist = pd.DataFrame(df_hist_data)
         df_hist.to_csv(f'{save_res_dir}/{algo}_{seed}.csv', index=False)
 
-        logger.info(df_hist)
+        logger.info('\n%s', df_hist)
 
 def convert_results_to_ioh_format():
     df_data = {}
 
     dir_paths = [
-        'Benchmarks/LLAMBO/exp_bayesmark/results_discriminative',
-        'Benchmarks/bayesmark_results_0421' 
+        'Benchmarks/LLAMBO/exp_hpo_bench/results_discriminative',
+        'Benchmarks/hpo_results',
     ]
 
     for dir_path in dir_paths:
@@ -321,8 +311,9 @@ def convert_results_to_ioh_format():
                         else:
                             seed = int(algo_names[-1].split('.')[0])
                             algo = '_'.join(algo_names[:-1])
+                        
                         df = pd.read_csv(os.path.join(dir_path, _dataset, _model, _res_file))
-                        dim = df.shape[1] - 2
+                        dim = df.shape[1] - 8
                         # rename columns
                         df['dim'] = dim
                         df['dataset'] = _dataset
@@ -352,15 +343,15 @@ def convert_results_to_ioh_format():
 
         ioh_df = pd.concat([ioh_df, _ioh_df], ignore_index=True)
 
-
     # save ioh_df to csv
-    ioh_df.to_csv('Benchmarks/bayesmark_ioh_results.csv', index=False)
-
+    ioh_df.to_csv('Benchmarks/hpo_ioh_results.csv', index=False)
 
 if __name__ == '__main__':
+    download_dataset()
+
     setup_logger(level=logging.INFO)
 
-    convert_results_to_ioh_format()
+    # convert_results_to_ioh_format()
 
     from Experiments.logs.algorithms_logs.ATRBO import ATRBO
     from Experiments.logs.algorithms_logs.AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE import AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE 
@@ -377,11 +368,17 @@ if __name__ == '__main__':
         ]
     bo_wrappers = [bayesmarkBO_wrapper(bo_cls) for bo_cls in bo_cls_list]
 
-    datasets = ["digits", "wine", "diabetes", "iris", "breast", "Griewank", "KTablet", "Rosenbrock"]
-    models = ["RandomForest", "SVM", "DecisionTree", "MLP_SGD", "AdaBoost"]
+
+    datasets = ["australian", "blood_transfusion", "car", "credit_g", "kc1", "phoneme", "segment", "vehicle"]
+    models = ["rf", "xgb", "nn"]
+    seeds_to_run = [0, 1, 2, 3, 4]
+
+    # seeds_to_run = [0]
+    # datasets = ["blood_transfusion"]
+    # models = ["rf"]
 
     for bo_cls in bo_wrappers:
-        for dataset in datasets:
+        for dataset_name in datasets:
             for model in models:
-                _run_bayesmark_exp(bo_cls, dataset, model, num_seeds=1)
-    logger.info('All experiments completed.')
+                run_hpo_benchmarks(bo_cls, dataset_name, model, seeds_to_run)
+    logger.info('All done!')

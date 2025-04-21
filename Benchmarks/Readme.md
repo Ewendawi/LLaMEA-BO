@@ -11,11 +11,47 @@ cd Benchmarks
 git clone https://github.com/tennisonliu/LLAMBO.git
 ```
 
-2. run the benchmark
+2. run bayesmark benchmark
 
 ```bash
-cd Benchmarks
-./run_bayesmark.py
+./Benchmarks/run_bayesmark.py
+```
+The logs and results will be saved in `Benchmarks/logs` and `Benchmarks/results` respectively.
+
+3. run hpo benchmark 
+
+Before running the hpo benchmark, you need to install the required packages and create a symbolic link to the `hpo_bench` and `hp_configurations` directories in the current directory.
+```bash
+# create a symbolic link to the hpo_bench and hp_configurations directories in the current directory.
+ln -s ./Benchmarks/LLAMBO/hpo_bench ./hpo_bench
+ln -s ./Benchmarks/LLAMBO/hp_configurations ./hp_configurations
+
+# create the hpo_benchmarks directory for downloading the datasets
+mkdir ./hpo_bench/hpo_benchmarks
+
+# install the required packages
+pip install openml
 ```
 
-3. the results and logs will be saved in `Benchmarks/logs` and `Benchmarks/results` respectively.
+Run the hpo benchmark with the following command:
+```bash
+./Benchmarks/run_hpo.py
+```
+The logs and results will be saved in `Benchmarks/hpo_logs` and `Benchmarks/hpo_results` respectively.
+
+Clean up the symbolic links and the hpo_benchmarks directory after running the benchmark:
+```bash
+rm ./hpo_bench
+rm ./hp_configurations
+```
+
+### Import results into ioh profiler
+
+- `bayesmark_ioh_results*.csv` - The benchmark results of the bayesmark
+- `hpo_ioh_results*.csv` - The benchmark results of the hpo
+
+To analyze the results:
+1. Visit [IOHanalyzer](https://iohanalyzer.liacs.nl/)
+2. Check the checkbox `use custom csv format`
+3. Upload the dimension-specific CSV files
+4. Use the IOHanalyzer interface to generate comparisons and visualizations

@@ -190,3 +190,5 @@ final_eval_res*
 outcmaes
 Experiments/figs*
 Benchmarks/LLAMBO
+Benchmarks/bayesmark_results*
+Benchmarks/hpo_results*
