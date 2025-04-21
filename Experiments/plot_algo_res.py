@@ -1,9 +1,5 @@
 import logging
 import os
-import pickle
-from datetime import datetime
-import importlib.util
-import pathlib
 
 import numpy as np
 import pandas as pd
@@ -540,6 +536,8 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
     y_scale_cols = {
         'loss': ('symlog', {}),
         'best_loss': ('symlog', {}),
+        'kappa': ('symlog', {}),
+        'tr_radius': ('symlog', {}),
     }
 
     non_fill_cols = [
