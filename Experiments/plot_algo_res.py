@@ -811,26 +811,37 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
 
     plot_algo_result(results=res_list, fig_dir=fig_dir)
 
-def extract_algo_result(dir_path:str):
+def extract_algo_result(dir_path:str, file_path_map:dict=None):
     file_paths = []
-    if not os.path.isdir(dir_path):
-        raise ValueError(f"Invalid directory path: {dir_path}")
-    for file in os.listdir(dir_path):
-        if file.endswith(".pkl"):
-            file_paths.append(os.path.join(dir_path, file))
+    algo_name_list = []
+
+    if file_path_map is None:
+        if not os.path.isdir(dir_path):
+            raise ValueError(f"Invalid directory path: {dir_path}")
+        for file in os.listdir(dir_path):
+            if file.endswith(".pkl"):
+                file_paths.append(os.path.join(dir_path, file))
+    else:
+        for algo_name, file in file_path_map.items():
+            if os.path.isfile(file):
+                file_paths.append(file)
+                algo_name_list.append(algo_name)
+            else:
+                print(f"File {algo_name} not found: {file}")
 
     res_list = []
-    for file_path in file_paths:
+    for i, file_path in enumerate(file_paths):
         with open(file_path, "rb") as f:
             unpickler = RenameUnpickler(f)
             target = unpickler.load()
             if target.error is not None:
                 continue
             if isinstance(target, EvaluatorResult):
+                if len(algo_name_list) > i:
+                    target.name = algo_name_list[i]
                 res_list.append(target)
             elif isinstance(target, ResponseHandler):
                 res_list.append(target.eval_result)
-
     dim = 0
     for result in res_list:
         if len(result.result) > 0:
@@ -927,6 +938,38 @@ def plot_algo_0220():
     plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
 
     extract_algo_result(dir_path=dir_path)
+
+def convert_atrbo_results_to_ioh_csv():
+    dir_path = 'Experiments/atrbo_eval_res_5dim'
+    file_path_map = {
+        'baseline': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:False_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4615_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162413.pkl',
+
+        'noProject': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:False_proj:False_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4543_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162546.pkl',
+
+        'fixed': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4590_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162458.pkl',
+
+        'fixed_kappa': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:False_0.4574_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421172803.pkl',
+
+        'fixed_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:True_0.4474_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162629.pkl',
+
+        'fixed_kappa_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4479_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162754.pkl',
+
+        # rho
+        '0.65_rho_fixed': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.65_k:2.0_adaptr:True_adaptk:True_0.4648_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164107.pkl',
+        '0.8_rho_fiexed': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.8_k:2.0_adaptr:True_adaptk:True_0.4683_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421163324.pkl',
+        '0.95_rho_fixed': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4590_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162458.pkl',
+
+        # trr
+        '1.0_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:1_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4547_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164357.pkl',
+        '2.5_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4479_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162754.pkl',
+        '5.0_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4397_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164316.pkl',
+
+        # kappa
+        '1.0_kappa': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:1.0_adaptr:False_adaptk:False_0.4480_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164232.pkl',
+        '2.0_kappa': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4397_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164316.pkl',
+        '4.0_kappa': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:4.0_adaptr:False_adaptk:False_0.4485_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164150.pkl',
+    }
+    extract_algo_result(dir_path=dir_path, file_path_map=file_path_map)
 
 if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
