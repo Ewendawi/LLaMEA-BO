@@ -1,0 +1,24 @@
+#!/bin/bash
+#SBATCH --time=08:01:15
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --output=LLAMBO/Benchmarks/m_llambo_benchmark.log
+
+#SBATCH --job-name=m_llambo_benchmark
+
+. /etc/bashrc
+. /etc/profile.d/lmod.sh
+
+module load openmpi/gcc/64
+module load slurm 
+
+APP=python
+
+ARGS="LLAMBO/Benchmarks/run_bayesmark.py"
+
+# OMPI_OPTS="--mca btl ^usnic"
+# DAS-6/OpenHPC modules do not set MPI_RUN, so:
+MPI_RUN=mpirun
+$MPI_RUN $OMPI_OPTS $APP $ARGS
+
+# $APP $ARGS
