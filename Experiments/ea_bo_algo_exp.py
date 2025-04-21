@@ -71,6 +71,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
     _ignore_cls = False
     extra_init_params = {}
     call_params = {}
+    name_suffix = ""
     injector = BOInjector()
     if options is not None:
         is_baseline = options.get("is_baseline", False)
@@ -78,6 +79,9 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
             extra_init_params = baseline_algo_eval_param(evaluator.dim, evaluator.budget)
             if 'device' in options:
                 extra_init_params['device'] = options['device']
+
+        if 'cls_init_kwargs' in options:
+            extra_init_params.update(options['cls_init_kwargs'])
 
         if 'max_eval_workers' in options:
             evaluator.max_eval_workers = options['max_eval_workers']
@@ -99,6 +103,9 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
 
         if 'capture_output' in options:
             call_params['capture_output'] = options['capture_output']
+
+        if 'name_suffix' in options:
+            name_suffix = options['name_suffix']
     
     if _ignore_cls:
         algo_cls = None
@@ -119,7 +126,7 @@ def _run_algrothim_eval_exp(evaluator, algo_cls, code=None, save=False, options=
         os.makedirs(dir_path, exist_ok=True)
         time_stamp = datetime.now().strftime("%m%d%H%M%S")
         score = res.score
-        file_path = os.path.join(dir_path, f"{cls_name}_{score:.4f}_{evaluator}_{time_stamp}.pkl")
+        file_path = os.path.join(dir_path, f"{cls_name}{name_suffix}_{score:.4f}_{evaluator}_{time_stamp}.pkl")
         with open(file_path, "wb") as f:
             pickle.dump(res, f)
     return res
@@ -249,7 +256,7 @@ def eval_final_algo():
         # 'use_mpi': True,
         # 'use_mpi_future': True,
         'ignore_cls': True, # the module with dynamic import can't be pickled
-        'ignore_external_metric': False,
+        # 'ignore_external_metric': False,
     }
     _bl_file_map = {
         # 'BLRandomSearch': 'Experiments/baselines/bo_baseline.py',
@@ -278,6 +285,85 @@ def eval_final_algo():
     file_map = _file_map
 
     run_algo_eval_from_file_map(evaluator, file_map, plot=False, save=True, options=options)
+
+def eval_atrbo_algo():
+    problems = [
+        2, 4,
+        6, 8,
+        12, 14,
+        18, 15,
+        21, 23,
+    ]
+    problems = list(range(1, 25))
+    instances = [4]
+    repeat = 5
+    budget = 100
+    dim = 5
+    evaluator = get_IOHEvaluator_for_test(problems=problems, _instances=instances, repeat=repeat, budget=budget, dim=dim)
+    evaluator.ignore_over_budget = True
+
+    default_init_params = {
+        'tr_radius': 2.5,
+        'rho': 0.95,
+        'kappa': 2.0,
+        'fix_adjust': False,
+        'with_proj': True,
+        'adaptive_radius': True,
+        'adaptive_kappa': True,
+    }
+
+    def _copy_update_dict(d, _new_dict):
+        new_dict = d.copy()
+        new_dict.update(_new_dict)
+        return new_dict
+
+    exp_list = [
+        # _copy_update_dict(default_init_params, {}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': True}),
+        # _copy_update_dict(default_init_params, {'with_proj': False}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'adaptive_radius': False}),
+        _copy_update_dict(default_init_params, {'fix_adjust': True, 'adaptive_kappa': False}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'adaptive_radius': False, 'adaptive_kappa': False}),
+
+        # rho
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'rho': 0.8}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'rho': 0.65}),
+
+        # kappa
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'kappa': 4.0, 'adaptive_kappa': False, 'adaptive_radius': False}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'kappa': 2.0, 'adaptive_kappa': False, 'adaptive_radius': False}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'kappa': 1.0, 'adaptive_kappa': False, 'adaptive_radius': False}),
+
+        # tr_radius
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'tr_radius': 5, 'adaptive_radius': False, 'adaptive_kappa': False}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'tr_radius': 2.5, 'adaptive_radius': False, 'adaptive_kappa': False}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'tr_radius': 1, 'adaptive_radius': False, 'adaptive_kappa': False}),
+    ]
+
+    for init_params in exp_list:
+        name_suffix = f"_fixed:{init_params['fix_adjust']}_proj:{init_params['with_proj']}_trr:{init_params['tr_radius']}_rho:{init_params['rho']}_k:{init_params['kappa']}_adaptr:{init_params['adaptive_radius']}_adaptk:{init_params['adaptive_kappa']}"
+
+        options = {
+            # 'device': 'cuda',
+            # 'is_baseline': True,
+            'save_dir': f'Experiments/atrbo_eval_res_{dim}dim',
+            # 'max_eval_workers': 10,
+            # 'use_multi_process': True,
+            'use_mpi': True,
+            # 'use_mpi_future': True,
+            'ignore_cls': True, # the module with dynamic import can't be pickled
+            # 'ignore_external_metric': False,
+            'cls_init_kwargs': init_params, 
+            'name_suffix': name_suffix,
+            # 'capture_output': False,
+        }
+
+        _file_map = {
+            'ATRBO': 'Experiments/0-2_ATRBO_modified.py',
+        }
+        logging.info("ATRBO algo eval on %s", init_params)
+        run_algo_eval_from_file_map(evaluator, _file_map, plot=False, save=True, options=options)
+
 
 def main():
     # setup_logger(level=logging.DEBUG)
