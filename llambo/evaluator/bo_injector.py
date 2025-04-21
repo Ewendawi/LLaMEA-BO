@@ -167,6 +167,8 @@ class BOInjector(ExecInjector):
             critic.update_test_y(func)
             critic.search_result.init_grid(bounds=bounds, dim=dim, budget=func.budget)
             critic.ignore_metric = self.ignore_metric
+            if hasattr(cls_instance, "n_init"):
+                critic.n_init = cls_instance.n_init
 
             setattr(cls_instance, "_injected_critic", critic)
 
