@@ -184,12 +184,8 @@ logs_*/
 exp-*
 jobs/*.log
 currentexp
-Experiments/pop_*
-pops
-final_eval_res*
 outcmaes
-Experiments/figs*
 Benchmarks/LLAMBO
 Benchmarks/bayesmark_results*
 Benchmarks/hpo_results*
-atrbo_eval_res*
+Experiments/log_eater

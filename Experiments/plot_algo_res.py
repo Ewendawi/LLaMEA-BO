@@ -811,113 +811,6 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
 
     plot_algo_result(results=res_list, fig_dir=fig_dir)
 
-
-
-def plot_project_tr():
-    from scipy.stats import qmc
-
-    # Parameters
-    dim = 2  # Dimension of the space
-    bounds = np.array([[-2, -3], [4, 2]])  # Lower and upper bounds
-    n_points = 100  # Number of points to generate
-    center = np.array([2, 1])  # Custom center
-    radius = 1.5       # Custom radius
-
-    # --- Visualization ---
-    fig, axes = plt.subplots(2, 3, figsize=(15, 9))  # Create subplots for each stage
-
-    # 1. Sobol Sequence [0, 1]
-    sampler = qmc.Sobol(d=dim, scramble=True)
-    points_sobol = sampler.random(n=n_points)
-    scaled_center = qmc.scale(center.reshape(1, -1), bounds[0], bounds[1], reverse=True).flatten()
-    axes[0, 0].scatter(points_sobol[:, 0], points_sobol[:, 1], s=5)
-    axes[0, 0].scatter(scaled_center[0], scaled_center[1], c='r', marker='*', s=100)
-    axes[0, 0].set_title('1. Sobol Sequence [0, 1]')
-    axes[0, 0].set_xlim(-0.1, 1.1)
-    axes[0, 0].set_ylim(-0.1, 1.1)
-    axes[0, 0].set_aspect('equal')
-
-    # 2. Scaled to [-1, 1]
-    points_scaled = qmc.scale(points_sobol, -1, 1)
-    axes[0, 1].scatter(points_scaled[:, 0], points_scaled[:, 1], s=5)
-    scaled_center = qmc.scale(scaled_center.reshape(1, -1), -1, 1).flatten()
-    axes[0, 1].scatter(scaled_center[0], scaled_center[1], c='r', marker='*', s=100)
-    axes[0, 1].set_title('2. Scaled to [-1, 1]')
-    axes[0, 1].set_xlim(-1.1, 1.1)
-    axes[0, 1].set_ylim(-1.1, 1.1)
-    axes[0, 1].set_aspect('equal')
-    axes[0,1].add_patch(plt.Circle((0, 0), 1, color='r', alpha=0.1)) # Add a circle
-
-    # 3. Projected to Hypersphere & Scaled
-    lengths = np.linalg.norm(points_scaled, axis=1, keepdims=True)
-    points_hypersphere = points_scaled / lengths * np.random.uniform(0, 1, size=lengths.shape) ** (1/dim)
-    # points_hypersphere = points_scaled / lengths ** (1/dim)
-    axes[1, 0].scatter(points_hypersphere[:, 0], points_hypersphere[:, 1], s=5)
-    axes[1, 0].scatter(scaled_center[0], scaled_center[1], c='r', marker='*', s=100)
-    axes[1, 0].set_title('3. Projected to Circle')
-    axes[1, 0].set_xlim(-1.1, 1.1)
-    axes[1, 0].set_ylim(-1.1, 1.1)
-    axes[1, 0].set_aspect('equal')
-    axes[1, 0].add_patch(plt.Circle((0, 0), 1, color='r', alpha=0.1)) # Add a circle
-
-    # 4. Final Points (Scaled, Translated, Clipped)
-    sampled_points = points_hypersphere * radius + center
-    sampled_points = np.clip(sampled_points, bounds[0], bounds[1])
-
-    axes[1, 1].scatter(sampled_points[:, 0], sampled_points[:, 1], s=5)
-    axes[1, 1].scatter(center[0], center[1], c='r', marker='*', s=100)
-    axes[1, 1].set_title('4. Translated and Clipped')
-    # Draw the bounding box
-    rect = plt.Rectangle(bounds[0], bounds[1, 0] - bounds[0, 0],
-                        bounds[1, 1] - bounds[0, 1], linewidth=1, edgecolor='r', facecolor='none')
-    axes[1, 1].add_patch(rect)
-    # Draw circle of radius
-    axes[1,1].add_patch(plt.Circle(center, radius, color='g', alpha=0.1))
-    axes[1, 1].set_xlim(bounds[0,0]-0.5, bounds[1,0]+0.5)
-    axes[1, 1].set_ylim(bounds[0,1]-0.5, bounds[1,1]+0.5)
-    axes[1, 1].set_aspect('equal')
-
-    
-    # 5. translated and clipped without projection
-    points_scaled = qmc.scale(points_sobol, center-radius, center+radius)
-    # sampled_points = points_scaled * radius + center
-    sampled_points = np.clip(points_scaled, bounds[0], bounds[1])
-    axes[0, 2].scatter(sampled_points[:, 0], sampled_points[:, 1], s=5)
-    axes[0, 2].scatter(center[0], center[1], c='r', marker='*', s=100)
-    axes[0, 2].set_title('Translated and Clipped without Projection')
-    # Draw the bounding box
-    rect = plt.Rectangle(bounds[0], bounds[1, 0] - bounds[0, 0],
-                        bounds[1, 1] - bounds[0, 1], linewidth=1, edgecolor='r', facecolor='none')
-    axes[0, 2].add_patch(rect)
-    # Draw circle of radius
-    axes[0, 2].add_patch(plt.Circle(center, radius, color='g', alpha=0.1))
-    axes[0, 2].set_xlim(bounds[0,0]-0.5, bounds[1,0]+0.5)
-    axes[0, 2].set_ylim(bounds[0,1]-0.5, bounds[1,1]+0.5)
-    axes[0, 2].set_aspect('equal') 
-
-    # 6. uniform sampling
-    samples = np.random.uniform(
-            low=np.maximum(center - radius, bounds[0]),
-            high=np.minimum(center + radius, bounds[1]),
-            size=(n_points, dim)
-        )
-    axes[1, 2].scatter(samples[:, 0], samples[:, 1], s=5)
-    axes[1, 2].scatter(center[0], center[1], c='r', marker='*', s=100)
-    axes[1, 2].set_title('Uniform Sampling')
-    # Draw the bounding box
-    rect = plt.Rectangle(bounds[0], bounds[1, 0] - bounds[0, 0],
-                        bounds[1, 1] - bounds[0, 1], linewidth=1, edgecolor='r', facecolor='none')
-    axes[1, 2].add_patch(rect)
-    # Draw circle of radius
-    axes[1, 2].add_patch(plt.Circle(center, radius, color='g', alpha=0.1))
-    axes[1, 2].set_xlim(bounds[0,0]-0.5, bounds[1,0]+0.5)
-    axes[1, 2].set_ylim(bounds[0,1]-0.5, bounds[1,1]+0.5)
-    axes[1, 2].set_aspect('equal')
-
-    plt.tight_layout()
-    plt.show()
-
-
 def extract_algo_result(dir_path:str):
     file_paths = []
     if not os.path.isdir(dir_path):
@@ -1025,48 +918,18 @@ def extract_algo_result(dir_path:str):
 
 def plot_algo_0220():
     file_paths = [
-        # 'Experiments/final_eval_res/BLRandomSearch_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0210053711.pkl',
 
-        # 'Experiments/final_eval_res/BLTuRBO1_0.0792_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0215224338.pkl',
-
-        # 'Experiments/final_eval_res/BLTuRBOM_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0215232616.pkl',
-
-        # 'Experiments/final_eval_res/BLMaternVanillaBO_0.1078_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216012649.pkl',
-
-        # 'Experiments/final_eval_res/BLHEBO_0.0967_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216043242.pkl',
-        'Experiments/final_eval_res/BLHEBO_0.0939_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0228124151.pkl',
-
-        # 'Experiments/final_eval_res/BLCMAES_0.0490_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0216014349.pkl',
-
-        # 'Experiments/final_eval_res/ATRBO_0.1236_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222082510.pkl',
-
-        # 'Experiments/final_eval_res/ATRBO_DKAI_0.1242_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0222114050.pkl',
-
-        # 'Experiments/final_eval_res/ARSUAEBO_0.0828_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0221171337.pkl',
-
-        # 'Experiments/final_eval_res/TrustRegionAdaptiveTempBOv2_0.1299_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211000039.pkl',
-
-        # 'Experiments/final_eval_res/BayesLocalAdaptiveAnnealBOv1_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211012527.pkl',
-        
-        # 'Experiments/final_eval_res/EnsembleLocalSearchBOv1_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211041109.pkl',
-
-        # 'Experiments/final_eval_res/AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE_0.2304_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0310125738.pkl',
-
-        # 'Experiments/final_eval_res/AdaptiveTrustRegionOptimisticHybridBO_0.2401_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0310124027.pkl',
     ] 
 
-    dir_path = 'Experiments/final_eval_res_5dim'
+    dir_path = 'Experiments/log_eater/final_eval_res_40dim_0320'
     pop_path = None
 
     plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
+
+    extract_algo_result(dir_path=dir_path)
 
 if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
-    # plot_project_tr()
-
-    # plot_algo_0220()
-
-    dir_path = 'Experiments/final_eval_res_5dim'
-    extract_algo_result(dir_path=dir_path)
+    plot_algo_0220()
