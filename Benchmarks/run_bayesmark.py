@@ -67,6 +67,10 @@ PRIVATE_TASK_MAP = {
     'Griewank': ['regression', 'neg_mean_squared_error'],
     'KTablet': ['regression', 'neg_mean_squared_error'],
     'Rosenbrock': ['regression', 'neg_mean_squared_error'],
+
+    'griewank': ['regression', 'neg_mean_squared_error'],
+    'ktablet': ['regression', 'neg_mean_squared_error'],
+    'rosenbrock': ['regression', 'neg_mean_squared_error'],
 }
 
 class BayesmarkExpRunner:
@@ -161,7 +165,7 @@ class BayesmarkExpRunner:
         _, fvals = self.evaluate_point(config)
         self.x_hist.append(config)
         self.fvals_hist.append(fvals)
-        return -fvals['score']
+        return fvals['minimize_objective']
         
     def evaluate_point(self, candidate_config):
         '''
@@ -201,11 +205,12 @@ class BayesmarkExpRunner:
         model.fit(X_train, y_train)
         generalization_score = scorer(model, X_test, y_test)
 
+        minimize_objective = -cv_score
         if self.metric == 'neg_mean_squared_error':
             cv_score = -cv_score
             generalization_score = -generalization_score
 
-        return candidate_config, {'score': cv_score, 'generalization_score': generalization_score}
+        return candidate_config, {'score': cv_score, 'generalization_score': generalization_score, 'minimize_objective': minimize_objective}
 
 
 def _run_bayesmark_exp(bo_cls, dataset, model, num_seeds = 5, budget = 30, n_initial_samples = 5):
@@ -302,7 +307,7 @@ def convert_results_to_ioh_format():
 
     dir_paths = [
         'Benchmarks/LLAMBO/exp_bayesmark/results_discriminative',
-        'Benchmarks/bayesmark_results_0421' 
+        'Benchmarks/bayesmark_results_0421'
     ]
 
     for dir_path in dir_paths:
@@ -330,6 +335,18 @@ def convert_results_to_ioh_format():
                         df['seed'] = seed
                         df['algo'] = algo
                         df['n_iterations'] = df.index + 1
+                        _metric = 'accuracy'
+                        if _dataset in BAYESMARK_TASK_MAP:
+                            _metric = BAYESMARK_TASK_MAP[_dataset][1]
+                        elif _dataset in PRIVATE_TASK_MAP:
+                            _metric = PRIVATE_TASK_MAP[_dataset][1]
+                        if _metric == 'neg_mean_squared_error':
+                            df['fx'] = -df['score']
+                            df['generalization_fx'] = -df['generalization_score']
+                        else:
+                            df['fx'] = df['score']
+                            df['generalization_fx'] = df['generalization_score']
+
                         # add df to bl_data
                         if _model not in df_data:
                             df_data[_model] = df
@@ -337,13 +354,13 @@ def convert_results_to_ioh_format():
                             df_data[_model] = pd.concat([df_data[_model], df], ignore_index=True)
 
     # save all dataframes in df_data to csv
-    ioh_columns = ['n_iter', 'fx', 'fid', 'algo', 'dim', 'n_run', 't_fx']
+    ioh_columns = ['n_iter', 't_fx', 'fid', 'algo', 'dim', 'n_run', 'fx']
     ioh_df = pd.DataFrame(columns=ioh_columns)
     for _model, df in df_data.items():
         _ioh_df = pd.DataFrame(columns=ioh_columns)
         _ioh_df['n_iter'] = df['n_iterations']
-        _ioh_df['fx'] = 1 - df['score']
-        _ioh_df['t_fx'] = 1 - df['generalization_score']
+        _ioh_df['fx'] = df['fx']
+        _ioh_df['t_fx'] = df['generalization_fx']
         # create fid column by combining model and dataset
         _ioh_df['fid'] = _model + ' ' + df['dataset']
         _ioh_df['algo'] = df['algo']
