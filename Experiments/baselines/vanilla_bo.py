@@ -17,6 +17,7 @@ from gpytorch.priors import LogNormalPrior, GammaPrior
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from torch.quasirandom import SobolEngine
+from botorch.utils.transforms import unnormalize
 
 
 class VanillaUCB:
@@ -325,7 +326,8 @@ class VanillaEIBO:
 
     def _sample_points(self, n_points: int, seed=0) -> torch.Tensor:
         sobol = SobolEngine(dimension=self.dim, scramble=True, seed=seed)
-        X_init = sobol.draw(n=n_points).to(dtype=torch.float64, device=self.device)
+        samples = sobol.draw(n=n_points).to(dtype=torch.float64, device=self.device)
+        X_init = unnormalize(samples, bounds=torch.tensor(self.bounds, dtype=torch.float64, device=self.device))
         return X_init
 
 
