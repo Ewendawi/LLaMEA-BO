@@ -328,13 +328,13 @@ def convert_results_to_ioh_format():
                             df_data[_model] = pd.concat([df_data[_model], df], ignore_index=True)
 
     # save all dataframes in df_data to csv
-    ioh_columns = ['n_iter', 'fx', 'fid', 'algo', 'dim', 'n_run', 't_fx']
+    ioh_columns = ['n_iter', 't_fx', 'fid', 'algo', 'dim', 'n_run', 'fx']
     ioh_df = pd.DataFrame(columns=ioh_columns)
     for _model, df in df_data.items():
         _ioh_df = pd.DataFrame(columns=ioh_columns)
         _ioh_df['n_iter'] = df['n_iterations']
-        _ioh_df['fx'] = 1 - df['score']
-        _ioh_df['t_fx'] = 1 - df['generalization_score']
+        _ioh_df['fx'] = df['score']
+        _ioh_df['t_fx'] = df['generalization_score']
         # create fid column by combining model and dataset
         _ioh_df['fid'] = _model + ' ' + df['dataset']
         _ioh_df['algo'] = df['algo']
@@ -351,7 +351,7 @@ if __name__ == '__main__':
 
     setup_logger(level=logging.INFO)
 
-    # convert_results_to_ioh_format()
+    convert_results_to_ioh_format()
 
     from Experiments.logs.algorithms_logs.ATRBO import ATRBO
     from Experiments.logs.algorithms_logs.AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE import AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE 

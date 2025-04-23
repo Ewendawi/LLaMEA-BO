@@ -199,7 +199,7 @@ class BayesmarkExpRunner:
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', category=UserWarning)
             S = cross_val_score(model, X_train, y_train, scoring=scorer, cv=5)
-        cv_score = np.mean(S)
+        cv_score = np.nanmean(S)
         
         model = self.bbox_func(**candidate_config) 
         model.fit(X_train, y_train)
@@ -307,12 +307,11 @@ def convert_results_to_ioh_format():
 
     dir_paths = [
         'Benchmarks/LLAMBO/exp_bayesmark/results_discriminative',
-        'Benchmarks/bayesmark_results_0421'
+        'Benchmarks/bayesmark_results_0422'
     ]
 
     for dir_path in dir_paths:
         for _dataset in os.listdir(dir_path):
-            _dataset = _dataset.lower()
             for _model in os.listdir(os.path.join(dir_path, _dataset)):
                 for _res_file in os.listdir(os.path.join(dir_path, _dataset, _model)):
                     if _res_file.endswith('.csv'):
@@ -328,9 +327,12 @@ def convert_results_to_ioh_format():
                             algo = '_'.join(algo_names[:-1])
                         df = pd.read_csv(os.path.join(dir_path, _dataset, _model, _res_file))
                         dim = df.shape[1] - 2
+                        if 'minimize_objective' in df.columns:
+                            dim = dim - 1
+
                         # rename columns
                         df['dim'] = dim
-                        df['dataset'] = _dataset
+                        df['dataset'] = _dataset.lower()
                         df['model'] = _model
                         df['seed'] = seed
                         df['algo'] = algo
@@ -390,12 +392,22 @@ if __name__ == '__main__':
         # AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE,
         # AdaptiveTrustRegionOptimisticHybridBO,
         # AdaptiveEvolutionaryParetoTrustRegionBO, 
-        ABETSALSDE_ARM_MBO
+        # ABETSALSDE_ARM_MBO
         ]
     bo_wrappers = [bayesmarkBO_wrapper(bo_cls) for bo_cls in bo_cls_list]
 
-    datasets = ["digits", "wine", "diabetes", "iris", "breast", "Griewank", "KTablet", "Rosenbrock"]
-    models = ["RandomForest", "SVM", "DecisionTree", "MLP_SGD", "AdaBoost"]
+    datasets = [
+        # "digits", "wine", "diabetes", "iris", 
+        "breast", 
+        # "Griewank", "KTablet", "Rosenbrock"
+        ]
+    models = [
+        # "RandomForest", 
+        # "SVM",
+        "DecisionTree", 
+        # "MLP_SGD", 
+        # "AdaBoost"
+        ]
 
     for bo_cls in bo_wrappers:
         for dataset in datasets:
