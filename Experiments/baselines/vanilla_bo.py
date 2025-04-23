@@ -324,8 +324,8 @@ class VanillaEIBO:
     def is_maximization(self) -> bool:
         return True
 
-    def _sample_points(self, n_points: int, seed=0) -> torch.Tensor:
-        sobol = SobolEngine(dimension=self.dim, scramble=True, seed=seed)
+    def _sample_points(self, n_points: int) -> torch.Tensor:
+        sobol = SobolEngine(dimension=self.dim, scramble=True)
         samples = sobol.draw(n=n_points).to(dtype=torch.float64, device=self.device)
         X_init = unnormalize(samples, bounds=torch.tensor(self.bounds, dtype=torch.float64, device=self.device))
         return X_init
