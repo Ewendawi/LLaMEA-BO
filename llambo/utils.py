@@ -638,6 +638,8 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 labels:list[list[str]],
                 label_fontsize:int = 7,
                 combined_legend:bool = False,
+                combined_legend_ncols:int = 10,
+                combined_legend_bottom:float = 0.05,
 
                 filling:list[np.ndarray]=None, 
                 linewidth:float = 1.0,
@@ -766,8 +768,8 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
 
     if combined_legend:
         handles, labels = ax.get_legend_handles_labels()
-        fig.legend(handles, labels, loc='lower center', ncol=10, fontsize=label_fontsize, bbox_to_anchor=(0.5, 0.0))
-        plt.subplots_adjust(bottom=0.07) 
+        fig.legend(handles, labels, loc='lower center', ncol=combined_legend_ncols, fontsize=label_fontsize, bbox_to_anchor=(0.5, 0.0))
+        plt.subplots_adjust(bottom=combined_legend_bottom)
 
     
     if filename:

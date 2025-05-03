@@ -38,19 +38,30 @@ class BLCMAES:
 
     def __call__(self, func):
         import cma
+
+        budget = self.budget
+
+        x0 = np.random.uniform(self.bounds[0], self.bounds[1])
+        if hasattr(self, "init_X"):
+            X_init = getattr(self, "init_X")
+            fx_init = np.array([func(x_init) for x_init in X_init])
+
+            best_idx = np.argmin(fx_init)
+            x0 = X_init[best_idx]
+            budget -= len(X_init)
+
         options = cma.CMAOptions()
         options.set("bounds", [self.bounds[0], self.bounds[1]])
-        options.set("maxfevals", self.budget)
+        options.set("maxfevals", budget)
         if self.seed is not None:
             options.set("seed", self.seed)
         # options.set("tolfun", 1e-6)
         # options.set("tolfunhist", 1e-6)
         # options.set("tolx", 1e-6)
         # options.set("tolupsigma", 1e-6)
-        
-        x0 = np.random.uniform(self.bounds[0], self.bounds[1])
+
         es = cma.CMAEvolutionStrategy(x0=x0, sigma0=1, inopts=options)
-        es.optimize(func, iterations=self.budget)
+        es.optimize(func, iterations=budget)
         f_opt = es.result[1]
         x_opt = es.result[0]
 
@@ -86,6 +97,21 @@ class BLHEBO:
 
         batch_size = 1
         n_evals = 0
+
+        X_init = None
+        if hasattr(self, "init_X"):
+            X_init = getattr(self, "init_X")
+            fx_init = np.array([func(x_init) for x_init in X_init])
+
+            X_init_tensor = torch.tensor(X_init, dtype=torch.float64)
+            Xe_tensor = torch.tensor([])
+
+            X_init_df = space.inverse_transform(X_init_tensor, Xe_tensor)
+
+            opt.observe(X_init_df, fx_init)
+            n_evals += len(X_init)
+
+
         while n_evals < self.budget:
             _bs = min(batch_size, self.budget - n_evals)
             
@@ -176,6 +202,10 @@ class BLTuRBO1:
         if hasattr(self, "_injected_critic"):
             critic = self._injected_critic
             critic.n_init = self.n_init
+
+        X_init = None
+        if hasattr(self, "init_X"):
+            X_init = getattr(self, "init_X")
         
         turbo = Turbo1(
             f=func,
@@ -193,7 +223,7 @@ class BLTuRBO1:
             dtype="float64",
             critic = critic
             )
-        turbo.optimize()
+        turbo.optimize(fixed_X_init=X_init)
 
         best_idx = np.argmin(turbo.fX)
         f_opt = turbo.fX[best_idx]

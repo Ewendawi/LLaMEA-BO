@@ -333,6 +333,8 @@ class VanillaEIBO:
 
     def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:
         X_ei = self._sample_points(self.n_init)
+        if not isinstance(X_ei, torch.Tensor):
+            X_ei = torch.tensor(X_ei, dtype=torch.float64, device=self.device)
         Y_ei = torch.tensor(
             [func(x) for x in X_ei.cpu().numpy()], dtype=torch.float64, device=self.device
         ).unsqueeze(-1)
@@ -343,7 +345,8 @@ class VanillaEIBO:
         RAW_SAMPLES = 512 
 
         while self.n_evals < self.budget:
-            train_Y = (Y_ei - Y_ei.mean()) / Y_ei.std()
+            epsilon = 1e-8
+            train_Y = (Y_ei - Y_ei.mean()) / (Y_ei.std() + epsilon)
             likelihood = GaussianLikelihood(noise_constraint=Interval(1e-8, 1e-3))
             model = SingleTaskGP(X_ei, train_Y, likelihood=likelihood)
             mll = ExactMarginalLogLikelihood(model.likelihood, model)

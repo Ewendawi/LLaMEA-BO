@@ -238,7 +238,7 @@ class Turbo1:
             y_cand[indbest, :] = np.inf
         return X_next
 
-    def optimize(self):
+    def optimize(self, fixed_X_init=None):
         """Run the full optimization process."""
         while self.n_evals < self.max_evals:
             if len(self._fX) > 0 and self.verbose:
@@ -250,8 +250,12 @@ class Turbo1:
             self._restart()
 
             # Generate and evalute initial design points
-            X_init = latin_hypercube(self.n_init, self.dim)
-            X_init = from_unit_cube(X_init, self.lb, self.ub)
+            if fixed_X_init is not None and self.n_evals == 0:
+                # Use the fixed initial points
+                X_init = deepcopy(fixed_X_init)
+            else:
+                X_init = latin_hypercube(self.n_init, self.dim)
+                X_init = from_unit_cube(X_init, self.lb, self.ub)
             fX_init = np.array([[self.f(x)] for x in X_init])
 
             # Update budget and set as initial data for this TR
