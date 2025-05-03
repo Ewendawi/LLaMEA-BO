@@ -74,7 +74,7 @@ def run_algo_eval_from_file_map(evaluator, file_map, options, is_baseline=False)
 
 def run_evaluation(algo_name, algo_path, save_dir, is_baseline=False):
     evaluator = get_evaluator()
-
+    evaluator.timeout = 30 * 60 # set the timeout(seconds) for each evaluation(all tasks) 
 
     options = {
         'save_dir': save_dir,

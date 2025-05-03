@@ -223,6 +223,8 @@ class IOHEvaluator(AbstractEvaluator):
         problem_name = "_".join([f"f{problem}" for problem in self.problems])
         self._problem_name = problem_name
 
+        self.timeout = 30 * 60 # 30 minutes
+
     def eval_bugdet(self) -> int:
         return self.budget
 

@@ -57,6 +57,7 @@ def get_es_population(es_options):
 def run_exp(n_parent, n_offspring, is_elitist, api_key, n_population=4):
     # create an IOHEvaluator
     evaluator = get_IOHEvaluator()
+    evaluator.timeout = 30 * 60 # set the timeout(seconds) for each evaluation(all tasks) 
 
     # create a prompt generator
     prompt_generator = get_bo_prompt_generator()
