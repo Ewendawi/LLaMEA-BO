@@ -25,15 +25,20 @@ For example:
 - `ABETSALSDE_ARM_MBO_prompt.md`
 - `ABETSALSDE_ARM_MBO_respond.md`
 
-The benchmark results in IOH Profiler format, organized by problem dimension:
+The ES search results:
+- `es_100_aoc_ioh.csv` - The AOC value
+- `es_100_problem_ioh.csv` - The AOC value for each problem
+
+The BBOB benchmark results organized by problem dimension:
 - `5D_ioh_*.csv` - 5-dimensional benchmark results
 - `10D_ioh_*.csv` - 10-dimensional benchmark results
 - `20D_ioh_*.csv` - 20-dimensional benchmark results
 - `40D_ioh_*.csv` - 40-dimensional benchmark results
 - `*D_ioh_loss.csv` - The benchmark results of the loss
 - `*D_ioh_fx.csv` - The benchmark results of the function value
+- `*D_aoc.csv` - The benchmark results of the AOC value
 
-These files can be directly imported into [IOHanalyzer](https://iohanalyzer.liacs.nl/) for visualization and analysis.
+The files with `ioh` infix can be directly imported into [IOHanalyzer](https://iohanalyzer.liacs.nl/) for visualization and analysis.
 
 ### bayesmark_logs and hpo_logs
 These directories contain the results of Bayesmark an HPOBence, respectively.

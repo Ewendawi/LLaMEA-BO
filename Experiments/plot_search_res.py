@@ -185,7 +185,7 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
         res_df.to_pickle(save_name)
     return res_df
 
-def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
+def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
     max_aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
     max_aoc_df = max_aoc_df.groupby(['strategy', 'n_strategy'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
     max_aoc_df = max_aoc_df.groupby(['strategy'])[['log_y_aoc', 'y_aoc']].agg(list).reset_index()
@@ -205,6 +205,10 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
     #     figsize=(14, 8),
     #     )
 
+    file_name = 'search_aoc_voilin'
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+
     plot_box_violin(
         data=[_volin_y],
         labels=[unique_strategies],
@@ -213,7 +217,7 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
         n_cols=4,
         label_fontsize=10,
         figsize=(8, 6),
-        filename='es_aoc_voilin',
+        filename=file_name,
         show=False
         )
 
@@ -261,7 +265,7 @@ def _group_plus_aoc(strategy_group:dict, strategy:str, y_aoc:np.ndarray, log_y_a
             strategy_group[_key]['log_aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
             strategy_group[_key]['labels'].append(strategy)
         
-def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], group_fn=None):
+def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], group_fn=None, fig_dir=None):
     max_n_iter = res_df['n_iter'].max()
     aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_iter', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
 
@@ -327,6 +331,10 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         plot_labels = [labels]
         # y_scale = [("log", {})]
 
+    file_name = 'es_aoc_lines'
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+
     x_base = np.arange(len(strategy_aoc[0]), dtype=np.int16)
     x = np.tile(x_base, (len(plot_y), 1))
     plot_lines(
@@ -341,7 +349,7 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         n_cols=3,
         label_fontsize=9,
         figsize=(8, 6),
-        filename='es_aoc_lines',
+        filename=file_name,
         show=False,
         )
 
@@ -795,7 +803,7 @@ def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _
         return _data, _upper_bound
     return _clip_upper
 
-def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
+def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None, fig_dir=None):
     def _min_max_agg(x):
         if 'aoc' in x.name:
             return np.max(x)
@@ -955,6 +963,10 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
         x_base = np.arange(len(problem_log_aoc[0][0]), dtype=np.int16)
         x = np.tile(x_base, (len(plot_y), 1))
 
+        file_name = 'es_problem_aoc_loss'
+        if fig_dir is not None:
+            file_name = os.path.join(fig_dir, file_name)
+
         plot_lines(
             y = plot_y,
             x = x,
@@ -964,7 +976,7 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
             sub_titles=subtitles,
             n_cols=n_cols,
             figsize=(15, 9),
-            filename='es_problem_aoc_loss',
+            filename=file_name,
             show=False,
             )
 
@@ -1045,7 +1057,6 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         data=plot_y,
         labels=labels,
         sub_titles=sub_titles,
-        plot_type="violin",
         n_cols=4,
         label_fontsize=10,
         title="Token usage per Experiment",
@@ -1139,16 +1150,15 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         title="Token usage",
         )
 
-def plot_search_result(results:list[tuple[str,Population]], save_name=None):
-    res_df = _process_search_result(results, save_name=save_name)
-
+def plot_search_result(result_dir, save_name=None, extract_fn=None, fig_dir=None):
+    res_df = _load_results(result_dir, save_name=save_name, extract_fn=extract_fn)
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
 
     # _plot_search_token_usage(results, unique_strategies)
 
-    _plot_search_aoc(res_df, unique_strategies)
-    _plot_search_group_aoc(res_df, unique_strategies)
+    _plot_search_aoc(res_df, unique_strategies, fig_dir=fig_dir)
+    _plot_search_group_aoc(res_df, unique_strategies, fig_dir=fig_dir)
 
     # _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
 
@@ -1157,7 +1167,7 @@ def plot_search_result(results:list[tuple[str,Population]], save_name=None):
     # _plot_search_error_type(err_df, unique_strategies=unique_strategies)
     # _plot_search_error_rate_by_generation(err_df, unique_strategies)
 
-    _plot_search_problem_aoc_and_loss(res_df)
+    _plot_search_problem_aoc_and_loss(res_df, fig_dir=fig_dir)
 
 def plot_search_0112():
     # file_paths = [
@@ -1342,7 +1352,15 @@ def plot_light_evol_and_final():
                    fig_size=(15,9))
 
 
-def plot_search(dir_path, add_cr_rate=False, file_paths=None, save_name=None, extract_fn=None):
+def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
+    res_df = None
+    if save_name is not None: 
+        if os.path.exists(save_name):
+            res_df = pd.read_pickle(save_name)
+
+    if res_df is not None:
+        return res_df
+
     if file_paths is None:
         file_paths = []
         for dir_name in os.listdir(dir_path):
@@ -1366,14 +1384,10 @@ def plot_search(dir_path, add_cr_rate=False, file_paths=None, save_name=None, ex
         pop = RenameUnpickler.unpickle(open(file_path, "rb"))
         n_parent = pop.n_parent
         n_offspring = pop.n_offspring
-        cr_rate = pop.cross_over_rate
 
         name = f"{n_parent},{n_offspring}"
         if pop.use_elitism:
             name = f"{n_parent}+{n_offspring}"
-
-        if add_cr_rate:
-            name += f"_{cr_rate}"
 
         if extract_fn is not None:
             sub_fix = extract_fn(file_path)
@@ -1385,16 +1399,103 @@ def plot_search(dir_path, add_cr_rate=False, file_paths=None, save_name=None, ex
         cur_best = best_pop_map.get(name, None)
         if cur_best is None or pop.get_best_of_all().fitness > cur_best.get_best_of_all().fitness:
             best_pop_map[name] = pop
+    
+    res_df = _process_search_result(pop_list, save_name=save_name)
+
+    return res_df
+
+def extract_results_to_ioh_csv(dir_path, pop_save_path, extract_fn=None):
+    res_df = _load_results(dir_path, file_paths=None, extract_fn=extract_fn, save_name=pop_save_path)
+
+    aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_ind'])[["log_y_aoc"]].agg(np.mean).reset_index()
+
+    strategies = aoc_df['strategy'].unique()
+    repeats = aoc_df['n_strategy'].unique()
+
+    df_aoc_data = []
+
+    for strategy in strategies:
+        for repeat in repeats:
+            _strategy_df = aoc_df[(aoc_df['strategy'] == strategy) & (aoc_df['n_strategy'] == repeat)]
+            if len(_strategy_df) == 0:
+                continue
+            max_ind = _strategy_df['n_ind'].max()
+            _strategy_df = _strategy_df.sort_values(by='n_ind')
+            _strategy_df = _strategy_df.reset_index(drop=True)
+            _strategy_df = _strategy_df.drop(columns=['strategy', 'n_strategy'])
+            # n_ind should be range from 1 to 100. add the missing n_ind with 0
+            _strategy_df = _strategy_df.set_index('n_ind')
+            _strategy_df = _strategy_df.reindex(range(1, max_ind + 1), fill_value=0)
+            _strategy_df = _strategy_df.reset_index()
+            _strategy_df = _strategy_df.rename(columns={'index': 'n_ind'})
+            _strategy_df = _strategy_df.sort_values(by='n_ind')
+            _strategy_df = _strategy_df.reset_index(drop=True)
+
+            for i in range(len(_strategy_df)):
+                aoc = _strategy_df.at[i, 'log_y_aoc']
+
+                df_aoc_data.append({
+                    'Evaluation counter': i + 1,
+                    'Function values': aoc,
+                    'Function ID': 'F1-F24',
+                    'Algorithm ID': strategy,
+                    'Problem dimension': 5,
+                    'Run ID': repeat, 
+                })
+            
+    # Create a DataFrame from the list of dictionaries
+    df_aoc = pd.DataFrame(df_aoc_data)
+    df_aoc.to_csv(f"{dir_path}/es_ioh_aoc.csv", index=False)
 
 
-    plot_search_result(pop_list, save_name=save_name)
+    p_aoc_df = res_df.groupby(['strategy', 'n_strategy', 'problem_id', 'n_ind'])[["log_y_aoc"]].agg(np.mean).reset_index()
+
+    strategies = p_aoc_df['strategy'].unique()
+    repeats = p_aoc_df['n_strategy'].unique()
+    problems = p_aoc_df['problem_id'].unique()
+
+    df_aoc_data = []
+
+    for strategy in strategies:
+        for repeat in repeats:
+            for problem in problems:
+                _strategy_df = p_aoc_df[(p_aoc_df['strategy'] == strategy) & (p_aoc_df['n_strategy'] == repeat) & (p_aoc_df['problem_id'] == problem)]
+                if len(_strategy_df) == 0:
+                    continue
+                max_ind = _strategy_df['n_ind'].max()
+                _strategy_df = _strategy_df.sort_values(by='n_ind')
+                _strategy_df = _strategy_df.reset_index(drop=True)
+                _strategy_df = _strategy_df.drop(columns=['strategy', 'n_strategy'])
+                # n_ind should be range from 1 to 100. add the missing n_ind with 0
+                _strategy_df = _strategy_df.set_index('n_ind')
+                _strategy_df = _strategy_df.reindex(range(1, max_ind + 1), fill_value=0)
+                _strategy_df = _strategy_df.reset_index()
+                _strategy_df = _strategy_df.rename(columns={'index': 'n_ind'})
+                _strategy_df = _strategy_df.sort_values(by='n_ind')
+                _strategy_df = _strategy_df.reset_index(drop=True)
+
+                for i in range(len(_strategy_df)):
+                    aoc = _strategy_df.at[i, 'log_y_aoc']
+
+                    df_aoc_data.append({
+                        'Evaluation counter': i + 1,
+                        'Function values': aoc,
+                        'Function ID': problem,
+                        'Algorithm ID': strategy,
+                        'Problem dimension': 5,
+                        'Run ID': repeat, 
+                    })
+    # Create a DataFrame from the list of dictionaries
+    df_aoc = pd.DataFrame(df_aoc_data)
+    df_aoc.to_csv(f"{dir_path}/es_ioh_p_aoc.csv", index=False)
+    
 
 def update_aoc_for_res():
     file_path = 'Experiments/ESPopulation_evol_4-16_final_0222112835.pkl'
     with open(file_path, 'rb') as f:
         res = RenameUnpickler.unpickle(f)
 
-    for key, ind in res.individuals.items():
+    for _, ind in res.individuals.items():
         hanlder = Population.get_handler_from_individual(ind)
         eval_res = hanlder.eval_result
         if eval_res is not None:
@@ -1417,7 +1518,6 @@ if __name__ == "__main__":
 
     file_paths = None
     save_name = None
-    add_cr_rate = False
     extract_fn = None
 
     # dir_path = 'Experiments/log_eater/pop_40_f_0220'
@@ -1430,7 +1530,6 @@ if __name__ == "__main__":
 
     # dir_path = 'Experiments/pop_40_cr'
     # save_name = 'Experiments/pop_40_cr/df_res_02250316.pkl'
-    # add_cr_rate = True
 
     def _extract_fn(file_path):
         if 'temperature' in file_path:
@@ -1471,13 +1570,17 @@ if __name__ == "__main__":
     # dir_path = 'Experiments/pop_40_top_k'
     # save_name = 'Experiments/pop_40_top_k/df_res_02250447.pkl'
 
-    dir_path = 'Experiments/log_eater/pop_40_top_p'
+    # dir_path = 'Experiments/log_eater/pop_40_top_p'
     # save_name = 'Experiments/pop_40_top_p/df_res_02250407.pkl'
 
     extract_fn = _extract_fn
 
-    # save_name = 'Experiments/pop_100_tkcr/df_res_03241329.pkl'
+    save_name = 'Experiments/log_eater/pop_100_tkcr/df_res_03241329.pkl'
     # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
 
-    plot_search(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name, extract_fn=extract_fn)
+
+    # extract_results_to_ioh_csv(dir_path, save_name, extract_fn=extract_fn)
+
+    plot_search_result(dir_path, save_name=save_name, extract_fn=extract_fn)
+
 
