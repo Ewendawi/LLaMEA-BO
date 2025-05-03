@@ -790,9 +790,9 @@ def convert_results_to_ioh_format():
     df_data = {}
 
     dir_paths = [
-        # 'Benchmarks/LLAMBO/exp_bayesmark/results_discriminative',
-        # 'Benchmarks/bayesmark_results_0422'
-        'Benchmarks/bayesmark_results'
+        'Benchmarks/LLAMBO/exp_bayesmark/results_discriminative',
+        'Benchmarks/bayesmark_results_0422',
+        'Benchmarks/bayesmark_results_bl',
     ]
 
     for dir_path in dir_paths:

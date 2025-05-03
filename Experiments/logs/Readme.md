@@ -43,8 +43,11 @@ For proper processing these files on iohanalyzer:
 ### atrbo_logs
 This directory contains the results of the additional experiments conducted with the ATRBO algorithm.
 
-### figs
-This directory contains the figures generated from the experiments. 
+### bayesmark_results_figs
+This directory contains figures generated from the Bayesmark results.
+
+### bbob_figs
+This directory contains figures generated from the BBOB benchmark results.
 
 ## Baselines
 

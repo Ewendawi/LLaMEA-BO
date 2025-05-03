@@ -3,7 +3,7 @@
 
 # -n the name of the algorithm
 # -p the path to the algorithm
-# -b run the baseline
+# -b indicate if the algorithm is a baseline
 # -m enable bare MPI Evaluation
 # -e extract the results
 

@@ -14,6 +14,10 @@
 
 ## Reproducing Results
 
+### Result files and Raw Data
+- The results of the experiments are stored in the `Experiments/logs/` directory.
+- The raw data files are stored in the `[TODO]`.
+
 ### Run ES Search 
 1. Replace `GEMINI_API_KEY` in `run_es_search.sh` with your Gemini API key.
 2. Change `N_POPULATION` in `run_es_search.sh` as needed.
@@ -31,7 +35,7 @@
 2. The results will be saved in `exp_eval/` directory.
 
 ### Run Bayesmark Evaluations
-Follow the instructions in the Readme in `Benchmark` directory.
+Follow the instructions in the `Benchmarks/Readme.md`.
 
 ## Development
 
