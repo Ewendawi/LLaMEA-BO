@@ -2,7 +2,7 @@
 
 ## Usage
 
-### Run LLAMBO Benchmark
+### Setup
 
 1. clone the repository under `Benchmarks` directory
 
@@ -11,14 +11,20 @@ cd Benchmarks
 git clone https://github.com/tennisonliu/LLAMBO.git
 ```
 
+### Run Bayesmark benchmark
+
+1. Uncomment the lines of `bo_cls_list` in `Benchmarks/run_bayesmark.py` to select the desired benchmark classes. 
+
 2. run bayesmark benchmark
 
 ```bash
 ./Benchmarks/run_bayesmark.py
 ```
-The logs and results will be saved in `Benchmarks/logs` and `Benchmarks/results` respectively.
+The logs and results will be saved in `Benchmarks/bayesmark_logs` and `Benchmarks/bayesmark_results` respectively.
 
-3. run hpo benchmark 
+### Run HPO benchmark
+
+1. Set up the environment
 
 Before running the hpo benchmark, you need to install the required packages and create a symbolic link to the `hpo_bench` and `hp_configurations` directories in the current directory.
 ```bash
@@ -33,13 +39,13 @@ mkdir ./hpo_bench/hpo_benchmarks
 pip install openml
 ```
 
-Run the hpo benchmark with the following command:
+2. Run the hpo benchmark with the following command:
 ```bash
 ./Benchmarks/run_hpo.py
 ```
 The logs and results will be saved in `Benchmarks/hpo_logs` and `Benchmarks/hpo_results` respectively.
 
-Clean up the symbolic links and the hpo_benchmarks directory after running the benchmark:
+3. Clean up the symbolic links and the hpo_benchmarks directory after running the benchmark:
 ```bash
 rm ./hpo_bench
 rm ./hp_configurations
