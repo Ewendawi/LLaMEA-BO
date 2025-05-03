@@ -487,12 +487,10 @@ def plot_bayesmark_results():
     dir_paths = [
         'Benchmarks/LLAMBO/exp_bayesmark/results_discriminative',
         'Benchmarks/bayesmark_results_0422',
-        'Benchmarks/bayesmark_results',
+        'Benchmarks/bayesmark_results_bl',
     ]
 
-    data_map = {
-
-    }
+    data_map = {}
 
     for dir_path in dir_paths:
         for _dataset in os.listdir(dir_path):
@@ -634,6 +632,7 @@ def plot_bayesmark_results():
             line_styles=line_styles,
             label_fontsize=10,
             combined_legend=True,
+            combined_legend_bottom=0.1,
             linewidth=1.2,
             # filling=plot_filling,
             n_cols=4,
@@ -889,7 +888,7 @@ if __name__ == '__main__':
         # BLHEBO,
         # BLTuRBO1,
         ]
-    is_profile = True
+    is_profile = False
     bo_wrappers = [bayesmarkBO_wrapper(bo_cls, is_profile=is_profile) for bo_cls in bo_cls_list]
 
     use_log = False
