@@ -14,7 +14,7 @@ from Benchmarks.LLAMBO.bayesmark.bbox_utils import get_bayesmark_func
 from sklearn.metrics import get_scorer
 from sklearn.model_selection import cross_val_score
 
-from llambo.utils import setup_logger
+from llamevol.utils import setup_logger
 
 def update_init(self, init_X):
     self.init_X = init_X
@@ -620,7 +620,7 @@ def plot_bayesmark_results():
         if fig_dir is not None:
             file_name = os.path.join(fig_dir, file_name)
 
-        from llambo.utils import plot_lines
+        from llamevol.utils import plot_lines
 
         plot_y = np.array(plot_y)
         plot_x = np.array(plot_x)
@@ -733,7 +733,7 @@ def plot_bayesmark_profile_results():
             if fig_dir is not None:
                 file_name = os.path.join(fig_dir, file_name)
 
-            from llambo.utils import plot_lines
+            from llamevol.utils import plot_lines
 
             _plot_y = np.array([plot_y])
             _plot_x = np.array(plot_x)

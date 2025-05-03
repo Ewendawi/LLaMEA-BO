@@ -9,13 +9,13 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from llambo.utils import IndividualLogger
-from llambo.prompt_generators.abstract_prompt_generator import ResponseHandler
-from llambo.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing, plot_voilin_style_scatter
-from llambo.population.population import Population, desc_similarity, code_diff_similarity, code_bert_similarity
-from llambo.population.es_population import ESPopulation
-from llambo.evaluator.evaluator_result import EvaluatorResult
-from llambo.utils import setup_logger, RenameUnpickler
+from llamevol.utils import IndividualLogger
+from llamevol.prompt_generators.abstract_prompt_generator import ResponseHandler
+from llamevol.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing, plot_voilin_style_scatter
+from llamevol.population.population import Population, desc_similarity, code_diff_similarity, code_bert_similarity
+from llamevol.population.es_population import ESPopulation
+from llamevol.evaluator.evaluator_result import EvaluatorResult
+from llamevol.utils import setup_logger, RenameUnpickler
 
 
 # utils
@@ -159,6 +159,8 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
                 _strategy_count[strategy_name] = 0
             _strategy_count[strategy_name] += 1
             n_generation = pop.get_current_generation()
+            if n_generation == 0:
+                n_generation = 1
             n_iter = 1
             n_ind = 0
             for gen in range(n_generation):
@@ -212,6 +214,7 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str]):
         label_fontsize=10,
         figsize=(8, 6),
         filename='es_aoc_voilin',
+        show=False
         )
 
 def _group_plus_aoc(strategy_group:dict, strategy:str, y_aoc:np.ndarray, log_y_aoc:np.ndarray, std_y_aoc:np.ndarray, std_log_y_aoc:np.ndarray):
@@ -339,6 +342,7 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         label_fontsize=9,
         figsize=(8, 6),
         filename='es_aoc_lines',
+        show=False,
         )
 
 
@@ -476,7 +480,6 @@ def _plot_serach_pop_similarity(results:list[tuple[str,Population]], unique_stra
         data=y_pop_sim_list,
         labels=y_pop_sim_labels,
         sub_titles=pop_sub_titles,
-        plot_type="violin",
         n_cols=4,
         title="Population similarity",
         label_fontsize=10,
@@ -962,6 +965,7 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None):
             n_cols=n_cols,
             figsize=(15, 9),
             filename='es_problem_aoc_loss',
+            show=False,
             )
 
 def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strategies:list[str]):
@@ -1143,8 +1147,8 @@ def plot_search_result(results:list[tuple[str,Population]], save_name=None):
 
     # _plot_search_token_usage(results, unique_strategies)
 
-    # _plot_search_aoc(res_df, unique_strategies)
-    # _plot_search_group_aoc(res_df, unique_strategies)
+    _plot_search_aoc(res_df, unique_strategies)
+    _plot_search_group_aoc(res_df, unique_strategies)
 
     # _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
 
@@ -1416,10 +1420,10 @@ if __name__ == "__main__":
     add_cr_rate = False
     extract_fn = None
 
-    dir_path = 'Experiments/pop_40_f_0220'
+    # dir_path = 'Experiments/log_eater/pop_40_f_0220'
     # save_name = 'Experiments/pop_40_f_0220/df_res_02230646.pkl'
 
-    dir_path = 'Experiments/pop_100_tkcr'
+    dir_path = 'Experiments/log_eater/pop_100_tkcr'
     
     # dir_path = 'Experiments/pop_100_f'
     # save_name = 'Experiments/pop_100_f/df_res_02250235.pkl'
@@ -1467,12 +1471,12 @@ if __name__ == "__main__":
     # dir_path = 'Experiments/pop_40_top_k'
     # save_name = 'Experiments/pop_40_top_k/df_res_02250447.pkl'
 
-    # dir_path = 'Experiments/pop_40_top_p'
+    dir_path = 'Experiments/log_eater/pop_40_top_p'
     # save_name = 'Experiments/pop_40_top_p/df_res_02250407.pkl'
 
     extract_fn = _extract_fn
 
-    save_name = 'Experiments/pop_100_tkcr/df_res_03241329.pkl'
+    # save_name = 'Experiments/pop_100_tkcr/df_res_03241329.pkl'
     # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
 
     plot_search(dir_path, add_cr_rate=add_cr_rate, file_paths=file_paths, save_name=save_name, extract_fn=extract_fn)

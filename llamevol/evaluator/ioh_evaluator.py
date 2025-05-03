@@ -8,7 +8,7 @@ from tqdm import tqdm
 import numpy as np
 from ioh import get_problem 
 
-from llambo.utils import BOOverBudgetException
+from llamevol.utils import BOOverBudgetException
 
 from .evaluator import AbstractEvaluator
 from .evaluator_result import EvaluatorResult, EvaluatorBasicResult
@@ -394,7 +394,7 @@ class IOHEvaluator(AbstractEvaluator):
 
         if use_mpi:
             from mpi4py import MPI
-            from llambo.evaluator.MPITaskManager import MPITaskManager, MPIFuture
+            from llamevol.evaluator.MPITaskManager import MPITaskManager, MPIFuture
 
             comm = MPI.COMM_WORLD
             size = comm.Get_size()

@@ -9,9 +9,9 @@ import pathlib
 
 import numpy as np
 
-from llambo.utils import setup_logger
-from llambo.evaluator.bo_injector import FunctionProfiler, BOInjector
-from llambo.evaluator.ioh_evaluator import IOHEvaluator
+from llamevol.utils import setup_logger
+from llamevol.evaluator.bo_injector import FunctionProfiler, BOInjector
+from llamevol.evaluator.ioh_evaluator import IOHEvaluator
 
 from Experiments.plot_algo_res import plot_algo_result, plot_contour
 
@@ -383,7 +383,7 @@ if __name__ == "__main__":
     
 
     if use_mpi:
-        from llambo.evaluator.MPITaskManager import start_mpi_task_manager 
+        from llamevol.evaluator.MPITaskManager import start_mpi_task_manager 
 
         with start_mpi_task_manager(result_recv_buffer_size=1024*1024*50) as task_manager:
             if task_manager.is_master:

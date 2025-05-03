@@ -6,13 +6,13 @@ import pickle
 import json
 import torch
 import numpy as np
-from llambo import LLaMBO
-from llambo.llm import LLMmanager, LLMS
-from llambo.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator, GenerationTask
-from llambo.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
-from llambo.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
-from llambo.utils import setup_logger, RenameUnpickler
-from llambo.individual import Individual
+from llamevol import LLaMEvol
+from llamevol.llm import LLMmanager, LLMS
+from llamevol.prompt_generators import PromptGenerator, BaselinePromptGenerator, TunerPromptGenerator, LightBaselinePromptGenerator, GenerationTask
+from llamevol.population import Population, ESPopulation, IslandESPopulation, max_divese_desc_get_parent_fn, diversity_awarness_selection_fn
+from llamevol.evaluator.ioh_evaluator import IOHEvaluator, AbstractEvaluator
+from llamevol.utils import setup_logger, RenameUnpickler
+from llamevol.individual import Individual
 
 # Utils
 def get_IOHEvaluator_for_final_eval():
@@ -87,7 +87,7 @@ def _run_exp(prompt_generator:PromptGenerator,
             max_interval:int=5,
             n_query_threads:int=0,
             options:dict=None):
-    llambo = LLaMBO()
+    llamevol = LLaMEvol()
     evol_options = {}
 
     if options is not None:
@@ -249,7 +249,7 @@ n_query_threads:{n_query_threads}, max_interval:{max_interval}
 """
     logging.info(log_str)
 
-    llambo.run_evolutions(llm, evaluator, prompt_generator, population,
+    llamevol.run_evolutions(llm, evaluator, prompt_generator, population,
                         n_generation=n_generations, n_population=n_population,
                         n_retry=5,
                         n_query_threads=n_query_threads,
@@ -472,7 +472,7 @@ if __name__ == "__main__":
     setup_logger(level=logging.INFO)
     
     if use_mpi:
-        from llambo.evaluator.MPITaskManager import start_mpi_task_manager 
+        from llamevol.evaluator.MPITaskManager import start_mpi_task_manager 
 
         with start_mpi_task_manager(result_recv_buffer_size=1024*100) as task_manager:
             if task_manager.is_master:

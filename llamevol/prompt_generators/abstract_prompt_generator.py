@@ -2,8 +2,8 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any
-from llambo.evaluator import EvaluatorResult
-from llambo.population import Population #FIXME: prompt generators should not be coupled with the individual and population classes
+from llamevol.evaluator import EvaluatorResult
+from llamevol.population import Population #FIXME: prompt generators should not be coupled with the individual and population classes
 
 class GenerationTask(Enum):
     """Enum class for generation tasks."""

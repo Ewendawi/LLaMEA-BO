@@ -2,14 +2,14 @@ import random
 import logging
 import time
 import tqdm
-from llambo import LLaMBO, LLMmanager
-from llambo.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BaselinePromptGenerator
-from llambo.utils import setup_logger, IndividualLogger 
-from llambo.evaluator.ioh_evaluator import IOHEvaluator 
-from llambo.llm import LLMS
+from llamevol import LLaMEvol, LLMmanager
+from llamevol.prompt_generators import PromptGenerator, BoZeroPromptGenerator, BoZeroPlusPromptGenerator, BaselinePromptGenerator
+from llamevol.utils import setup_logger, IndividualLogger 
+from llamevol.evaluator.ioh_evaluator import IOHEvaluator 
+from llamevol.llm import LLMS
 
 def run_bo_exp_code_generation(model:tuple, aggressiveness:float, use_botorch:bool, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
-    llambo = LLaMBO()
+    llamevol = LLaMEvol()
 
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
 
@@ -26,7 +26,7 @@ def run_bo_exp_code_generation(model:tuple, aggressiveness:float, use_botorch:bo
 
         other_results = evaluator.evaluate_others()
 
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results)
+        llamevol.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, sup_results=other_results)
         log_aggressiveness_and_botorch(population, aggressiveness, use_botorch)
         progress_bar.update(1)
 
@@ -35,7 +35,7 @@ def run_bo_exp_code_generation(model:tuple, aggressiveness:float, use_botorch:bo
     log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 def run_bo_exp_fix_errors(model:tuple, log_path:str, prompt_generator:PromptGenerator,n_iterations:int=1, n_generations:int=1):
-    llambo = LLaMBO()
+    llamevol = LLaMEvol()
 
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
 
@@ -83,7 +83,7 @@ def run_bo_exp_fix_errors(model:tuple, log_path:str, prompt_generator:PromptGene
         population.add_individual(candidate)
         population.name = f"bo_exp_p2_{candidate.metadata['error_type']}_{model[0]}_{problem_str}"
 
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3)
+        llamevol.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3)
         log_aggressiveness_and_botorch(population, aggressiveness, use_botorch)
         progress_bar.update(1)
 
@@ -92,7 +92,7 @@ def run_bo_exp_fix_errors(model:tuple, log_path:str, prompt_generator:PromptGene
     log_population(population, save=True, dirname=log_dir_name, filename=log_file_name)
 
 def run_bo_exp_optimize_performance(model:tuple, log_path:str, prompt_generator:PromptGenerator, n_iterations:int=1, n_generations:int=1):
-    llambo = LLaMBO()
+    llamevol = LLaMEvol()
 
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
 
@@ -147,7 +147,7 @@ def run_bo_exp_optimize_performance(model:tuple, log_path:str, prompt_generator:
         population.add_individual(candidate)
         population.name = f"bo_exp_p3_{problem_str}_{model[0]}_dim{problem_dim}"
 
-        llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3)
+        llamevol.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3)
         log_aggressiveness_and_botorch(population, aggressiveness, use_botorch)
         progress_bar.update(1)
 
@@ -162,7 +162,7 @@ def test_multiple_processes():
             response = f.read()
         return response
     
-    llambo = LLaMBO()
+    llamevol = LLaMEvol()
     model = LLMS["deepseek/deepseek-chat"]
     llm = LLMmanager(api_key=model[1], model=model[0], base_url=model[2], max_interval=model[3])
     llm.mock_res_provider = mock_res_provider
@@ -186,7 +186,7 @@ def test_multiple_processes():
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
     logging.info("Starting with %s processes", n_eval_workers)
     start = time.perf_counter()
-    llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
+    llamevol.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
                           n_query_threads=n_query_threads, 
                           n_eval_workers=n_eval_workers
                           )
@@ -197,7 +197,7 @@ def test_multiple_processes():
     population = ESPopulation(n_parent=n_parent, n_parent_per_offspring=n_parent_per_offspring, n_offspring=n_offspring)
     logging.info("Starting with %s processes", n_eval_workers)
     start = time.perf_counter()
-    llambo.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
+    llamevol.run_evolutions(llm, evaluator, prompt_generator, population, n_generation=n_generations, n_retry=3, time_out_per_eval=time_out,
                           n_query_threads=n_query_threads,
                           n_eval_workers=n_eval_workers
                           )

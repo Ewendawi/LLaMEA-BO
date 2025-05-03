@@ -9,7 +9,7 @@ import numpy as np
 from Benchmarks.LLAMBO.hpo_bench.tabular_benchmarks import HPOBench
 from Benchmarks.run_bayesmark import bayesmarkBO_wrapper
 
-from llambo.utils import setup_logger
+from llamevol.utils import setup_logger
 
 import warnings
 # ignore future warnings

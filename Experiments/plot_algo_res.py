@@ -9,16 +9,16 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from ioh import get_problem
 
-from llambo.utils import setup_logger, RenameUnpickler
-from llambo.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
+from llamevol.utils import setup_logger, RenameUnpickler
+from llamevol.utils import plot_group_bars, plot_lines, plot_box_violin, moving_average, savgol_smoothing, gaussian_smoothing
 
-from llambo.prompt_generators.abstract_prompt_generator import ResponseHandler
+from llamevol.prompt_generators.abstract_prompt_generator import ResponseHandler
 
-from llambo.evaluator.bo_injector import FunctionProfiler
-from llambo.evaluator.ioh_evaluator import IOHEvaluator 
-from llambo.evaluator.evaluator_result import EvaluatorResult
+from llamevol.evaluator.bo_injector import FunctionProfiler
+from llamevol.evaluator.ioh_evaluator import IOHEvaluator 
+from llamevol.evaluator.evaluator_result import EvaluatorResult
 
-from llambo.population.es_population import ESPopulation
+from llamevol.population.es_population import ESPopulation
 
 
 def dynamical_access(obj, attr_path):

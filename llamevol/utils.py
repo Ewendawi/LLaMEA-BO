@@ -336,7 +336,9 @@ class RenameUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         renamed_module = module
         if "llamea" in module:
-            renamed_module = module.replace("llamea", "llambo")
+            renamed_module = module.replace("llamea", "llamevol")
+        elif "llambo" in module:
+            renamed_module = module.replace("llambo", "llamevol")
 
         return super().find_class(renamed_module, name)
 

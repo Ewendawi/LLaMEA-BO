@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "llambo"
+name = "llamevol"
 version = "0.0.1"
 description = ""
 authors = []

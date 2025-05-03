@@ -16,7 +16,7 @@ from .prompt_generators import PromptGenerator, GenerationTask, ResponseHandler
 from .utils import IndividualLogger, NoCodeException 
 from .evaluator import EvaluatorResult, AbstractEvaluator
 
-class LLaMBOTokenLogItem:
+class LLaMEvolTokenLogItem:
     def __init__(self, generation:int=0):
         self.generation = generation
         self.prompt_token_count = 0
@@ -27,9 +27,9 @@ class LLaMBOTokenLogItem:
         return f"Generation: {self.generation}, Prompt Tokens: {self.prompt_token_count}, Response Tokens: {self.response_token_count}, Query Time: {self.query_time}"
 
 
-class LLaMBO:
+class LLaMEvol:
     """
-    A class that represents the Language Model powered Bayesian Optimization(LLaMBO).
+    A class that represents the Language Model powered Bayesian Optimization(LLaMEvol).
     """
     def update_current_task(self, query_item:PopulationQueryItem = None, generation:int = 0) -> GenerationTask:
         if query_item.is_initialized or query_item.parent is None or generation == 0:
@@ -125,7 +125,7 @@ class LLaMBO:
         tags.append(f"gen:{current_generation}")
         ind.add_metadata("tags", tags)
 
-    def _update_token_log(self, token_log:list[LLaMBOTokenLogItem], handler:ResponseHandler):
+    def _update_token_log(self, token_log:list[LLaMEvolTokenLogItem], handler:ResponseHandler):
         if len(token_log) == 0:
             return
         token_log[-1].query_time += handler.query_time
@@ -150,7 +150,7 @@ class LLaMBO:
         logging.info("%s", evaluator)
         logging.info("%s", population)
 
-        _token_log:list[LLaMBOTokenLogItem] = []
+        _token_log:list[LLaMEvolTokenLogItem] = []
 
         last_query_time = 0
         current_generation = population.get_current_generation()
@@ -158,7 +158,7 @@ class LLaMBO:
         while current_population < n_population and current_generation < n_generation:
             logging.info("""======Start Generation %s/%s with %s/%s Population=======""", current_generation, n_generation, current_population, n_population)
 
-            _token_log.append(LLaMBOTokenLogItem(current_generation))
+            _token_log.append(LLaMEvolTokenLogItem(current_generation))
             
             _max_n_offspring = n_population - current_population
             _query_items = population.get_offspring_queryitems(max_n_offspring=_max_n_offspring)

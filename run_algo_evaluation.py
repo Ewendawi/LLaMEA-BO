@@ -1,10 +1,12 @@
 import logging
 import os
+import sys
+import getopt
 import pickle
 from datetime import datetime
 import numpy as np
-from llambo.utils import setup_logger
-from llambo.evaluator.ioh_evaluator import IOHEvaluator
+from llamevol.utils import setup_logger
+from llamevol.evaluator.ioh_evaluator import IOHEvaluator
 from Experiments.plot_algo_res import extract_algo_result, plot_algo
 
 
@@ -70,52 +72,80 @@ def run_algo_eval_from_file_map(evaluator, file_map, options, is_baseline=False)
 
     return res_list
 
-def run_evaluation():
+def run_evaluation(algo_name, algo_path, save_dir, is_baseline=False):
     evaluator = get_evaluator()
 
-    save_dir = 'exp_eval'
 
     options = {
         'save_dir': save_dir,
-
-        # 'use_multi_process': True, # evaluate in multiple processes
-        # 'max_eval_workers': 10, # number of processes
-
-        # 'use_mpi': True, # use bare MPI for parallel evaluation
-        # 'use_mpi_future': True, # use MPI for parallel evaluation with future
     }
+
+    # Customize evaluation. The default is the sequential evaluation.
+    # thread pool evaluation
+    # evaluator.max_eval_workers = 10
+
+    # process pool evaluation
+    # evaluator.use_multi_process = True
+    # evaluator.max_eval_workers = 10
+    
+    # bare MPI evaluation
+    # evaluator.use_mpi = True
+
+    # MPI future evaluation
+    # evaluator.use_mpi_future = True
 
     # the key is the name of the algorithm, the value is the path of the code file
-    bl_file_map = {
-        'BLTuRBO1': 'Experiments/baselines/bo_baseline.py',
-        # 'BLMaternVanillaBO': 'Experiments/baselines/bo_baseline.py',
-        # 'BLCMAES': 'Experiments/baselines/bo_baseline.py',
-        # 'BLHEBO': 'Experiments/baselines/bo_baseline.py',
-    }
-    # run the baseline algorithms
-    run_algo_eval_from_file_map(evaluator, bl_file_map, options, is_baseline=True)
-
     file_map = {
-        # 'AdaptiveTrustRegionOptimisticHybridBO': 'Experiments/logs/algorithms_0319/AdaptiveTrustRegionOptimisticHybridBO.py',
-
-        # 'AdaptiveEvolutionaryParetoTrustRegionBO': 'Experiments/logs/algorithms_0319/AdaptiveEvolutionaryParetoTrustRegionBO.py',
-
-        # 'AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE': 'Experiments/logs/algorithms_0319/AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE.py',
-
-        'ATRBO': 'Experiments/logs/algorithms_0319/ATRBO.py',
-
-        # 'ABETSALSDE_ARM_MBO': 'Experiments/logs/algorithms_0319/ABETSALSDE_ARM_MBO.py',
+        algo_name: algo_path,
     }
-    run_algo_eval_from_file_map(evaluator, file_map, options, is_baseline=False)
 
-    # extract results to the ioh format
-    extract_algo_result(dir_path=save_dir)
+    run_algo_eval_from_file_map(evaluator, file_map, options, is_baseline=is_baseline)
+
+
+def extract_plot_result(dir_path):
+    # extract the results from the log files
+    extract_algo_result(dir_path=dir_path)
 
     # plot the results
-    plot_algo(dir_path=save_dir, fig_dir=save_dir)
+    plot_algo(dir_path=dir_path, fig_dir=dir_path)
 
 
 if __name__ == "__main__":
     setup_logger(level=logging.INFO)
 
-    run_evaluation()
+    use_mpi = False
+    algo_name = None
+    algo_path = None
+    is_baseline = False
+    is_plot = False
+    save_dir = 'exp_eval'
+
+    opts, args = getopt.getopt(sys.argv[1:], "n:p:bem", )
+    for opt, arg in opts:
+        if opt == "-n":
+            algo_name = arg
+        elif opt == "-p":
+            algo_path = arg
+        elif opt == "-b":
+            is_baseline = True
+        elif opt == "-e":
+            is_plot = True
+        elif opt == "-m":
+            use_mpi = True
+
+    if is_plot:
+        extract_plot_result(save_dir)
+    else:
+        if algo_name is None or algo_path is None:
+            print("Please provide the algorithm name and path with -n and -p options.")
+            sys.exit(1)
+
+        if use_mpi:
+            from llamevol.evaluator.MPITaskManager import start_mpi_task_manager 
+
+            with start_mpi_task_manager(result_recv_buffer_size=1024*1024*50) as task_manager:
+                if task_manager.is_master:
+                    run_evaluation(algo_name, algo_path, save_dir, is_baseline=is_baseline)
+        else:
+            run_evaluation(algo_name, algo_path, save_dir, is_baseline=is_baseline)
+
