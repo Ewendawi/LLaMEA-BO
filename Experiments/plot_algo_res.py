@@ -927,9 +927,13 @@ def extract_algo_result(dir_path:str, file_path_map:dict=None):
     _new_loss_df = pd.DataFrame(df_loss_data)
     _new_loss_df.to_csv(f"{dir_path}/ioh_loss.csv", index=False)
 
-    _new_aoc_df = res_df[['algorithm_name', 'problem_id', 'instance_id', 'exec_id', 'y_aoc']]
-    _new_aoc_df['short_algo_name'] = _new_aoc_df['algorithm_name'].apply(_shorthand_algo_name)
-    _new_aoc_df.to_csv(f"{dir_path}/aoc.csv", index=False)
+    # _new_aoc_df = res_df[['algorithm_name', 'problem_id', 'instance_id', 'exec_id', 'y_aoc']]
+    # _new_aoc_df['short_algo_name'] = _new_aoc_df['algorithm_name'].apply(_shorthand_algo_name)
+    # _new_aoc_df.to_csv(f"{dir_path}/aoc.csv", index=False)
+
+    _new_mean_aoc_df = res_df.groupby(['algorithm_name', 'problem_id'])[['y_aoc']].agg(np.mean).reset_index()
+    _new_mean_aoc_df['short_algo_name'] = _new_mean_aoc_df['algorithm_name'].apply(_shorthand_algo_name)
+    _new_mean_aoc_df.to_csv(f"{dir_path}/mean_aoc.csv", index=False)
 
 def plot_algo_0220():
     file_paths = [

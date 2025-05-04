@@ -641,7 +641,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 label_fontsize:int = 7,
                 combined_legend:bool = False,
                 combined_legend_ncols:int = 10,
-                combined_legend_bottom:float = 0.05,
+                combined_legend_bottom:float = 0.07,
 
                 filling:list[np.ndarray]=None, 
                 linewidth:float = 1.0,
