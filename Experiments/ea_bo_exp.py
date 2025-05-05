@@ -378,6 +378,7 @@ def tune_vanilla_bo(params):
 
 def get_llm():
     MODEL = 'gemini-2.0-flash-exp'
+    MODEL = 'o_qwen3-235b-a22b'
 
     llm = LLMmanager(model_key=MODEL)
 

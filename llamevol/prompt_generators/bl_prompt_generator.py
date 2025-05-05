@@ -126,6 +126,8 @@ class BaselinePromptGenerator(PromptGenerator):
                 population_summary = "The current population of algorithms already evaluated(name, score, runtime and description):\n"
                 for ind in current_population:
                     handler = Population.get_handler_from_individual(ind)
+                    if handler.eval_result is None:
+                        continue
                     name = handler.code_name
                     score = handler.eval_result.score
                     runtime = handler.eval_result.total_execution_time

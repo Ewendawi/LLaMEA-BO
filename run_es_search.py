@@ -87,7 +87,7 @@ def run_exp(n_parent, n_offspring, is_elitist, api_key, n_population=4):
     llamevol = LLaMEvol()
     llm_params = {
         'temperature': 0.5,
-        'top_k': 60, # top_k sampling, which might not be supported by all LLMs
+        'top_k': 60, #!!!! top_k sampling, which might not be supported by all LLMs
     }
 
     llamevol.run_evolutions(llm, evaluator, prompt_generator, population,

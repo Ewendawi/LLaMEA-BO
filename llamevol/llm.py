@@ -34,6 +34,7 @@ LLMS = {
     'onehub-gemma2-9b-it': ('gemma2-9b-it', ONEHUB_API_KEY, ONEHUB_BASE_URL, 5, None),
 
     'o_deepseek-chat-v3': ('deepseek/deepseek-chat-v3-0324:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+    'o_qwen3-235b-a22b': ('qwen/qwen3-235b-a22b:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
 }
 
 class LLMClientResponse:
