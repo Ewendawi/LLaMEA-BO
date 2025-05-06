@@ -817,3 +817,8 @@ class EvaluatorResult:
             return f"{self.name}\n{self.error}\n"
         else:
             return f"{self.name}, score:{self.score:.4f}"
+
+    def update_aoc_with_new_bound_if_needed(self, upper_bound=None):
+        for res in self.result:
+            res.update_aoc_with_new_bound_if_needed(upper_bound=upper_bound)
+        self.score = np.mean([res.log_y_aoc for res in self.result if res.log_y_aoc is not None])

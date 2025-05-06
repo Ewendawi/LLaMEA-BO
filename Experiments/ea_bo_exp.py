@@ -211,19 +211,20 @@ def _run_exp(prompt_generator:PromptGenerator,
                         handler = RenameUnpickler.unpickle(f)
                 ind = Individual()
                 Population.set_handler_to_individual(ind, handler)
+                handler.eval_result.update_aoc_with_new_bound_if_needed()
                 ind.fitness = handler.eval_result.score
                 ind.name = handler.code_name
                 ind.solution = handler.code
                 ind.description = handler.desc
                 ind.feedback = handler.feedback
                 ind.error = handler.error
-                ind.parent_id = handler.parent_ids
+                # ind.parent_id = handler.parent_ids
                 population.add_individual(ind)
                 warmstart_inds.append(ind)
             if len(warmstart_inds) > 0:
                 logging.info("Warmstart %d individuals", len(warmstart_inds))
                 if population.get_current_generation() == 0:
-                    if len(warmstart_inds) > population.n_parent:
+                    if len(warmstart_inds) >= population.n_parent:
                         population.select_next_generation()
                 else:
                     if len(warmstart_inds) > population.n_offspring:
@@ -378,7 +379,9 @@ def tune_vanilla_bo(params):
 
 def get_llm():
     MODEL = 'gemini-2.0-flash-exp'
-    MODEL = 'o_qwen3-235b-a22b'
+    # MODEL = 'o_qwen3-235b-a22b'
+    # MODEL = 'llama-4-maverick'
+    # MODEL = 'o_llama-4-maverick'
 
     llm = LLMmanager(model_key=MODEL)
 

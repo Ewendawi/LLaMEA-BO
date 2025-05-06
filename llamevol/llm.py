@@ -27,14 +27,16 @@ ONEHUB_BASE_URL = os.getenv("ONEHUB_BASE_URL")
 LLMS = {
     'llama3-70b-8192': ('llama3-70b-8192', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 2, 'groq'),
     "llama-3.3-70b-versatile": ('llama-3.3-70b-versatile', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 15, 'groq'),
+    'llama-4-maverick': ('meta-llama/llama-4-maverick-17b-128e-instruct', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 5, 'groq'),
 
     "gemini-2.0-flash-exp": ('gemini-2.0-flash-exp', GEMINI_API_KEY, GEMINI_BASE_URL, 10, 'google'),
 
     'onehub-gemini-2.0-flash': ('gemini-2.0-flash-exp', ONEHUB_API_KEY, ONEHUB_BASE_URL, 5, None),
     'onehub-gemma2-9b-it': ('gemma2-9b-it', ONEHUB_API_KEY, ONEHUB_BASE_URL, 5, None),
 
-    'o_deepseek-chat-v3': ('deepseek/deepseek-chat-v3-0324:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+    'o_deepseek-chat-v3': ('deepseek/deepseek-chat:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
     'o_qwen3-235b-a22b': ('qwen/qwen3-235b-a22b:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+    'o_llama-4-maverick': ('meta-llama/llama-4-maverick-17b-128e-instruct:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
 }
 
 class LLMClientResponse:
