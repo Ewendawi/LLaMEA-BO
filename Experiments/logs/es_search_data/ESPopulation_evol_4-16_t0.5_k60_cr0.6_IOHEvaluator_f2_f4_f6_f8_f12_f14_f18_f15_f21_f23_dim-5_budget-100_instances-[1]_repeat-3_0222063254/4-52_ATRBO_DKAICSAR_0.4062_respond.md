@@ -1,0 +1,176 @@
+# Description
+**ATRBO_DKAICSAR**: Adaptive Trust Region Bayesian Optimization with Dynamic Kappa, Adaptive Initial Exploration, Center Adaptation, Stochastic Radius Adjustment, and Radius Refinement. This algorithm refines ATRBO_DKAICSA by introducing a more adaptive trust region radius adjustment mechanism. It incorporates a radius refinement strategy based on the agreement between the GP model's prediction and the actual function value. This helps in preventing premature convergence and encourages exploration in regions where the model is uncertain or inaccurate. The initial exploration phase is also refined by using Latin Hypercube Sampling for better coverage of the search space.
+
+# Justification
+The key improvements are:
+
+1.  **Radius Refinement based on GP Prediction Accuracy:** A new mechanism is added to refine the trust region radius based on the GP's prediction error. If the GP's prediction for the new point is close to the actual function value, it indicates that the model is accurate in that region, and the trust region radius can be expanded slightly to encourage exploitation. Conversely, if the prediction error is large, it suggests model uncertainty, and the radius is shrunk to promote exploration. This adaptive adjustment enhances the algorithm's ability to balance exploration and exploitation.
+
+2.  **Refined Initial Exploration with Latin Hypercube Sampling:** The initial exploration phase is improved by using Latin Hypercube Sampling (LHS) instead of Sobol sampling. LHS provides a more uniform coverage of the search space, which can lead to better initial samples and a more robust initial GP model.
+
+3.  **Simplified Kappa Adaptation:** The kappa adaptation is simplified to depend only on the success history, removing the GP uncertainty term. This reduces the computational cost and complexity of the algorithm, while still maintaining its ability to balance exploration and exploitation.
+
+4.  **Stochastic Radius Adjustment with Adaptive Noise:** The stochastic radius adjustment is modified to include adaptive noise. The noise is scaled by the trust region radius, which allows for larger perturbations when the radius is large and smaller perturbations when the radius is small.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
+class ATRBO_DKAICSAR:
+    def __init__(self, budget: int, dim: int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0  # the number of function evaluations
+        self.n_init = min(20 * dim, self.budget // 5) # increased samples for initial exploration
+        self.best_x = None
+        self.best_y = float('inf')
+        self.trust_region_radius = 2.5  # Initial trust region radius
+        self.rho = 0.95  # Shrinking factor
+        self.kappa = 2.0  # Exploration-exploitation trade-off for LCB
+        self.success_history = [] # Keep track of successful moves
+        self.sampled_distances = []
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points, center=None, radius=None):
+        # sample points within the trust region
+        if center is None:
+            center = (self.bounds[1] + self.bounds[0]) / 2
+        if radius is None:
+            radius = np.max(self.bounds[1] - self.bounds[0]) / 2
+
+        sampler = qmc.Sobol(d=self.dim, scramble=True)
+        points = sampler.random(n=n_points)
+        points = qmc.scale(points, -1, 1)  # Scale to [-1, 1]
+
+        # Project points to a hypersphere
+        lengths = np.linalg.norm(points, axis=1, keepdims=True)
+        points = points / lengths * np.random.uniform(0, 1, size=lengths.shape) ** (1 / self.dim)
+
+        points = points * radius + center
+
+        # Clip to the bounds
+        points = np.clip(points, self.bounds[0], self.bounds[1])
+        return points
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model
+        kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-3, 1e3))
+        gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5, random_state=42)
+        gp.fit(X, y)
+        return gp
+
+    def _acquisition_function(self, X, gp):
+        # Implement Lower Confidence Bound acquisition function
+        mu, sigma = gp.predict(X, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+        return mu - self.kappa * sigma
+
+    def _select_next_point(self, gp):
+        # Select the next point to evaluate within the trust region
+        n_samples = 100 * self.dim
+        samples = self._sample_points(n_samples, center=self.best_x, radius=self.trust_region_radius)
+        acq_values = self._acquisition_function(samples, gp)
+        best_index = np.argmin(acq_values)
+        return samples[best_index]
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += len(X)
+        return y
+
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+        # Update best seen value
+        idx = np.argmin(self.y)
+        if self.y[idx][0] < self.best_y:
+            self.best_y = self.y[idx][0]
+            self.best_x = self.X[idx]
+
+    def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+
+        # Initial exploration: Latin Hypercube Sampling
+        sampler = qmc.LatinHypercube(d=self.dim, seed=42)
+        initial_X = sampler.random(n=self.n_init)
+        initial_X = qmc.scale(initial_X, self.bounds[0], self.bounds[1])
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        # Initialize best_x to the best initial point
+        self.best_x = self.X[np.argmin(self.y)].copy()
+
+        while self.n_evals < self.budget:
+            # Optimization
+            gp = self._fit_model(self.X, self.y)
+
+            # Select next point
+            next_x = self._select_next_point(gp)
+            next_y = self._evaluate_points(func, next_x.reshape(1, -1))
+            self._update_eval_points(next_x.reshape(1, -1), next_y)
+
+            # Adjust trust region radius and kappa
+            mu, sigma = gp.predict(next_x.reshape(1, -1), return_std=True)
+            mu = mu[0]
+            sigma = sigma[0]
+
+            # Radius refinement based on GP prediction accuracy
+            prediction_error = np.abs(next_y[0][0] - mu)
+            if prediction_error < 0.1 * np.abs(self.best_y):  # GP is accurate
+                self.trust_region_radius /= (self.rho + 0.05)  # Expand slightly
+            else:
+                self.trust_region_radius *= self.rho  # Shrink
+
+            if next_y < self.best_y:
+                self.kappa *= np.clip(self.rho * 0.9, 0.1, 1.0)  # Reduced kappa decrease
+                self.success_history.append(True)
+                self.best_x = next_x.copy() # global best, keep it.
+            else:
+                self.kappa /= np.clip(self.rho * 0.9, 0.1, 1.0)  # Increase kappa more when unsuccessful
+                self.success_history.append(False)
+
+            # Stochastic radius adjustment with adaptive noise
+            self.trust_region_radius *= (1 + np.random.normal(0, 0.05) * self.trust_region_radius)
+
+            # Trust region center adaptation: adapt the trust region to the best point within the region
+            samples_in_tr = self._sample_points(n_points=100, center=self.best_x, radius=self.trust_region_radius)
+            mu_tr, _ = gp.predict(samples_in_tr, return_std=True)
+            best_index_tr = np.argmin(mu_tr)
+            self.best_x = samples_in_tr[best_index_tr].copy()
+            
+            #Adaptive lower bound of trust region:
+            distances = np.linalg.norm(self.X - self.best_x, axis=1)
+            avg_distance = np.mean(distances) if len(self.X) > 1 else np.max(self.bounds[1] - self.bounds[0]) / 10
+            self.trust_region_radius = np.clip(self.trust_region_radius, min(1e-2, avg_distance), np.max(self.bounds[1] - self.bounds[0]) / 2)
+            self.kappa = np.clip(self.kappa, 0.1, 10.0)
+
+            # Adjust rho based on success history
+            if len(self.success_history) > 10:
+                success_rate = np.mean(self.success_history[-10:])
+                self.rho = 0.9 + 0.09 * success_rate #adaptive rho. Higher success rate leads to higher rho, and thus slower shrinking.
+
+        return self.best_y, self.best_x
+```
+## Feedback
+ The algorithm ATRBO_DKAICSAR got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1854 with standard deviation 0.1119.
+
+took 211.43 seconds to run.

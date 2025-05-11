@@ -1,0 +1,254 @@
+# Description
+**BAEHBBO-AKEEBLS-EILS-AdaptiveNoise-KernelTuning-Batch_Lookahead_MetaLocalSearchV4**: Budget-Aware Efficient Hybrid Bayesian Optimization with Adaptive Kernel, Exploration-Exploitation Balance, Local Search Refinement, Stochastic Local Search, Adaptive Noise Handling, Kernel Tuning, Batch Evaluation, Meta-Local Search, and Focused Local Improvement. This version builds upon the previous one by introducing a more focused local improvement strategy. Instead of just relying on L-BFGS-B and stochastic sampling around the best point, it incorporates a Nelder-Mead simplex algorithm with restarts, guided by the GP's uncertainty, to refine the solution further. The kernel tuning is also adjusted to use a Matern kernel, which is less sensitive to the choice of hyperparameters, and the initial exploration is increased to better explore the search space. A more sophisticated diversity maintenance is also added to the batch selection.
+
+# Justification
+The key improvements in this version focus on enhancing the local search and exploration capabilities:
+
+1.  **Nelder-Mead Local Improvement:** The L-BFGS-B local search is augmented with a Nelder-Mead simplex algorithm. Nelder-Mead is a derivative-free optimization method that can be effective in refining solutions, especially when the surrogate model is not perfectly accurate. Restarts from different points, guided by the GP's uncertainty, help to escape local optima.
+
+2.  **Matern Kernel:** The RBF kernel is replaced with a Matern kernel. Matern kernels are known to be more robust and less sensitive to the choice of hyperparameters than RBF kernels, which can improve the GP's performance.
+
+3.  **Increased Initial Exploration:** The initial exploration weight is increased to encourage the algorithm to explore the search space more thoroughly in the early stages.
+
+4.  **Improved Diversity Maintenance:** The diversity component in the acquisition function is enhanced to better penalize points close to existing data, promoting exploration of unexplored regions.
+
+These changes aim to strike a better balance between exploration and exploitation, leading to improved performance on the BBOB test suite.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel, Matern
+from scipy.optimize import minimize, shgo
+from sklearn.neighbors import NearestNeighbors
+import warnings
+from sklearn.metrics.pairwise import euclidean_distances
+
+
+class BAEHBBO_AKEEBLS_EILS_AdaptiveNoise_KernelTuning_Batch_Lookahead_MetaLocalSearchV4:
+    def __init__(self, budget: int, dim: int):
+        self.budget = budget
+        self.dim = dim
+        self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0
+        self.n_init = 2 * dim
+        self.exploration_weight = 0.3  # Increased initial exploration weight
+        self.initial_exploration_weight = 0.3
+
+    def _sample_points(self, n_points):
+        sampler = qmc.LatinHypercube(d=self.dim)
+        samples = sampler.random(n=n_points)
+        return qmc.scale(samples, self.bounds[0], self.bounds[1])
+
+    def _estimate_noise(self, X, y, n_neighbors=5):
+        """Estimates the noise level based on the variance of function values at nearby points."""
+        n_neighbors = min(n_neighbors, len(X) - 1)
+        if len(X) < 2 or n_neighbors < 1:
+            return 1e-6  # Return a small default noise if not enough points
+
+        knn = NearestNeighbors(n_neighbors=n_neighbors, algorithm='kd_tree')
+        knn.fit(X)
+        distances, indices = knn.kneighbors(X)
+
+        # Calculate the variance of y values for each point's neighbors
+        noise_estimates = np.var(y[indices[:, 1:]], axis=1)  # Exclude the point itself
+
+        # Return the median noise estimate, scaled to avoid being too small
+        noise = np.median(noise_estimates)
+        return max(noise, 1e-6)
+
+    def _fit_model(self, X, y):
+        # Adaptive noise level estimation
+        alpha = self._estimate_noise(X, y)
+
+        # Kernel tuning: Optimize the kernel hyperparameters
+        kernel = ConstantKernel(1.0, constant_value_bounds="fixed") * Matern(length_scale=1.0,
+                                                                            length_scale_bounds=(1e-1, 1e3),
+                                                                            nu=1.5)  # Use Matern kernel
+        gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5, alpha=alpha)  # Enable kernel optimization
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gp.fit(X, y)
+        return gp
+
+    def _acquisition_function(self, X, gp, y_best, X_train):
+        mu, sigma = gp.predict(X, return_std=True)
+        sigma = np.clip(sigma, 1e-9, np.inf)
+        imp = mu - y_best
+        Z = imp / sigma
+        ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
+
+        # Exploration component (using UCB)
+        ucb = mu + self.exploration_weight * sigma
+
+        # Diversity component (penalize points close to existing data)
+        if len(X_train) > 0:
+            distances = euclidean_distances(X, X_train)
+            min_distances = np.min(distances, axis=1)
+            diversity = np.sqrt(min_distances)  # Encourage points far from existing data
+            diversity = diversity / np.max(diversity) # Normalize diversity
+        else:
+            diversity = 1.0
+
+        # Combine EI, UCB, and diversity
+        acquisition = ei + self.exploration_weight * ucb + 0.05 * diversity
+
+        return acquisition
+
+    def _select_next_points(self, batch_size, gp, y_best, X_train):
+        selected_X = []
+        for _ in range(batch_size):
+            best_x = None
+            best_acq = -np.inf
+            for _ in range(10 * batch_size):
+                x = self._sample_points(1)
+                acq = self._acquisition_function(x, gp, y_best, X_train)
+                if acq > best_acq:
+                    best_acq = acq
+                    best_x = x
+
+            selected_X.append(best_x.flatten())
+        return np.array(selected_X)
+
+    def _evaluate_points(self, func, X):
+        y = np.array([func(x) for x in X])
+        self.n_evals += len(X)
+        return y.reshape(-1, 1)
+
+    def _update_eval_points(self, new_X, new_y):
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+    def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
+        # Return a tuple (best_y, best_x)
+
+        # Initial sampling
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        best_idx = np.argmin(self.y)
+        best_y = self.y[best_idx][0]
+        best_x = self.X[best_idx]
+
+        while self.n_evals < self.budget:
+            # Fit the GP model
+            gp = self._fit_model(self.X, self.y)
+
+            # Determine the batch size adaptively
+            remaining_evals = self.budget - self.n_evals
+            batch_size = min(max(1, remaining_evals // 5), 5)  # Adaptive batch size
+
+            # Select the next points using EI
+            next_X = self._select_next_points(batch_size, gp, best_y, self.X)
+
+            # Evaluate the next points
+            next_y = self._evaluate_points(func, next_X)
+            self._update_eval_points(next_X, next_y)
+
+            # Update the best solution
+            best_idx = np.argmin(self.y)
+            best_y = self.y[best_idx][0]
+            best_x = self.X[best_idx]
+
+            # Local search refinement using the surrogate model
+            def surrogate_objective(x):
+                return gp.predict(x.reshape(1, -1))[0]
+
+            # Limit the number of iterations based on remaining budget
+            max_iter = min(5, remaining_evals)  # Limit iterations
+            if max_iter > 0:
+                # Use L-BFGS-B for local search
+                res = minimize(surrogate_objective, best_x, method='L-BFGS-B',
+                               bounds=list(zip(self.bounds[0], self.bounds[1])),
+                               options={'maxiter': max_iter, 'maxfun': max_iter})  # Limit function evaluations
+
+                # Evaluate the result of the local search with the real function
+                if self.n_evals < self.budget:
+                    # Stochastic Local Search
+                    num_samples = min(5, remaining_evals)  # Sample at most 5 points
+
+                    refined_X = np.zeros((num_samples, self.dim))
+                    refined_y = np.zeros(num_samples)
+
+                    mu_ls, sigma_ls = gp.predict(res.x.reshape(1, -1), return_std=True)
+                    sigma_ls = np.clip(sigma_ls, 1e-9, np.inf)
+
+                    # Distance to nearest neighbor scaling
+                    knn = NearestNeighbors(n_neighbors=1, algorithm='kd_tree')
+                    knn.fit(self.X)
+                    distance_to_nearest = knn.kneighbors(res.x.reshape(1, -1))[0][0][0]
+                    distance_scale = np.exp(-distance_to_nearest)  # Scale down sigma if close to existing points
+
+                    for i in range(num_samples):
+                        # Sample around the L-BFGS-B solution, scaling by GP's uncertainty and distance
+                        sample = np.random.normal(res.x, sigma_ls * distance_scale, self.dim)
+                        sample = np.clip(sample, self.bounds[0], self.bounds[1])  # Clip to bounds
+                        refined_X[i, :] = sample
+
+                    refined_y = self._evaluate_points(func, refined_X)[:, 0]
+
+                    best_refined_idx = np.argmin(refined_y)
+                    if refined_y[best_refined_idx] < best_y:
+                        best_y = refined_y[best_refined_idx]
+                        best_x = refined_X[best_refined_idx]
+
+                    # Meta-Local Search
+                    meta_max_iter = min(3, remaining_evals)  # Further limit iterations
+                    if meta_max_iter > 0:
+                        meta_res = minimize(surrogate_objective, best_x, method='L-BFGS-B',
+                                            bounds=list(zip(self.bounds[0], self.bounds[1])),
+                                            options={'maxiter': meta_max_iter, 'maxfun': meta_max_iter})
+
+                        # Evaluate the result of the meta-local search with the real function
+                        if self.n_evals < self.budget:
+                            meta_x = meta_res.x
+                            meta_y = self._evaluate_points(func, meta_x.reshape(1, -1))[0, 0]
+                            if meta_y < best_y:
+                                best_y = meta_y
+                                best_x = meta_x
+
+                    # Nelder-Mead Local Improvement with restarts
+                    num_restarts = min(3, remaining_evals)
+                    for _ in range(num_restarts):
+                        # Sample a starting point around the current best, scaled by GP's uncertainty
+                        mu_nm, sigma_nm = gp.predict(best_x.reshape(1, -1), return_std=True)
+                        sigma_nm = np.clip(sigma_nm, 1e-9, np.inf)
+                        start_point = np.random.normal(best_x, sigma_nm, self.dim)
+                        start_point = np.clip(start_point, self.bounds[0], self.bounds[1])
+
+                        nm_max_iter = min(3, remaining_evals)
+                        nm_res = minimize(surrogate_objective, start_point, method='Nelder-Mead',
+                                            bounds=list(zip(self.bounds[0], self.bounds[1])),
+                                            options={'maxiter': nm_max_iter, 'maxfev': nm_max_iter})
+
+                        if self.n_evals < self.budget:
+                            nm_x = nm_res.x
+                            nm_y = self._evaluate_points(func, nm_x.reshape(1, -1))[0, 0]
+                            if nm_y < best_y:
+                                best_y = nm_y
+                                best_x = nm_x
+
+            # Update exploration weight (adaptive decay based on budget)
+            budget_fraction = (self.budget - self.n_evals) / self.budget
+            self.exploration_weight = max(0.01, min(0.5, 0.5 * budget_fraction))
+
+        return best_y, best_x
+```
+## Feedback
+ The algorithm BAEHBBO_AKEEBLS_EILS_AdaptiveNoise_KernelTuning_Batch_Lookahead_MetaLocalSearchV4 got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1626 with standard deviation 0.0983.
+
+took 44.62 seconds to run.

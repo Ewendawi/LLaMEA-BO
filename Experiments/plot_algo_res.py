@@ -250,6 +250,8 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
                     row[column_name] = loss
                 elif column_name == 'best_loss':
                     row[column_name] = np.minimum.accumulate(loss)
+                elif column_name == 'algorithm_short_name':
+                    row[column_name] = _shorthand_algo_name(algo)
             else:
                 value = dynamical_access(res, column_path)
                 non_none_value = _none_to_nan(value)
@@ -445,9 +447,9 @@ def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
             return gaussian_smoothing(data, sigma)
     return _smooth_data
 
-def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
+def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=None, need_seperate_plot=True, file_name_suffix='', title=None):
     # handle y
-    data_col_map = {
+    _data_col_map = {
         'n_init': '',
         'acq_exp_threshold': '',
 
@@ -489,6 +491,8 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
         # 'acq_exploration_score': 'Exploration Score: $improve/fixed\_base$',
         # 'acq_exploration_validity': 'Exploration Validity: $score*(1-er)$',
     }
+    if data_col_map is None:
+        data_col_map = _data_col_map
     data_cols = list(data_col_map.keys())
 
     clip_cols = {
@@ -562,8 +566,6 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
     best_loss_line_styles = []
     best_loss_baselines = []
     best_loss_baseline_labels = []
-
-    seperated_plot = False
 
     for problem_id in problem_ids:
         plot_data = []
@@ -700,13 +702,13 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
                 best_loss_baselines.append(baselines[-1])
                 best_loss_baseline_labels.append(baseline_labels[-1])
 
-        # if not seperated_plot:
-        #     continue
+        if not need_seperate_plot:
+            continue
         dir_name = f"algo_loss_{dim}D"
         if fig_dir is not None:
             dir_name = os.path.join(fig_dir, dir_name)
         os.makedirs(dir_name, exist_ok=True)
-        file_name = f"{dir_name}/algo_loss_{dim}D_F{problem_id}"
+        file_name = f"{dir_name}/algo_loss_{dim}D_F{problem_id}{file_name_suffix}"
 
 
         plot_lines(
@@ -730,31 +732,30 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None):
             filename=file_name,
         )
 
-    if not seperated_plot:
-        file_name = f"algo_loss_{dim}D"
-        if fig_dir is not None:
-            file_name = os.path.join(fig_dir, file_name)
-        plot_lines(
-            y=best_loss_plot_data, x=best_loss_x_data,
-            y_scales=best_loss_y_scales,
-            baselines=best_loss_baselines,
-            baseline_labels=best_loss_baseline_labels,
-            colors=best_loss_colors,
-            labels=best_loss_labels,
-            line_styles=best_loss_line_styles,
-            label_fontsize=10,
-            combined_legend=True,
-            linewidth=1.2,
-            filling=best_loss_plot_filling,
-            x_dot=best_loss_x_dots,
-            n_cols=6,
-            sub_titles=best_loss_sub_titles,
-            sub_title_fontsize=10,
-            title=f"Best Loss({dim}D)",
-            figsize=(15, 9),
-            show=False,
-            filename=file_name,
-        )
+    file_name = f"algo_loss_{dim}D{file_name_suffix}"
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+    plot_lines(
+        y=best_loss_plot_data, x=best_loss_x_data,
+        y_scales=best_loss_y_scales,
+        baselines=best_loss_baselines,
+        baseline_labels=best_loss_baseline_labels,
+        colors=best_loss_colors,
+        labels=best_loss_labels,
+        line_styles=best_loss_line_styles,
+        label_fontsize=10,
+        combined_legend=True,
+        linewidth=1.2,
+        filling=best_loss_plot_filling,
+        x_dot=best_loss_x_dots,
+        n_cols=6,
+        sub_titles=best_loss_sub_titles,
+        sub_title_fontsize=10,
+        title=f"Best Loss({dim}D)" if title is None else title,
+        figsize=(15, 9),
+        show=False,
+        filename=file_name,
+    )
 
 def plot_algo_result(results:list[EvaluatorResult], fig_dir=None):
     res_df = _process_algo_result(results)
@@ -868,6 +869,10 @@ def extract_algo_result(dir_path:str, file_path_map:dict=None):
     }
 
     res_df = _process_algo_result(res_list, column_name_map)
+
+    simple_res_df = res_df.drop(columns=['algorithm', 'loss', 'best_loss'])
+    simple_res_df.to_csv(f"{dir_path}/hist.csv", index=False)
+
     algos = res_df['algorithm'].unique()
     # filter_intace_id = 4
     # filter_exec_id = 0
@@ -927,9 +932,9 @@ def extract_algo_result(dir_path:str, file_path_map:dict=None):
     _new_loss_df = pd.DataFrame(df_loss_data)
     _new_loss_df.to_csv(f"{dir_path}/ioh_loss.csv", index=False)
 
-    # _new_aoc_df = res_df[['algorithm_name', 'problem_id', 'instance_id', 'exec_id', 'y_aoc']]
-    # _new_aoc_df['short_algo_name'] = _new_aoc_df['algorithm_name'].apply(_shorthand_algo_name)
-    # _new_aoc_df.to_csv(f"{dir_path}/aoc.csv", index=False)
+    _new_aoc_df = res_df[['algorithm_name', 'problem_id', 'instance_id', 'exec_id', 'y_aoc']]
+    _new_aoc_df['short_algo_name'] = _new_aoc_df['algorithm_name'].apply(_shorthand_algo_name)
+    _new_aoc_df.to_csv(f"{dir_path}/aoc.csv", index=False)
 
     _new_mean_aoc_df = res_df.groupby(['algorithm_name', 'problem_id'])[['y_aoc']].agg(np.mean).reset_index()
     _new_mean_aoc_df['short_algo_name'] = _new_mean_aoc_df['algorithm_name'].apply(_shorthand_algo_name)
@@ -947,37 +952,311 @@ def plot_algo_0220():
 
     extract_algo_result(dir_path=dir_path)
 
-def convert_atrbo_results_to_ioh_csv():
-    dir_path = 'Experiments/atrbo_eval_res_5dim'
+
+def get_atrbo_result_file_path_map():
     file_path_map = {
-        'baseline': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:False_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4615_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162413.pkl',
+        'baseline': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:False_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4615_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162413.pkl',
 
-        'noProject': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:False_proj:False_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4543_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162546.pkl',
+        'noProject': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:False_proj:False_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4543_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162546.pkl',
 
-        'fixed': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4590_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162458.pkl',
+        'fixed': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4590_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162458.pkl',
 
-        'fixed_kappa': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:False_0.4574_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421172803.pkl',
+        'fixed_kappa': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:False_0.4574_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421172803.pkl',
 
-        'fixed_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:True_0.4474_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162629.pkl',
+        'fixed_radius': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:True_0.4474_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162629.pkl',
 
-        'fixed_kappa_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4479_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162754.pkl',
+        'fixed_kappa_radius': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4479_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162754.pkl',
 
         # rho
-        '0.65_rho_fixed': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.65_k:2.0_adaptr:True_adaptk:True_0.4648_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164107.pkl',
-        '0.8_rho_fiexed': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.8_k:2.0_adaptr:True_adaptk:True_0.4683_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421163324.pkl',
-        '0.95_rho_fixed': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4590_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162458.pkl',
+        '0.65_rho_fixed': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.65_k:2.0_adaptr:True_adaptk:True_0.4648_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164107.pkl',
+        '0.8_rho_fixed': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.8_k:2.0_adaptr:True_adaptk:True_0.4683_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421163324.pkl',
+        '0.95_rho_fixed': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:True_adaptk:True_0.4590_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162458.pkl',
 
         # trr
-        '1.0_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:1_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4547_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164357.pkl',
-        '2.5_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4479_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162754.pkl',
-        '5.0_radius': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4397_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164316.pkl',
+        '1.0_radius': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:1_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4547_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164357.pkl',
+        '2.5_radius': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4479_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421162754.pkl',
+        '5.0_radius': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4397_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164316.pkl',
 
         # kappa
-        '1.0_kappa': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:1.0_adaptr:False_adaptk:False_0.4480_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164232.pkl',
-        '2.0_kappa': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4397_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164316.pkl',
-        '4.0_kappa': 'Experiments/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:4.0_adaptr:False_adaptk:False_0.4485_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164150.pkl',
+        '1.0_kappa': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:1.0_adaptr:False_adaptk:False_0.4480_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164232.pkl',
+        '2.0_kappa': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:5_rho:0.95_k:2.0_adaptr:False_adaptk:False_0.4397_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164316.pkl',
+        '4.0_kappa': 'Experiments/log_eater/atrbo_eval_res_5dim/ATRBO_fixed:True_proj:True_trr:2.5_rho:0.95_k:4.0_adaptr:False_adaptk:False_0.4485_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4]_repeat-5_0421164150.pkl',
     }
+    return file_path_map
+
+def plot_atrbo_results():
+    def _extract_paras(file_path):
+        file_name = os.path.basename(file_path)
+        paras = file_name.split('_')
+        para_map = {}
+        for para in paras:
+            if ':' not in para or 'IOHEvaluator' in para:
+                continue
+            kv = para.split(':')
+            if len(kv) != 2:
+                continue
+            key = kv[0]
+            value = kv[1]
+            if value == 'True' or value == 'False': 
+                value = True if value == 'True' else False
+            else:
+                value = float(value)
+            para_map[key] = value
+        return para_map
+
+    dir_path = 'Experiments/atrbo_eval_res_5dim'
+    res_list = []
+    df_list = []
+    paras_df = []
+    for file_path in os.listdir(dir_path):
+        if file_path.endswith(".pkl"):
+            file_path = os.path.join(dir_path, file_path)
+            with open(file_path, "rb") as f:
+                unpickler = RenameUnpickler(f)
+                target = unpickler.load()
+                if isinstance(target, ResponseHandler):
+                    target = target.eval_result
+
+                res_list.append(target)
+                res_index = len(res_list) - 1
+
+                column_name_map = {
+                    'algorithm' : None,
+                    'algorithm_name' : None,
+                    'algorithm_short_name' : None,
+                    'problem_id' : None,
+                    'instance_id' : None,
+                    'exec_id' : None,
+                    'n_init' : 'n_initial_points',
+
+                    'optimum' : 'optimal_value',
+
+                    'y_hist': 'y_hist',
+                    'x_hist': 'x_hist',
+
+                    'loss': None,
+                    'best_loss': None,
+                    'y_aoc': 'log_y_aoc',
+                }
+                res_df = _process_algo_result([target], column_name_map)
+                df_list.append(res_df)
+
+                paras = _extract_paras(file_path)
+                paras['index'] = res_index
+                paras_df.append(paras)
+
+    paras_df = pd.DataFrame(paras_df)
+    # plot bug pair
+    # get rows where fixed are different but other paras are the same
+    other_columns = [col for col in paras_df.columns if col != 'fixed' and col != 'index']
+    result_df = paras_df.groupby(other_columns).filter(
+        lambda group: group['fixed'].nunique() > 1
+    )
+
+    def _res_df_from_result_df(result_df, paras_df, df_list, algo_mapping_func):
+        # get the index of the rows in paras_df
+        df_indexs = result_df['index'].to_list()
+        sub_dfs = []
+        for index in df_indexs:
+            paras = paras_df.iloc[index]
+            _df = df_list[index]
+            _label = algo_mapping_func(paras)
+            _df['algorithm'] = _label
+            if _label == 'baseline':
+                sub_dfs.insert(0, _df)
+            else:
+                sub_dfs.append(_df)
+        sub_dfs = [df_list[i] for i in df_indexs]
+        # combine the dataframes
+        _res_df = pd.concat(sub_dfs, axis=0)
+        return _res_df
+
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'no_bug' if paras['fixed'] == True else 'baseline')
+
+    data_col_map = {
+        'n_init': '',
+        'loss': 'Loss',
+        'best_loss': 'Best Loss',
+    }
+    fig_dir = 'Experiments/atrbo_eval_res_5dim/atrbo_algo_iter'
+    os.makedirs(fig_dir, exist_ok=True)
+
+    _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_bug', title='')
+
+    # plot project
+    result_df = paras_df[paras_df['fixed'] == False]
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['proj'] == True else 'no_project')
+    _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_proj', title='')
+
+
+    bl_df = paras_df[(paras_df['fixed'] == False) & (paras_df['proj'] == True)]
+
+    # plot rho
+    other_columns = [col for col in paras_df.columns if col != 'rho' and col != 'index']
+    result_df = paras_df.groupby(other_columns).filter(
+        lambda group: group['rho'].nunique() > 1
+    )
+    result_df = pd.concat([bl_df, result_df], axis=0)
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"rho_{paras['rho']}")
+    _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_rho', title='')
+
+    # plot kappa
+    other_columns = [col for col in paras_df.columns if col != 'k' and col != 'index']
+    result_df = paras_df.groupby(other_columns).filter(
+        lambda group: group['k'].nunique() > 1
+    )
+    result_df = pd.concat([bl_df, result_df], axis=0)
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"kappa_{paras['k']}")
+    _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_kappa', title='')
+
+    # plot tr_radius
+    other_columns = [col for col in paras_df.columns if col != 'trr' and col != 'index']
+    result_df = paras_df.groupby(other_columns).filter(
+        lambda group: group['trr'].nunique() > 1
+    )
+    result_df = pd.concat([bl_df, result_df], axis=0)
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"radius_{paras['trr']}")
+    _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_radius', title='')
+
+    # plot adaptr
+    other_columns = [col for col in paras_df.columns if col != 'adaptr' and col != 'adaptk' and col != 'index']
+    result_df = paras_df.groupby(other_columns).filter(
+        lambda group: group['adaptr'].nunique() > 1 and group['adaptk'].nunique() > 1
+    )
+    result_df = pd.concat([bl_df, result_df], axis=0)
+    def _adaptr_mapping_func(paras):
+        if paras['adaptr'] == False and paras['adaptk'] == False:
+            # return f'radius_{paras["adaptr"]} & kappa_{paras["adaptk"]}'
+            return 'fixed_radius_kappa'
+        elif paras['adaptr'] == True and paras['adaptk'] == False:
+            # return f'kappa_{paras["adaptk"]}'
+            return 'fixed_kappa'
+        elif paras['adaptr'] == False and paras['adaptk'] == True:
+            # return f'radius_{paras["adaptr"]}'
+            return 'fixed_radius'
+        else:
+            return 'baseline'
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, _adaptr_mapping_func)
+    _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_adap', title='')
+                
+
+def convert_atrbo_results_to_ioh_csv():
+    file_path_map = get_atrbo_result_file_path_map()
+
+    dir_path = 'Experiments/log_eater/atrbo_eval_res_5dim'
     extract_algo_result(dir_path=dir_path, file_path_map=file_path_map)
+
+def calculate_mannwhitneyu_test():
+    dir_paths = [
+        'Experiments/log_eater/final_eval_res_5dim',
+        'Experiments/log_eater/final_eval_res_10dim_0320',
+        'Experiments/log_eater/final_eval_res_20dim_0320',
+        'Experiments/log_eater/final_eval_res_40dim_0320',
+    ]
+
+    for dir_path in dir_paths:
+        if not os.path.isdir(dir_path):
+            raise ValueError(f"Invalid directory path: {dir_path}")
+        _calculate_mannwhitneyu_test_on_dir(dir_path)
+
+def _calculate_mannwhitneyu_test_on_dir(dir_path:str):
+    from scipy import stats
+
+    res_list = []
+    for file_path in os.listdir(dir_path):
+        if file_path.endswith(".pkl"):
+            file_path = os.path.join(dir_path, file_path)
+            with open(file_path, "rb") as f:
+                unpickler = RenameUnpickler(f)
+                target = unpickler.load()
+                if isinstance(target, ResponseHandler):
+                    target = target.eval_result
+
+                res_list.append(target)
+    column_name_map = {
+        # 'algorithm_name' : None,
+        'algorithm_short_name' : None,
+        'problem_id' : None,
+        'instance_id' : None,
+        'exec_id' : None,
+        'y_aoc': 'log_y_aoc',
+    }
+    res_df = _process_algo_result(res_list, column_name_map)
+    # rename column algorithm_short_name to algorithm_name
+    res_df.rename(columns={'algorithm_short_name': 'algorithm_name'}, inplace=True)
+
+
+    def _calculate_mannwhitneyu_test_on_problem(ori_df, problem_id=np.nan, verbose=True):
+        res_df = ori_df.copy()
+        if not np.isnan(problem_id):
+            res_df = res_df[res_df['problem_id'] == problem_id]
+
+        # get the mean aoc for each algorithm
+        all_mean_aoc = res_df.groupby(['algorithm_name'])[['y_aoc']].agg(np.mean).reset_index()
+        # get the best algorithm
+        best_algo = all_mean_aoc[all_mean_aoc['y_aoc'] == all_mean_aoc['y_aoc'].max()]['algorithm_name'].values[0]
+
+        best_aoc_list = res_df[res_df['algorithm_name'] == best_algo]['y_aoc'].to_list()
+        other_algos = all_mean_aoc[all_mean_aoc['algorithm_name'] != best_algo]['algorithm_name'].values
+        stat_list = []
+        stat_list.append({
+            'algorithm_name': best_algo,
+            'contrast_algo': None,
+            'size': len(best_aoc_list),
+            'median': np.median(best_aoc_list),
+            'mean': np.mean(best_aoc_list),
+            'stat': np.nan,
+            'p_value': np.nan,
+            'pid': problem_id,
+        })
+        if verbose:
+            print("-" * 30)
+            print(f'problem_id: {problem_id}')
+            print('')
+
+        for algo in other_algos:
+            algo_aoc_list = res_df[res_df['algorithm_name'] == algo]['y_aoc'].to_list()
+            # perform mannwhitneyu test
+            stat, p_value = stats.mannwhitneyu(best_aoc_list, algo_aoc_list)
+
+            stat_list.append({
+                'algorithm_name': algo,
+                'contrast_algo': best_algo,
+                'size': len(algo_aoc_list),
+                'median': np.median(algo_aoc_list),
+                'mean': np.mean(algo_aoc_list),
+                'stat': stat,
+                'p_value': p_value,
+                'pid': problem_id,
+            })
+
+            if verbose:
+                print(f"{best_algo}: size={len(best_aoc_list)}, median={np.median(best_aoc_list)}, mean={np.mean(best_aoc_list)}")
+                print(f"{algo}: size={len(algo_aoc_list)}, median={np.median(algo_aoc_list)}, mean={np.mean(algo_aoc_list)}")
+                print(f"{best_algo} vs {algo}: stat={stat}, p_value={p_value}")
+                print('')
+        
+        if verbose:
+            print("-" * 30)
+
+        return stat_list
+
+    res_stat_list = []
+    res_stats = _calculate_mannwhitneyu_test_on_problem(res_df, verbose=False)
+    res_stat_list.extend(res_stats)
+
+    problems = res_df['problem_id'].unique()
+    for problem in problems:
+        p_res_stats = _calculate_mannwhitneyu_test_on_problem(res_df, problem_id=problem, verbose=False)
+        res_stat_list.extend(p_res_stats)
+
+    # convert to dataframe
+    res_stat_df = pd.DataFrame(res_stat_list)
+
+    # save to csv
+    res_stat_df.to_csv(f"{dir_path}/mannwhitneyu_test.csv", index=False)
+
+
 
 if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)

@@ -1,0 +1,186 @@
+# Description
+**TrustRegionOptimisticBO with Adaptive Beta and Trust Region Sampling (ATRBO)**: This algorithm enhances the TrustRegionOptimisticBO by introducing an adaptive exploration parameter (beta) based on the uncertainty of the Gaussian Process (GP) model and incorporating a more sophisticated sampling strategy within the trust region. The beta parameter, which controls the exploration-exploitation trade-off in the UCB acquisition function, is dynamically adjusted based on the average predicted standard deviation of the GP model. This allows for increased exploration in regions of high uncertainty and increased exploitation in regions of low uncertainty. Furthermore, the local search within the trust region is improved by sampling points based on the acquisition function values, rather than uniformly. This focuses the local search on more promising areas within the trust region.
+
+# Justification
+The key improvements in this algorithm are:
+
+1.  **Adaptive Beta:** The original algorithm uses a decaying beta, which reduces exploration over time. However, the optimal level of exploration depends on the uncertainty of the GP model. By adapting beta based on the average predicted standard deviation, the algorithm can automatically adjust the exploration-exploitation trade-off based on the quality of the GP model. This addresses the limitation of the fixed decay rate.
+
+2.  **Acquisition Function-Based Trust Region Sampling:** Instead of uniformly sampling within the trust region, the improved algorithm samples points based on the acquisition function values. This allows the local search to focus on the most promising areas within the trust region, leading to more efficient exploitation. This change improves the efficiency of the local search.
+
+3. **Trust Region Scaling**: Introducing a relative scaling to the trust region size based on the problem dimensionality.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel
+from scipy.optimize import minimize
+
+class TrustRegionOptimisticBO:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = 2 * self.dim # initial number of samples
+        self.batch_size = min(5, self.dim)
+        self.trust_region_size = 2.0
+        self.trust_region_shrink = 0.5
+        self.trust_region_expand = 2.0
+        self.beta = 2.0  # Exploration parameter for UCB
+        self.beta_decay = 0.99 # Decay rate for beta
+        self.best_x = None
+        self.best_y = np.inf
+        self.trust_region_scale = 1.0 / np.sqrt(self.dim)
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points):
+        # sample points
+        # return array of shape (n_points, n_dims)
+        sampler = qmc.LatinHypercube(d=self.dim)
+        sample = sampler.random(n=n_points)
+        return qmc.scale(sample, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model
+        # return the model
+        # Do not change the function signature
+        kernel = ConstantKernel(constant_value=1.0, constant_value_bounds=(1e-3, 1e3)) * RBF(length_scale=1.0, length_scale_bounds=(1e-3, 1e3))
+        model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=2, alpha=1e-6)
+        model.fit(X, y)
+        return model
+
+    def _acquisition_function(self, X):
+        # Implement acquisition function
+        # calculate the acquisition function value for each point in X
+        # return array of shape (n_points, 1)
+        model = self._fit_model(self.X, self.y)
+        mu, sigma = model.predict(X, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+
+        # Upper Confidence Bound
+        ucb = mu - self.beta * sigma # minimize
+        return ucb
+
+    def _select_next_points(self, batch_size):
+        # Select the next points to evaluate
+        # Use a selection strategy to optimize/leverage the acquisition function
+        # The selection strategy can be any heuristic/evolutionary/mathematical/hybrid methods.
+        # Your decision should consider the problem characteristics, acquisition function, and the computational efficiency.
+        # return array of shape (batch_size, n_dims)
+        candidate_points = self._sample_points(10 * batch_size)
+        acquisition_values = self._acquisition_function(candidate_points)
+        indices = np.argsort(acquisition_values.flatten())[:batch_size] # minimize
+        return candidate_points[indices]
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # return array of shape (n_points, 1)
+        y = np.array([func(x) for x in X])
+        self.n_evals += len(X)
+        return y.reshape(-1, 1)
+
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        # Do not change the function signature
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+        # Update best seen point
+        best_index = np.argmin(self.y)
+        if self.y[best_index][0] < self.best_y:
+            self.best_y = self.y[best_index][0]
+            self.best_x = self.X[best_index]
+
+    def _local_search(self, model, center, n_points=50):
+        # Perform local search within the trust region using the GP model
+        # Generate candidate points within the trust region
+        #candidate_points = center + self.trust_region_size * np.random.uniform(-1, 1, size=(n_points, self.dim))
+
+        # Sample points within the trust region based on acquisition function
+        candidate_points = center + self.trust_region_size * self.trust_region_scale * np.random.randn(n_points, self.dim)
+        candidate_points = np.clip(candidate_points, self.bounds[0], self.bounds[1])
+
+        acquisition_values = self._acquisition_function(candidate_points)
+        probabilities = np.exp(-acquisition_values / np.std(acquisition_values))  # Convert to probabilities
+        probabilities /= np.sum(probabilities)
+
+        indices = np.random.choice(n_points, size=n_points, replace=False, p=probabilities.flatten())
+        best_point = candidate_points[indices[0]]
+
+        return best_point
+
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
+        # Return a tuple (best_y, best_x)
+
+        # Initial sampling
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        best_index = np.argmin(self.y)
+        best_x = self.X[best_index]
+        best_y = self.y[best_index][0]
+
+        while self.n_evals < self.budget:
+            # Fit the GP model
+            model = self._fit_model(self.X, self.y)
+
+            # Adaptive Beta
+            mu, sigma = model.predict(self.X, return_std=True)
+            self.beta = np.mean(sigma) # Adapt beta based on uncertainty
+
+            # Perform local search within the trust region
+            next_x = self._local_search(model, best_x.copy())
+            next_x = np.clip(next_x, self.bounds[0], self.bounds[1]) # Ensure it's within bounds
+
+            next_y = self._evaluate_points(func, next_x.reshape(1, -1))[0, 0] # Evaluate the actual function
+            self._update_eval_points(next_x.reshape(1, -1), np.array([[next_y]]))
+
+            # Check if the new point is better than the current best
+            if next_y < best_y:
+                best_x = next_x
+                best_y = next_y
+                # Adjust trust region size
+                self.trust_region_size *= self.trust_region_expand
+            else:
+                # Shrink trust region if no improvement
+                self.trust_region_size *= self.trust_region_shrink
+
+            self.trust_region_size = np.clip(self.trust_region_size, 0.1, 5.0) # Keep trust region within reasonable bounds
+
+            # Decay exploration parameter
+            #self.beta *= self.beta_decay # No longer decaying, adaptive
+
+        return best_y, best_x
+```
+## Error
+ Traceback (most recent call last):
+  File "<TrustRegionOptimisticBO>", line 138, in __call__
+ 138->             next_x = self._local_search(model, best_x.copy())
+  File "<TrustRegionOptimisticBO>", line 109, in _local_search
+ 107 |         probabilities /= np.sum(probabilities)
+ 108 | 
+ 109->         indices = np.random.choice(n_points, size=n_points, replace=False, p=probabilities.flatten())
+ 110 |         best_point = candidate_points[indices[0]]
+ 111 | 
+  File "mtrand.pyx", line 954, in numpy.random.mtrand.RandomState.choice
+ValueError: probabilities contain NaN

@@ -1,0 +1,311 @@
+You are a highly skilled computer scientist in the field of natural computing. Your task is to design novel metaheuristic algorithms to solve black box optimization problems
+
+
+The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
+The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
+As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries. Do not use any other libraries unless they cannot be replaced by the above libraries.  Do not remove the comments from the code.
+Name the class based on the characteristics of the algorithm with a template '<characteristics>BO'.
+
+Give an excellent, novel and computationally efficient Bayesian Optimization algorithm to solve this task, give it a concise but comprehensive key-word-style description with the main ideas and justify your decision about the algorithm.
+
+The current population of algorithms already evaluated(name, score, runtime and description):
+- ATRBO_DKAI: 0.0961, 924.42 seconds, Adaptive Trust Region Bayesian Optimization with Dynamic Kappa and Adaptive Initial Exploration (ATRBO-DKAI) refines ATRBO by incorporating a dynamic adjustment of the exploration-exploitation trade-off parameter (kappa) and an adaptive strategy for initial exploration. The initial number of samples is made adaptive to the dimension of the search space. The kappa is adjusted dynamically based on the success of previous iterations. If the new point improves the best-seen value, kappa is decreased to promote exploitation. Conversely, if the new point does not improve the best-seen value, kappa is increased to encourage exploration. The initial sampling incorporates both uniform sampling of the entire space and sampling around the best point found so far to encourage faster initial convergence. The shrinking/expanding factor `rho` for the trust region is also dynamically adjusted based on the history of successful/unsuccessful moves.
+
+
+- ATSPBO: 0.0846, 1290.76 seconds, Adaptive Trust Region Stochastic Patch Bayesian Optimization (ATSPBO) combines the strengths of ATRBO and SPBO, addressing their weaknesses. It utilizes a trust region approach from ATRBO to focus the search around promising regions while incorporating stochastic patches from SPBO for efficient exploration in high-dimensional spaces. A key modification is that instead of training the GP on the full space and evaluating the acquisition function only on the patch (which is what SPBO was doing and produced an error), ATSPBO projects both the sampled candidate points *and* the training data to the stochastic patch for GP training and acquisition function evaluation. This resolves the dimensionality mismatch error. The trust region radius and patch size are dynamically adjusted based on the optimization progress and remaining budget. The acquisition function is Lower Confidence Bound (LCB) applied within the selected patch, allowing for balanced exploration and exploitation.
+
+
+- ATRBO_DKRA: 0.0696, 315.82 seconds, Adaptive Trust Region Bayesian Optimization with Dynamic Kappa and Radius Adjustment (ATRBO-DKRA) builds upon the ATRBO algorithm by introducing a more sophisticated method for adjusting the exploration-exploitation trade-off (kappa) and the trust region radius. Instead of a fixed shrinking factor (rho), ATRBO-DKRA dynamically adjusts these parameters based on the recent history of successful and unsuccessful steps. This allows for a more responsive adaptation to the local landscape of the optimization problem. Furthermore, it introduces a minimum number of evaluations before adjusting trust region radius and kappa to avoid premature convergence, which also speeds up the run time.
+
+
+- ATRBO_DKAR: 0.0688, 335.10 seconds, Adaptive Trust Region Bayesian Optimization with Dynamic Kappa and Adaptive Rho (ATRBO-DKAR) enhances the original ATRBO by introducing a more responsive and adaptable trust region strategy. Key improvements include:
+1.  Dynamic Kappa: Instead of fixed bounds, `kappa` (exploration-exploitation trade-off) now adapts based on the GP's uncertainty within the trust region. If the GP's predicted variance is high, `kappa` increases to encourage exploration. Conversely, low variance leads to exploitation.
+2.  Adaptive Rho: The shrinking factor `rho` is also made dynamic. Its adjustment is based on a "success rate" within the trust region. If recent samples have led to improvements, `rho` decreases (slower shrinking) to allow for more focused exploitation. If not, `rho` increases to quickly shrink the trust region and explore elsewhere.
+3.  Trust Region Center Adaptation: The trust region center is now adapted after each iteration. If the new evaluation point improves the best objective, the trust region center is set as the evaluation point. This is beneficial when the next evaluation point is far from the current best location and has better performance.
+4.  Stochastic Trust Region Radius: Add a stochasticity when updating the trust region radius to avoid premature convergence.
+
+
+
+
+The selected solutions to update are:
+## ATSPBO
+Adaptive Trust Region Stochastic Patch Bayesian Optimization (ATSPBO) combines the strengths of ATRBO and SPBO, addressing their weaknesses. It utilizes a trust region approach from ATRBO to focus the search around promising regions while incorporating stochastic patches from SPBO for efficient exploration in high-dimensional spaces. A key modification is that instead of training the GP on the full space and evaluating the acquisition function only on the patch (which is what SPBO was doing and produced an error), ATSPBO projects both the sampled candidate points *and* the training data to the stochastic patch for GP training and acquisition function evaluation. This resolves the dimensionality mismatch error. The trust region radius and patch size are dynamically adjusted based on the optimization progress and remaining budget. The acquisition function is Lower Confidence Bound (LCB) applied within the selected patch, allowing for balanced exploration and exploitation.
+
+
+With code:
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
+class ATSPBO:
+    def __init__(self, budget: int, dim: int):
+        self.budget = budget
+        self.dim = dim
+        self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0
+        self.n_init = min(10 * dim, self.budget // 5)
+        self.best_x = None
+        self.best_y = float('inf')
+        self.trust_region_radius = 2.5  # Initial trust region radius
+        self.rho = 0.95  # Shrinking factor
+        self.kappa = 2.0  # Exploration-exploitation trade-off for LCB
+
+    def _sample_points(self, n_points, center=None, radius=None):
+        if center is None:
+            center = (self.bounds[1] + self.bounds[0]) / 2
+        if radius is None:
+            radius = np.max(self.bounds[1] - self.bounds[0]) / 2
+
+        sampler = qmc.Sobol(d=self.dim, scramble=True)
+        points = sampler.random(n=n_points)
+        points = qmc.scale(points, -1, 1)  # Scale to [-1, 1]
+
+        lengths = np.linalg.norm(points, axis=1, keepdims=True)
+        points = points / lengths * np.random.uniform(0, 1, size=lengths.shape) ** (1/self.dim)
+
+        points = points * radius + center
+        points = np.clip(points, self.bounds[0], self.bounds[1])
+        return points
+
+    def _fit_model(self, X, y, patch_indices):
+        # Fit the model on the stochastic patch
+        X_patched = X[:, patch_indices]
+        kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-3, 1e3))
+        gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5, random_state=42)
+        gp.fit(X_patched, y)
+        return gp
+
+    def _acquisition_function(self, X, gp, patch_indices):
+        # LCB within the patch
+        X_patched = X[:, patch_indices]
+        mu, sigma = gp.predict(X_patched, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+        return mu - self.kappa * sigma
+
+    def _select_next_point(self, gp, patch_indices):
+        n_samples = 100 * self.dim
+        samples = self._sample_points(n_samples, center=self.best_x, radius=self.trust_region_radius)
+        acq_values = self._acquisition_function(samples, gp, patch_indices)
+        best_index = np.argmin(acq_values)
+        return samples[best_index]
+
+    def _evaluate_points(self, func, X):
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += len(X)
+        return y
+
+    def _update_eval_points(self, new_X, new_y):
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+        idx = np.argmin(self.y)
+        if self.y[idx][0] < self.best_y:
+            self.best_y = self.y[idx][0]
+            self.best_x = self.X[idx]
+
+    def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.ndarray]:
+        # Initial exploration
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+        self.best_x = self.X[np.argmin(self.y)].copy()
+
+        while self.n_evals < self.budget:
+            # Dynamic patch size
+            remaining_evals = self.budget - self.n_evals
+            patch_size = max(1, min(self.dim, int(self.dim * remaining_evals / self.budget) + 1))
+            patch_indices = np.random.choice(self.dim, patch_size, replace=False)
+
+            # Fit model
+            gp = self._fit_model(self.X, self.y, patch_indices)
+
+            # Select next point
+            next_x = self._select_next_point(gp, patch_indices)
+            next_y = self._evaluate_points(func, next_x.reshape(1, -1))
+            self._update_eval_points(next_x.reshape(1, -1), next_y)
+
+            # Adjust trust region radius
+            if next_y < self.best_y:
+                self.trust_region_radius /= self.rho  # Expand
+                self.kappa *= self.rho
+            else:
+                self.trust_region_radius *= self.rho  # Shrink
+                self.kappa /= self.rho  # More exploration
+
+            self.trust_region_radius = np.clip(self.trust_region_radius, 1e-2, np.max(self.bounds[1] - self.bounds[0]) / 2)
+            self.kappa = np.clip(self.kappa, 0.1, 10.0)
+
+        return self.best_y, self.best_x
+
+```
+The algorithm ATSPBO got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.0846 with standard deviation 0.0884.
+
+took 1290.76 seconds to run.
+
+## ATRBO_DKRA
+Adaptive Trust Region Bayesian Optimization with Dynamic Kappa and Radius Adjustment (ATRBO-DKRA) builds upon the ATRBO algorithm by introducing a more sophisticated method for adjusting the exploration-exploitation trade-off (kappa) and the trust region radius. Instead of a fixed shrinking factor (rho), ATRBO-DKRA dynamically adjusts these parameters based on the recent history of successful and unsuccessful steps. This allows for a more responsive adaptation to the local landscape of the optimization problem. Furthermore, it introduces a minimum number of evaluations before adjusting trust region radius and kappa to avoid premature convergence, which also speeds up the run time.
+
+
+With code:
+```python
+from collections.abc import Callable
+from scipy.stats import qmc #If you are using QMC sampling, qmc from scipy is encouraged. Remove this line if you have better alternatives.
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
+class ATRBO_DKRA:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = min(10 * dim, self.budget // 5)
+        self.best_x = None
+        self.best_y = float('inf')
+        self.trust_region_radius = 2.5  # Initial trust region radius
+        self.kappa = 2.0 # Exploration-exploitation trade-off for LCB
+        self.success_count = 0
+        self.failure_count = 0
+        self.min_evals_for_adjust = 5 * dim
+        self.kappa = 2.0 + np.log(dim)  # Adaptive Initial Kappa
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points, center=None, radius=None):
+        # sample points within the trust region
+        if center is None:
+            center = (self.bounds[1] + self.bounds[0]) / 2
+        if radius is None:
+            radius = np.max(self.bounds[1] - self.bounds[0]) / 2
+
+        sampler = qmc.Sobol(d=self.dim, scramble=True)
+        points = sampler.random(n=n_points)
+        points = qmc.scale(points, -1, 1)  # Scale to [-1, 1]
+
+        # Project points to a hypersphere
+        lengths = np.linalg.norm(points, axis=1, keepdims=True)
+        points = points / lengths * np.random.uniform(0, 1, size=lengths.shape) ** (1/self.dim)
+
+        points = points * radius + center
+        
+        # Clip to the bounds
+        points = np.clip(points, self.bounds[0], self.bounds[1])
+        return points
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model
+        kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-3, 1e3))
+        gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5, random_state=42)
+        gp.fit(X, y)
+        return gp
+
+    def _acquisition_function(self, X, gp):
+        # Implement Lower Confidence Bound acquisition function
+        mu, sigma = gp.predict(X, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+        return mu - self.kappa * sigma
+
+    def _select_next_point(self, gp):
+        # Select the next point to evaluate within the trust region
+        n_samples = 100 * self.dim
+        samples = self._sample_points(n_samples, center=self.best_x, radius=self.trust_region_radius)
+        acq_values = self._acquisition_function(samples, gp)
+        best_index = np.argmin(acq_values)
+        return samples[best_index]
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += len(X)
+        return y
+    
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+        
+        # Update best seen value
+        idx = np.argmin(self.y)
+        if self.y[idx][0] < self.best_y:
+            self.best_y = self.y[idx][0]
+            self.best_x = self.X[idx]
+
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        
+        # Initial exploration
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        # Initialize best_x to a random initial point
+        self.best_x = self.X[np.argmin(self.y)].copy()
+
+        while self.n_evals < self.budget:
+            # Optimization
+            gp = self._fit_model(self.X, self.y)
+
+            # Select next point
+            next_x = self._select_next_point(gp)
+            next_y = self._evaluate_points(func, next_x.reshape(1, -1))
+            self._update_eval_points(next_x.reshape(1, -1), next_y)
+
+            # Adjust trust region radius and kappa
+            if self.n_evals > self.n_init + self.min_evals_for_adjust:
+                if next_y < self.best_y:
+                    self.success_count += 1
+                    self.failure_count = 0
+                    success_ratio = self.success_count / (self.success_count + self.failure_count + 1e-9)
+                    self.trust_region_radius /= (0.9 + 0.09 * success_ratio)  # Expand faster with higher success
+                    self.kappa *= (0.9 + 0.09 * success_ratio) # Less exploration
+                else:
+                    self.failure_count += 1
+                    self.success_count = 0
+                    failure_ratio = self.failure_count / (self.success_count + self.failure_count + 1e-9)
+                    self.trust_region_radius *= (0.9 + 0.09 * failure_ratio)  # Shrink faster with higher failure
+                    self.kappa /= (0.9 + 0.09 * failure_ratio) # More exploration
+
+                self.trust_region_radius = np.clip(self.trust_region_radius, 1e-2, np.max(self.bounds[1] - self.bounds[0]) / 2)
+                self.kappa = np.clip(self.kappa, 0.1, 10.0)
+
+        return self.best_y, self.best_x
+
+```
+The algorithm ATRBO_DKRA got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.0696 with standard deviation 0.0654.
+
+took 315.82 seconds to run.
+
+Combine the selected solutions to create a new solution. Then refine the strategy of the new solution to improve it. If the errors from the previous algorithms are provided, analyze them. The new algorithm should be designed to avoid these errors.
+
+
+
+
+Give the response in the format:
+# Description 
+<description>
+# Justification 
+<justification for the key components of the algorithm or the changes made>
+# Code 
+<code>
+

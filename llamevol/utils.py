@@ -650,6 +650,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 line_styles:list[list]=None,
                 
                 y_scales:list[tuple[str, dict]]=None,
+                sharey:bool = False,
 
                 x_dot:list[np.ndarray]=None,
 
@@ -693,7 +694,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
         for col in range(n_cols):
             row_ids.append(row * n_cols + col)
         axs_ids.append(row_ids)
-    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize, sharex=True)
+    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize, sharex=True, sharey=sharey)
     for i in range(n_plots):
         row = i // n_cols
         col = i % n_cols

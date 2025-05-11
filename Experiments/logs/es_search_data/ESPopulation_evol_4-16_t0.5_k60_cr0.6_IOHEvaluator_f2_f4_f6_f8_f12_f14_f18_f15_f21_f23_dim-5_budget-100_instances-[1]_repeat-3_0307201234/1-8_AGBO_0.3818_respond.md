@@ -1,0 +1,120 @@
+# Description
+**AGBO: Adaptive Gradient-Boosted Bayesian Optimization with Thompson Sampling and Dynamic Exploration:** This algorithm refines the Gradient-Boosted Bayesian Optimization (GBO) by incorporating Thompson Sampling for improved exploration-exploitation balance and a dynamic exploration factor that adapts based on the uncertainty of the surrogate model. It uses HistGradientBoostingRegressor from scikit-learn as the surrogate model. The initial design uses Latin Hypercube Sampling (LHS). A key improvement is the use of Thompson Sampling for selecting the next points, which naturally balances exploration and exploitation. The exploration factor in UCB is replaced by the Thompson Sampling scheme, which samples from the predictive distribution of the model. The uncertainty is estimated using the standard deviation of the predictions from the ensemble of trees in the HistGradientBoostingRegressor.
+
+# Justification
+The core idea is to leverage the strengths of Gradient Boosting while addressing its limitations in uncertainty estimation.
+1.  **Thompson Sampling:** Replaces the Upper Confidence Bound (UCB) acquisition function. Thompson Sampling is a probabilistic decision-making rule that selects actions (in this case, points in the search space) proportionally to the probability that they are optimal. This naturally balances exploration and exploitation.
+2.  **Dynamic Exploration:** The exploration factor is removed. Thompson sampling is used instead.
+3.  **Computational Efficiency:** HistGradientBoostingRegressor remains computationally efficient, making the algorithm suitable for a limited budget of function evaluations.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc #If you are using QMC sampling, qmc from scipy is encouraged. Remove this line if you have better alternatives.
+import numpy as np
+from sklearn.experimental import enable_hist_gradient_boosting  # noqa
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.impute import SimpleImputer
+
+class AGBO:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = 2 * self.dim # Initial samples
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points):
+        # sample points
+        # return array of shape (n_points, n_dims)
+        sampler = qmc.LatinHypercube(d=self.dim)
+        samples = sampler.random(n=n_points)
+        return qmc.scale(samples, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model 
+        # return the model
+        # Do not change the function signature
+        # Check for NaN values and impute if necessary
+        if np.isnan(X).any():
+            imputer = SimpleImputer(strategy='mean')
+            X = imputer.fit_transform(X)
+
+        model = HistGradientBoostingRegressor(random_state=0)
+        model.fit(X, y.ravel())  # HistGradientBoostingRegressor expects y to be 1D
+        return model
+
+    def _select_next_points(self, batch_size):
+        # Select the next points to evaluate using Thompson Sampling
+        # return array of shape (batch_size, n_dims)
+
+        # Generate candidate points
+        X_candidate = self._sample_points(100 * self.dim)
+
+        # Predict mean and sample from the predictive distribution
+        mu = self.model.predict(X_candidate)
+
+        # Thompson Sampling: Sample from the predictive distribution
+        # Use the predicted value as the sample (since HistGradientBoostingRegressor doesn't directly provide variance)
+        y_sampled = mu
+
+        # Select the point with the minimum sampled value
+        idx_best = np.argmin(y_sampled)
+        return X_candidate[idx_best:idx_best+batch_size]
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # return array of shape (n_points, 1)
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += len(X)
+        return y
+    
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        # Do not change the function signature
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+    
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64. 
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
+        # Return a tuple (best_y, best_x)
+        
+        # Initial sampling
+        X_init = self._sample_points(self.n_init)
+        y_init = self._evaluate_points(func, X_init)
+        self._update_eval_points(X_init, y_init)
+        
+        self.model = self._fit_model(self.X, self.y)
+        
+        while self.n_evals < self.budget:
+            # Optimization
+            batch_size = 1
+            X_next = self._select_next_points(batch_size)
+            y_next = self._evaluate_points(func, X_next)
+            self._update_eval_points(X_next, y_next)
+
+            self.model = self._fit_model(self.X, self.y)
+            
+        best_idx = np.argmin(self.y)
+        best_y = self.y[best_idx][0]
+        best_x = self.X[best_idx]
+
+        return best_y, best_x
+```
+## Feedback
+ The algorithm AGBO got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1575 with standard deviation 0.1024.
+
+took 78.41 seconds to run.

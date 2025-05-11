@@ -1,0 +1,177 @@
+# Description
+SMD-BO: Surrogate Model averaging with Diversity-enhanced Bayesian Optimization. This algorithm combines the strengths of SMABO (Surrogate Model Averaging Bayesian Optimization) and DEBO (Diversity-Enhanced Bayesian Optimization). It uses an ensemble of GPR models with different kernels like SMABO to improve the robustness of the surrogate model. It also incorporates a diversity term in the acquisition function like DEBO to promote exploration and avoid premature convergence. Furthermore, it uses a dynamic temperature parameter, similar to SMABO, to control the exploration-exploitation trade-off. The algorithm averages the predictions of the GPR models and adds a diversity term to the Expected Improvement (EI) acquisition function.
+
+# Justification
+1.  **Surrogate Model Averaging**: Using multiple GPR models with different kernels (RBF and Matern) can capture different aspects of the objective function's landscape, leading to more robust predictions than a single GPR model. This approach is adopted from SMABO.
+2.  **Diversity Enhancement**: Adding a diversity term to the acquisition function encourages the algorithm to explore regions of the search space that are far from previously evaluated points. This helps to avoid getting stuck in local optima and improves the chances of finding the global optimum. This approach is adopted from DEBO. The diversity term is calculated as the minimum distance to existing points.
+3.  **Dynamic Temperature**: The temperature parameter in the EI acquisition function controls the exploration-exploitation trade-off. A higher temperature encourages exploration, while a lower temperature encourages exploitation. The temperature is decayed over time, allowing the algorithm to initially explore the search space and then gradually focus on promising regions. This approach is adopted from SMABO.
+4.  **Computational Efficiency**: Candidate points are generated using Latin Hypercube Sampling (LHS), which is a space-filling design that ensures good coverage of the search space. The next points are selected by sampling a large number of candidates and choosing the top ones based on the acquisition function, which is computationally efficient.
+5. **NaN Error Handling**: Clipping the EI values and adding a small constant to the denominator in the EI calculation helps to avoid potential NaN errors.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc #If you are using QMC sampling, qmc from scipy is encouraged. Remove this line if you have better alternatives.
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, Matern, ConstantKernel
+from sklearn.metrics import pairwise_distances
+
+class SMDBO:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = min(10*dim, self.budget//5)
+        self.temperature = 1.0 # Initial temperature for exploration
+        self.temperature_decay = 0.95 # Decay rate for the temperature
+        self.diversity_weight = 0.1 # Weight for the diversity term in the acquisition function
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points):
+        # sample points
+        # return array of shape (n_points, n_dims)
+        sampler = qmc.LatinHypercube(d=self.dim)
+        sample = sampler.random(n=n_points)
+        return qmc.scale(sample, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model
+        # return the model
+        # Do not change the function signature
+        
+        # Define kernels
+        kernel_rbf = ConstantKernel(1.0) * RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2))
+        kernel_matern = ConstantKernel(1.0) * Matern(length_scale=1.0, length_scale_bounds=(1e-2, 1e2), nu=2.5)
+        
+        # Initialize models
+        gp_rbf = GaussianProcessRegressor(kernel=kernel_rbf, n_restarts_optimizer=5)
+        gp_matern = GaussianProcessRegressor(kernel=kernel_matern, n_restarts_optimizer=5)
+        
+        # Fit models
+        gp_rbf.fit(X, y)
+        gp_matern.fit(X, y)
+        
+        return gp_rbf, gp_matern
+
+    def _acquisition_function(self, X):
+        # Implement acquisition function
+        # calculate the acquisition function value for each point in X
+        # return array of shape (n_points, 1)
+        if self.X is None or self.y is None:
+            return np.zeros((len(X), 1)) # Return zeros if no data is available
+
+        mu_rbf, sigma_rbf = self.model_rbf.predict(X, return_std=True)
+        mu_matern, sigma_matern = self.model_matern.predict(X, return_std=True)
+
+        mu_rbf = mu_rbf.reshape(-1, 1)
+        sigma_rbf = sigma_rbf.reshape(-1, 1)
+        mu_matern = mu_matern.reshape(-1, 1)
+        sigma_matern = sigma_matern.reshape(-1, 1)
+        
+        # Average the predictions
+        mu = (mu_rbf + mu_matern) / 2.0
+        sigma = (sigma_rbf + sigma_matern) / 2.0
+
+        # Expected Improvement with temperature
+        best = np.min(self.y)
+        imp = best - mu
+        Z = imp / (self.temperature * sigma + 1e-9)  # Adding a small constant to avoid division by zero
+        ei = imp * norm.cdf(Z) + self.temperature * sigma * norm.pdf(Z)
+        ei = np.clip(ei, 0, 1e10) # Clip EI to avoid potential NaN issues
+        ei[sigma <= 1e-6] = 0.0 # avoid division by zero
+
+        # Diversity term
+        if self.X is not None:
+            distances = pairwise_distances(X, self.X)
+            min_distances = np.min(distances, axis=1).reshape(-1, 1)
+            diversity = min_distances
+        else:
+            diversity = np.zeros_like(ei)
+
+        # Combined acquisition function
+        acq = ei + self.diversity_weight * diversity
+        return acq
+
+    def _select_next_points(self, batch_size):
+        # Select the next points to evaluate
+        # Use a selection strategy to optimize/leverage the acquisition function
+        # The selection strategy can be any heuristic/evolutionary/mathematical/hybrid methods.
+        # Your decision should consider the problem characteristics, acquisition function, and the computational efficiency.
+        # return array of shape (batch_size, n_dims)
+
+        # Generate candidate points
+        n_candidates = max(2000, batch_size * 200)
+        X_cand = self._sample_points(n_candidates)
+
+        # Calculate acquisition function values
+        acq_values = self._acquisition_function(X_cand)
+
+        # Select top-k points based on acquisition function values
+        top_indices = np.argsort(acq_values.flatten())[::-1][:batch_size]
+        return X_cand[top_indices]
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # return array of shape (n_points, 1)
+        y = np.array([func(x) for x in X])
+        self.n_evals += len(X)
+        return y.reshape(-1, 1)
+
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        # Do not change the function signature
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.concatenate((self.X, new_X), axis=0)
+            self.y = np.concatenate((self.y, new_y), axis=0)
+
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
+        # Return a tuple (best_y, best_x)
+
+        # Initial sampling
+        X_init = self._sample_points(self.n_init)
+        y_init = self._evaluate_points(func, X_init)
+        self._update_eval_points(X_init, y_init)
+
+        # Optimization loop
+        batch_size = max(1, self.dim // 2)
+        while self.n_evals < self.budget:
+            # Fit the model
+            self.model_rbf, self.model_matern = self._fit_model(self.X, self.y)
+
+            # Select next points
+            X_next = self._select_next_points(batch_size)
+
+            # Evaluate points
+            y_next = self._evaluate_points(func, X_next)
+
+            # Update evaluated points
+            self._update_eval_points(X_next, y_next)
+
+            # Update temperature
+            self.temperature *= self.temperature_decay
+
+        # Return best solution
+        best_idx = np.argmin(self.y)
+        best_y = self.y[best_idx][0]
+        best_x = self.X[best_idx]
+        return best_y, best_x
+```
+## Feedback
+ The algorithm SMDBO got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1623 with standard deviation 0.0964.
+
+took 353.10 seconds to run.

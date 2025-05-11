@@ -1,0 +1,138 @@
+from collections.abc import Callable
+from scipy.stats import qmc
+import numpy as np
+from sklearn.experimental import enable_hist_gradient_boosting  # noqa
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.impute import SimpleImputer
+from scipy.optimize import minimize
+
+class GBTRBO:
+    def __init__(self, budget: int, dim: int):
+        self.budget = budget
+        self.dim = dim
+        self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0
+        self.n_init = 2 * self.dim
+        self.trust_region_size = 2.0
+        self.exploration_factor = 2.0
+        self.model = None  # Initialize the model
+
+    def _sample_points(self, n_points):
+        sampler = qmc.Sobol(d=self.dim, scramble=False)
+        samples = sampler.random(n=n_points)
+        return qmc.scale(samples, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        # Fit the Gradient Boosting model
+        if np.isnan(X).any():
+            imputer = SimpleImputer(strategy='mean')
+            X = imputer.fit_transform(X)
+
+        model = HistGradientBoostingRegressor(random_state=0, loss='squared_error')
+        model.fit(X, y.ravel())
+        return model
+
+    def _predict(self, model, X):
+        # Predict mean and standard deviation using quantile regression
+        mu = model.predict(X).reshape(-1, 1)
+
+        # Fit quantile regressors for estimating the standard deviation
+        lower_quantile = 0.16  # Corresponds to approximately one standard deviation below the mean
+        upper_quantile = 0.84  # Corresponds to approximately one standard deviation above the mean
+
+        lower_model = HistGradientBoostingRegressor(random_state=0, loss='quantile', quantile=lower_quantile)
+        upper_model = HistGradientBoostingRegressor(random_state=0, loss='quantile', quantile=upper_quantile)
+
+        if np.isnan(X).any():
+            imputer = SimpleImputer(strategy='mean')
+            X = imputer.fit_transform(X)
+
+        lower_model.fit(X, self.y.ravel())
+        upper_model.fit(X, self.y.ravel())
+
+        lower_bound = lower_model.predict(X).reshape(-1, 1)
+        upper_bound = upper_model.predict(X).reshape(-1, 1)
+        sigma = (upper_bound - lower_bound) / 2  # Estimate standard deviation
+
+        return mu, sigma
+
+    def _acquisition_function(self, X):
+        # Lower Confidence Bound acquisition function
+        mu, sigma = self._predict(self.model, X)
+        lcb = mu - self.exploration_factor * sigma
+        return lcb
+
+    def _select_next_points(self, batch_size):
+        # Select next points using trust region and L-BFGS-B optimization
+        best_idx = np.argmin(self.y)
+        best_x = self.X[best_idx]
+
+        x_starts = best_x + np.random.normal(0, 0.1, size=(batch_size, self.dim))
+        x_starts = np.clip(x_starts, self.bounds[0], self.bounds[1])
+
+        candidates = []
+        values = []
+        for x_start in x_starts:
+            # Define trust region bounds
+            lower_bound = np.maximum(x_start - self.trust_region_size / 2, self.bounds[0])
+            upper_bound = np.minimum(x_start + self.trust_region_size / 2, self.bounds[1])
+
+            res = minimize(lambda x: self._acquisition_function(x.reshape(1, -1)),
+                           x_start,
+                           bounds=np.array([lower_bound, upper_bound]).T,
+                           method="L-BFGS-B")
+            candidates.append(res.x)
+            values.append(res.fun)
+
+        return np.array(candidates)
+
+    def _evaluate_points(self, func, X):
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += len(X)
+        return y
+
+    def _update_eval_points(self, new_X, new_y):
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+    def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main optimization loop
+        X_init = self._sample_points(self.n_init)
+        y_init = self._evaluate_points(func, X_init)
+        self._update_eval_points(X_init, y_init)
+
+        self.model = self._fit_model(self.X, self.y)
+
+        while self.n_evals < self.budget:
+            batch_size = 1
+            X_next = self._select_next_points(batch_size)
+            y_next = self._evaluate_points(func, X_next)
+            self._update_eval_points(X_next, y_next)
+
+            # Adaptive trust region adjustment
+            y_pred, sigma = self._predict(self.model, X_next)
+            agreement = np.abs(y_pred - y_next) / sigma
+
+            if np.mean(agreement) < 1.0:
+                self.trust_region_size *= 1.1  # Increase trust region if model is accurate
+            else:
+                self.trust_region_size *= 0.9  # Decrease trust region if model is inaccurate
+
+            self.trust_region_size = np.clip(self.trust_region_size, 0.1, 5.0)
+
+            # Dynamic exploration factor adjustment
+            self.exploration_factor = 1.0 + (self.budget - self.n_evals) / self.budget
+
+            self.model = self._fit_model(self.X, self.y)
+
+        best_idx = np.argmin(self.y)
+        best_y = self.y[best_idx][0]
+        best_x = self.X[best_idx]
+
+        return best_y, best_x

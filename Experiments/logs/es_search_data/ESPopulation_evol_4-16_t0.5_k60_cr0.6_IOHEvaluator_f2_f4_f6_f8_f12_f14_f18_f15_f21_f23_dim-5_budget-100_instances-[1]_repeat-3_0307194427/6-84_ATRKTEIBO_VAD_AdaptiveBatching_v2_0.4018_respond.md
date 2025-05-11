@@ -1,0 +1,233 @@
+# Description
+**ATRKTEIBO_VAD_AdaptiveBatching_v2**: This algorithm builds upon ATRKTEIBO_VAD_AdaptiveBatching by introducing improvements in the trust region radius adaptation, diversity maintenance, and batch size adjustment. It combines the strengths of previous approaches, focusing on variance-aware dynamics, adaptive batch sizing, and EI-based diversity. The trust region radius is adjusted based on a more sophisticated combination of EI, EI variance, GP uncertainty, and a success ratio of evaluations within the trust region. Diversity is maintained by dynamically adjusting a diversity threshold based on the trust region radius and iteration, and by incorporating GP uncertainty into the diversity metric. The batch size is adjusted based on GP uncertainty, EI variance, and a dynamic scaling factor that depends on the iteration number. Kernel optimization is performed periodically using SLSQP.
+
+# Justification
+The key improvements are:
+
+1.  **Refined Trust Region Adaptation**: The trust region radius adaptation is modified to use a success ratio of points within the trust region to dynamically adjust the radius. This allows for a more nuanced control of exploration and exploitation. The GP uncertainty is also incorporated into the trust region update.
+2.  **Enhanced Diversity Maintenance**: The diversity mechanism is enhanced by incorporating GP uncertainty (sigma) into the diversity metric, in addition to distance and EI. This helps to select points that are both diverse and located in regions of high uncertainty.
+3.  **Dynamic Batch Size Scaling**: The batch size adjustment is modified to incorporate a scaling factor that depends on the iteration number. This allows for a more aggressive batch size in the early stages of the optimization, and a more conservative batch size in the later stages.
+4.  **Kernel Optimization**: Kernel optimization is performed periodically to adapt the GP model to the evolving landscape of the objective function. The length scale is initialized using the median distance between points.
+
+These changes are designed to improve the exploration-exploitation balance and to better adapt to the characteristics of different objective functions. By incorporating GP uncertainty into the diversity metric and trust region adaptation, the algorithm can better explore regions of high uncertainty, while maintaining diversity. The dynamic batch size scaling allows for a more efficient use of the budget by adjusting the batch size based on the iteration number.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
+from scipy.optimize import minimize, Bounds
+from scipy.spatial.distance import cdist, pdist, squareform
+
+class ATRKTEIBO_VAD_AdaptiveBatching_v2:
+    def __init__(self, budget: int, dim: int):
+        self.budget = budget
+        self.dim = dim
+        self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0
+        self.n_init = 2 * (dim + 1)
+        self.trust_region_center = np.zeros(dim)
+        self.trust_region_radius = 2.5
+        self.min_radius = 0.1
+        self.radius_decay_base = 0.95
+        self.radius_grow_base = 1.1
+        self.gp = None
+        self.ei_scaling = 0.1
+        self.ei_variance_scaling = 0.05
+        self.initial_ei_scaling = 0.1
+        self.recentering_threshold = 0.5
+        self.length_scale = 1.0
+        self.kernel_optim_interval = 5
+        self.initial_diversity_threshold = 0.1
+        self.diversity_threshold = 0.1
+        self.diversity_adaptation_rate = 0.05
+        self.diversity_weight = 0.5  # Weight for distance in diversity calculation
+        self.success_ratio = 0.0
+        self.success_history = []
+        self.success_window = 10
+        self.sigma_scaling = 0.01
+
+    def _sample_points(self, n_points):
+        sampler = qmc.Sobol(d=self.dim, scramble=False)
+        sample = sampler.random(n=n_points)
+        scaled_sample = qmc.scale(sample, -1.0, 1.0)
+        points = self.trust_region_center + scaled_sample * self.trust_region_radius
+        points = np.clip(points, self.bounds[0], self.bounds[1])
+        return points
+
+    def _fit_model(self, X, y):
+        kernel = ConstantKernel(constant_value=1.0, constant_value_bounds=(1e-3, 1e3)) * \
+                 RBF(length_scale=self.length_scale, length_scale_bounds=(1e-3, 1e3)) + \
+                 WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-7, 1e-3))
+        self.gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5)
+        self.gp.fit(X, y)
+        return self.gp
+
+    def _optimize_kernel(self):
+        # Initialize length_scale with median distance
+        distances = pdist(self.X)
+        if len(distances) > 0:
+            self.length_scale = np.median(distances)
+        else:
+            self.length_scale = 1.0
+
+        def obj(length_scale):
+            kernel = ConstantKernel(constant_value=1.0, constant_value_bounds="fixed") * RBF(length_scale=length_scale, length_scale_bounds=(1e-2, 10))
+            gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=0, alpha=1e-5)
+            gp.fit(self.X, self.y)
+            return -gp.log_marginal_likelihood()
+
+        bounds = Bounds(1e-2, 10)
+        res = minimize(obj, x0=self.length_scale, method='SLSQP', bounds=bounds)
+        self.length_scale = res.x[0]
+
+    def _acquisition_function(self, X):
+        if self.gp is None or self.X is None or self.y is None:
+            return np.zeros((len(X), 1))
+
+        mu, sigma = self.gp.predict(X, return_std=True)
+        sigma = np.clip(sigma, 1e-9, np.inf)
+        y_best = np.min(self.y)
+        gamma = (y_best - mu) / sigma
+        ei = sigma * (gamma * norm.cdf(gamma) + norm.pdf(gamma))
+        return ei.reshape(-1, 1)
+
+    def _select_next_points(self, batch_size):
+        candidates = self._sample_points(100 * self.dim)
+        ei = self._acquisition_function(candidates)
+        mu, sigma = self.gp.predict(candidates, return_std=True)
+        sigma = np.clip(sigma, 1e-9, np.inf)
+
+        if self.X is not None:
+            distances = cdist(candidates, self.X)
+            min_distances = np.min(distances, axis=1)
+            normalized_ei = (ei - np.min(ei)) / (np.max(ei) - np.min(ei) + 1e-9)  # Normalize EI
+            normalized_distances = min_distances / self.trust_region_radius  # Normalize distances
+            normalized_sigma = sigma / np.max(sigma)
+
+            # Combine EI, distance, and uncertainty for diversity
+            diversity_metric = self.diversity_weight * normalized_distances + (1 - self.diversity_weight) * normalized_ei.flatten() + self.sigma_scaling * normalized_sigma
+
+            # Select top candidates based on diversity metric
+            selected_indices = np.argsort(diversity_metric)[-batch_size:]
+            selected_points = candidates[selected_indices]
+
+            if len(selected_points) < batch_size:
+                remaining_needed = batch_size - len(selected_points)
+                additional_indices = np.argsort(ei.flatten())[:-batch_size-1:-1][:remaining_needed]
+                additional_points = candidates[additional_indices]
+                selected_points = np.concatenate([selected_points, additional_points], axis=0)
+
+        else:
+            selected_indices = np.argsort(ei.flatten())[-batch_size:]
+            selected_points = candidates[selected_indices]
+
+        return selected_points[:batch_size]
+
+    def _evaluate_points(self, func, X):
+        y = np.array([func(x) for x in X])
+        self.n_evals += len(X)
+        return y.reshape(-1, 1)
+
+    def _update_eval_points(self, new_X, new_y):
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+    def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        best_idx = np.argmin(self.y)
+        best_y = self.y[best_idx][0]
+        best_x = self.X[best_idx]
+
+        iteration = 0
+        while self.n_evals < self.budget:
+            # Kernel Optimization
+            if iteration % self.kernel_optim_interval == 0:
+                self._optimize_kernel()
+
+            # Fit GP model
+            gp = self._fit_model(self.X, self.y)
+
+            # Dynamic batch size
+            mu, sigma = gp.predict(self.X, return_std=True)
+            ei_values = self._acquisition_function(self.X)
+            ei_variance = np.var(ei_values)
+            avg_sigma = np.mean(sigma)
+            batch_size = min(self.budget - self.n_evals, int(np.ceil(5 * (avg_sigma / np.std(self.bounds))))) if np.std(self.bounds) > 0 else min(self.budget - self.n_evals, 5)
+            # Adjust batch size based on EI variance and iteration
+            scaling_factor = 1.0 - (iteration / self.budget) * 0.5 # Reduce batch size over time
+            batch_size = int(batch_size * (1 + self.ei_scaling * ei_variance) * scaling_factor)
+            batch_size = max(1, min(batch_size, self.budget - self.n_evals))
+
+            # Select next points
+            next_X = self._select_next_points(batch_size)
+
+            # Evaluate points
+            next_y = self._evaluate_points(func, next_X)
+            self._update_eval_points(next_X, next_y)
+
+            # Update best solution
+            best_idx = np.argmin(self.y)
+            current_best_y = self.y[best_idx][0]
+            current_best_x = self.X[best_idx]
+
+            # Calculate average EI and variance of evaluated points
+            ei_values = self._acquisition_function(next_X)
+            avg_ei = np.mean(ei_values)
+            ei_variance = np.var(ei_values)
+
+            # Calculate success ratio
+            n_successful = np.sum(next_y < np.min(self.y))
+            success = n_successful / len(next_y)
+            self.success_history.append(success)
+            if len(self.success_history) > self.success_window:
+                self.success_history.pop(0)
+            self.success_ratio = np.mean(self.success_history)
+
+            # Adjust trust region radius based on EI, EI variance, success ratio, and GP uncertainty
+            if current_best_y < best_y:
+                # Improvement: shrink radius based on EI, slower if EI variance is high
+                self.trust_region_radius *= (self.radius_decay_base + self.ei_scaling * avg_ei) * (1 - self.ei_variance_scaling * ei_variance) * (1 + 0.5 * self.success_ratio)
+                self.trust_region_center = current_best_x
+                best_y = current_best_y
+                best_x = current_best_x
+            else:
+                # No improvement: expand radius, but slower if EI is high, faster if EI variance is high
+                self.trust_region_radius *= (self.radius_grow_base - self.ei_scaling * avg_ei) * (1 + self.ei_variance_scaling * ei_variance) * (1 - 0.5 * self.success_ratio)
+                self.trust_region_radius = min(self.trust_region_radius, 2.5)  # Limit to initial radius
+
+            self.trust_region_radius = max(self.trust_region_radius, self.min_radius)
+
+            # Re-center trust region if current center is far from best point
+            distance = np.linalg.norm(self.trust_region_center - best_x)
+            if distance > self.recentering_threshold * self.trust_region_radius:
+                self.trust_region_center = best_x
+
+            # Adapt diversity threshold
+            self.diversity_threshold = self.initial_diversity_threshold * (self.trust_region_radius / 2.5) * (1 - iteration / self.budget)
+            self.diversity_threshold = np.clip(self.diversity_threshold, 0.01, 0.5)
+
+            # Adapt EI scaling
+            self.ei_scaling = self.initial_ei_scaling * (1 - iteration / self.budget)
+            self.ei_scaling = np.clip(self.ei_scaling, 0.01, 0.2)
+
+            iteration += 1
+
+        return best_y, best_x
+```
+## Feedback
+ The algorithm ATRKTEIBO_VAD_AdaptiveBatching_v2 got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1891 with standard deviation 0.1108.
+
+took 286.71 seconds to run.

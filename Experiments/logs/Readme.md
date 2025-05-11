@@ -30,13 +30,12 @@ The ES search results:
 - `es_100_problem_ioh.csv` - The AOC value for each problem
 
 The BBOB benchmark results organized by problem dimension:
-- `5D_ioh_*.csv` - 5-dimensional benchmark results
-- `10D_ioh_*.csv` - 10-dimensional benchmark results
-- `20D_ioh_*.csv` - 20-dimensional benchmark results
-- `40D_ioh_*.csv` - 40-dimensional benchmark results
 - `*D_ioh_loss.csv` - The benchmark results of the loss
 - `*D_ioh_fx.csv` - The benchmark results of the function value
 - `*D_aoc.csv` - The benchmark results of the AOC value
+- `*D_mean_aoc.csv` - The benchmark results of the average AOC value for each problem
+- `*D_hist.csv` - The benchmark results of `x_hist` and `y_hist` 
+- `*D_mannwhitneyu_test.csv` - The Mann-Whitney U test results of the AOC values
 
 The files with `ioh` infix can be directly imported into [IOHanalyzer](https://iohanalyzer.liacs.nl/) for visualization and analysis.
 
@@ -48,11 +47,27 @@ For proper processing these files on iohanalyzer:
 ### atrbo_logs
 This directory contains the results of the additional experiments conducted with the ATRBO algorithm.
 
-### bayesmark_results_figs
-This directory contains figures generated from the Bayesmark results.
+### es_search_data
+This directory stores the raw data from the Evolutionary Strategy (ES) search experiments. Each subdirectory corresponds to a specific experimental run, and its name encodes the parameters used for that run. For example:
+- `ESPopulation_evol_1+1_t0.5_k60_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0308014053/`
+  - This indicates a (1+1)-ES strategy.
+  - `t0.5`: Temperature parameter.
+  - `k60`: Kappa parameter.
+  - `cr0.6`: Crossover rate.
+  - `IOHEvaluator`: The evaluator used.
+  - `f2_f4_...`: The specific BBOB functions tested.
+  - `dim-5`: Dimensionality of the problem.
+  - `budget-100`: Evaluation budget.
+  - `instances-[1]`: Problem instances.
+  - `repeat-3`: Number of repetitions.
+  - `0308014053`: Timestamp of the experiment.
 
-### bbob_figs
-This directory contains figures generated from the BBOB benchmark results.
+Within each of these subdirectories, you will find files related to the individual algorithms generated and tested during that specific ES run. For each algorithm instance, there are typically three associated files:
+- `[generation]-[iteration]_[ALGORITHM_NAME]_[metric_value]_prompt.md`: The prompt used to generate this specific algorithm.
+- `[generation]-[iteration]_[ALGORITHM_NAME]_[metric_value]_respond.md`: The full response from the language model that produced the algorithm code.
+- `[generation]-[iteration]_[ALGORITHM_NAME]_[metric_value].py`: The Python code for the generated algorithm, which is extracted from the response.
+
+The `[generation]-[iteration]` prefix indicates the generation number and the iteration number in that ES evoluation. `[ALGORITHM_NAME]` is a descriptive name of the algorithm, and `[metric_value]` likely represents a performance score (AOC) achieved by the algorithm during its evaluation.
 
 ## Baselines
 

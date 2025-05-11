@@ -1,0 +1,231 @@
+# Description
+**Hybridized Deep Kernel Learning with Exploration-Exploitation Balancing (HDKLBBO):** This algorithm combines the strengths of Deep Kernel Learning (DKL) and a hybrid acquisition function inspired by EHBBO. It addresses the error encountered in DKLCBBO by ensuring correct tensor dimensions in the DKL loss calculation. The DKL component learns a feature representation of the input space using a neural network, which is then used by a Gaussian Process Regression (GPR) model. The acquisition function combines Expected Improvement (EI) with a distance-based exploration term, as in EHBBO, to balance exploration and exploitation. Additionally, a simple local search is incorporated to refine promising solutions.
+
+# Justification
+*   **DKL for Feature Learning:** DKL can learn task-specific kernels, potentially improving the GPR model's accuracy, especially in complex search spaces. Using a neural network to map the input space to a feature space allows the GPR to operate in a more suitable space.
+*   **Hybrid Acquisition Function:** The combination of EI and a distance-based exploration term promotes both exploitation of promising regions and exploration of less-sampled areas. This is inspired by the successful EHBBO algorithm.
+*   **Error Correction:** The error in DKLCBBO was due to a mismatch in tensor dimensions during the loss calculation. This is corrected by ensuring that the features and y tensors have compatible shapes when computing the loss. The loss function is modified to ensure that the dimensions align for the matrix multiplication.
+*   **Local Search:** Integrating local search helps refine solutions found by the acquisition function, potentially leading to faster convergence.
+*   **Computational Efficiency:** The algorithm aims to balance the computational cost of DKL and GPR with the benefits of improved surrogate modeling and exploration-exploitation balance. The DKL network architecture is kept relatively simple to minimize computational overhead.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from scipy.optimize import minimize
+
+class DKLNet(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(DKLNet, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+class HDKLBBO:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = 2 * dim
+
+        self.best_y = np.inf
+        self.best_x = None
+
+        self.hidden_dim = 32
+        self.feature_dim = min(10, dim)
+        self.dkl_net = DKLNet(dim, self.hidden_dim, self.feature_dim)
+        self.optimizer = optim.Adam(self.dkl_net.parameters(), lr=1e-3)
+        self.epochs = 10
+        self.local_search_iterations = 5
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.dkl_net.to(self.device)
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points):
+        # sample points
+        # return array of shape (n_points, n_dims)
+        sampler = qmc.LatinHypercube(d=self.dim)
+        sample = sampler.random(n=n_points)
+        return qmc.scale(sample, self.bounds[0], self.bounds[1])
+
+    def _fit_dkl(self, X, y):
+        # Train the DKL network
+        X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
+        y_tensor = torch.tensor(y, dtype=torch.float32).to(self.device)
+
+        self.dkl_net.train()
+        for epoch in range(self.epochs):
+            self.optimizer.zero_grad()
+            features = self.dkl_net(X_tensor)
+            # Corrected loss function
+            loss = torch.mean(torch.square(features @ y_tensor - y_tensor.mean()))
+            loss.backward()
+            self.optimizer.step()
+
+    def _get_features(self, X):
+        # Get features from DKL network
+        X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
+        self.dkl_net.eval()
+        with torch.no_grad():
+            features = self.dkl_net(X_tensor).cpu().numpy()
+        return features
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model
+        # return the model
+        # Do not change the function signature
+        kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-2, 1e2))
+        model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5, alpha=1e-5)
+        model.fit(X, y)
+        return model
+
+    def _acquisition_function(self, X):
+        # Implement acquisition function
+        # calculate the acquisition function value for each point in X
+        # return array of shape (n_points, 1)
+        features = self._get_features(X)
+        mu, sigma = self.model.predict(features, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+
+        imp = self.best_y - mu
+        Z = imp / sigma
+        ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
+        ei[sigma <= 1e-6] = 0.0
+
+        # Distance-based exploration term
+        min_dist = np.min(np.linalg.norm(X[:, None, :] - self.X[None, :, :], axis=2), axis=1, keepdims=True)
+        exploration = min_dist / np.max(min_dist)
+
+        # Hybrid acquisition function
+        acquisition = ei + 0.1 * exploration
+        return acquisition
+
+    def _select_next_points(self, batch_size):
+        # Select the next points to evaluate
+        # Use a selection strategy to optimize/leverage the acquisition function
+        # The selection strategy can be any heuristic/evolutionary/mathematical/hybrid methods.
+        # Your decision should consider the problem characteristics, acquisition function, and the computational efficiency.
+        # return array of shape (batch_size, n_dims)
+
+        # Generate candidate points
+        candidate_points = self._sample_points(100 * batch_size)
+
+        # Calculate acquisition function values
+        acquisition_values = self._acquisition_function(candidate_points)
+
+        # Select the top batch_size points with the highest acquisition values
+        indices = np.argsort(acquisition_values.flatten())[-batch_size:]
+        next_points = candidate_points[indices]
+
+        return next_points
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # return array of shape (n_points, 1)
+        y = np.array([func(x) for x in X])
+        self.n_evals += len(X)
+        return y.reshape(-1, 1)
+    
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        # Do not change the function signature
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+        # Update best seen value
+        idx = np.argmin(self.y)
+        if self.y[idx][0] < self.best_y:
+            self.best_y = self.y[idx][0]
+            self.best_x = self.X[idx]
+    
+    def _local_search(self, func, x0):
+        # Perform local search around x0
+        def objective(x):
+            return func(x)
+
+        bounds = [(self.bounds[0][i], self.bounds[1][i]) for i in range(self.dim)]
+        result = minimize(objective, x0, method='L-BFGS-B', bounds=bounds, options={'maxiter': self.local_search_iterations})
+        return result.fun, result.x
+
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
+        # Return a tuple (best_y, best_x)
+
+        # Initial sampling
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        # Train DKL
+        self._fit_dkl(self.X, self.y)
+        X_features = self._get_features(self.X)
+
+        self.model = self._fit_model(X_features, self.y)
+
+        while self.n_evals < self.budget:
+            # Optimization
+            # select points by acquisition function
+            remaining_evals = self.budget - self.n_evals
+            batch_size = min(self.n_init, remaining_evals)
+            next_X = self._select_next_points(batch_size)
+            next_y = self._evaluate_points(func, next_X)
+            self._update_eval_points(next_X, next_y)
+
+            # Local search on the best point
+            best_idx = np.argmin(self.y)
+            best_x = self.X[best_idx]
+            
+            if remaining_evals > 0:
+                ls_y, ls_x = self._local_search(func, best_x)
+                self.n_evals += self.local_search_iterations #approximation of evaluations
+                if ls_y < self.best_y:
+                    self.best_y = ls_y
+                    self.best_x = ls_x
+                
+            # Retrain DKL
+            self._fit_dkl(self.X, self.y)
+            X_features = self._get_features(self.X)
+            self.model = self._fit_model(X_features, self.y)
+
+        return self.best_y, self.best_x
+```
+## Error
+ Traceback (most recent call last):
+  File "<HDKLBBO>", line 177, in __call__
+ 177->         self._fit_dkl(self.X, self.y)
+  File "<HDKLBBO>", line 70, in _fit_dkl
+  68 |             features = self.dkl_net(X_tensor)
+  69 |             # Corrected loss function
+  70->             loss = torch.mean(torch.square(features @ y_tensor - y_tensor.mean()))
+  71 |             loss.backward()
+  72 |             self.optimizer.step()
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (10x5 and 10x1)

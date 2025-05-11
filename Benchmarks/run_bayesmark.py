@@ -523,6 +523,7 @@ def plot_bayesmark_results():
                         df['seed'] = seed
                         df['algo'] = algo
                         df['n_iterations'] = df.index + 1
+                        df['short_algo'] = _shorthand_algo_name(algo)
 
                         # add df to bl_data
                         if _model not in data_map:
@@ -531,11 +532,34 @@ def plot_bayesmark_results():
                             data_map[_model] = pd.concat([data_map[_model], df], ignore_index=True)
 
     for _model, df in data_map.items():
-        df = df[['algo', 'dataset', 'model', 'seed', 'n_iterations', 'generalization_score']]
+        df = df[['algo', 'short_algo', 'dataset', 'model', 'seed', 'n_iterations', 'score', 'generalization_score']]
+        csv_save_dir = 'Benchmarks/bayesmark_result_files'
+        os.makedirs(csv_save_dir, exist_ok=True)
+        df.to_csv(os.path.join(csv_save_dir, f'{_model}.csv'), index=False)
+
+        best_df = df[['algo', 'short_algo', 'dataset', 'model', 'seed', 'generalization_score']]
+        best_df = best_df.groupby(['algo', 'short_algo', 'dataset', 'model', 'seed']).agg(list).reset_index()
+        def _best_score(row):
+            dataset = row['dataset']
+            _metric = 'accuracy'
+            if dataset in BAYESMARK_TASK_MAP:
+                _metric = BAYESMARK_TASK_MAP[dataset][1]
+            elif dataset in PRIVATE_TASK_MAP:
+                _metric = PRIVATE_TASK_MAP[dataset][1]
+            x = row['generalization_score']
+            if _metric == 'accuracy':
+                return np.max(x)
+            else:
+                return np.min(x)
+        best_df['generalization_score'] = best_df.apply(_best_score, axis=1)
+        mean_best_df = best_df.groupby(['algo', 'short_algo', 'dataset', 'model']).agg(np.mean).reset_index()
+        mean_best_df.drop(columns=['seed'], inplace=True)
+        mean_best_df.to_csv(os.path.join(csv_save_dir, f'{_model}_best.csv'), index=False)
+
         df = df.groupby(['algo', 'dataset', 'model', 'seed']).agg(list).reset_index()
-
-
         datasets = df['dataset'].unique()
+        datasets = ['breast', 'digits', 'wine', 'iris', 'diabetes', 'griewank', 'ktablet', 'rosenbrock'] 
+        y_label_datasets = set(['breast', 'diabetes'])
         algos = df['algo'].unique()
         algos = sorted(algos, key=cmp_to_key(compare_expressions))
 
@@ -568,9 +592,13 @@ def plot_bayesmark_results():
                 _metric = PRIVATE_TASK_MAP[dataset][1]
             y_label = 'ACC' if _metric == 'accuracy' else 'MSE'
             sub_title = f'{dataset} ({y_label})'
+            sub_title = f'{dataset}'
             is_maximization = True if _metric == 'accuracy' else False
 
-            y_labels.append(y_label)
+            if dataset in y_label_datasets:
+                y_labels.append(y_label)
+            else:
+                y_labels.append('')
             sub_titles.append(sub_title)
 
             _x_range = (5, 30)
@@ -628,6 +656,8 @@ def plot_bayesmark_results():
             y=plot_y, x=plot_x,
             # y_scales=best_loss_y_scales,
             # colors=best_loss_colors,
+            y_labels=y_labels,
+            # sharey=True,
             labels=labels,
             line_styles=line_styles,
             label_fontsize=10,

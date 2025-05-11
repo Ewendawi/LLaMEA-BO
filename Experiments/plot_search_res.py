@@ -1399,7 +1399,19 @@ def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
         cur_best = best_pop_map.get(name, None)
         if cur_best is None or pop.get_best_of_all().fitness > cur_best.get_best_of_all().fitness:
             best_pop_map[name] = pop
-    
+
+        # ind_index = 0
+        # for gen, keys in enumerate(pop.generations):
+        #     for key in keys:
+        #         ind = pop.individuals.get(key, None)
+        #         handler = Population.get_handler_from_individual(ind)
+        #         if handler.eval_result is not None:
+        #             handler.eval_result.update_aoc_with_new_bound_if_needed()
+        #             ind.fitness = handler.eval_result.score
+
+        #         pop.save_on_the_fly(ind, gen, ind_index)
+        #         ind_index += 1
+
     res_df = _process_search_result(pop_list, save_name=save_name)
 
     return res_df

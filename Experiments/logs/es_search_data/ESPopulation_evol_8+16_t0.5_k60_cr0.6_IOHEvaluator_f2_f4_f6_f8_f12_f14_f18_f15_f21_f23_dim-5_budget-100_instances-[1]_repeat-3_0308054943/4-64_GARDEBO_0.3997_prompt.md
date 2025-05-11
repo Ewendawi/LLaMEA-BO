@@ -1,0 +1,479 @@
+You are a highly skilled computer scientist in the field of natural computing. Your task is to design novel metaheuristic algorithms to solve black box optimization problems
+
+
+The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `__call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
+The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
+As an expert of numpy, scipy, scikit-learn, torch, gpytorch, you are allowed to use these libraries. Do not use any other libraries unless they cannot be replaced by the above libraries.  Do not remove the comments from the code.
+Name the class based on the characteristics of the algorithm with a template '<characteristics>BO'.
+
+Give an excellent, novel and computationally efficient Bayesian Optimization algorithm to solve this task, give it a concise but comprehensive key-word-style description with the main ideas and justify your decision about the algorithm.
+
+The current population of algorithms already evaluated(name, score, runtime and description):
+- GADETBO: 0.1795, 109.58 seconds, **GADETBO: Gradient-Aware Diversity Enhanced Trust Region Bayesian Optimization:** This algorithm combines the strengths of AGATBO and DEBO, focusing on balancing exploration and exploitation by incorporating gradient information, diversity enhancement, and a trust region strategy. It uses a Gaussian Process Regression (GPR) model with a Matérn kernel for surrogate modeling. The acquisition function is a combination of Expected Improvement (EI), a gradient-based exploration term, and a distance-based diversity term, all evaluated within an adaptive trust region. The trust region size is adjusted based on the agreement between the GPR model and the true objective function. Clustering is used to identify diverse regions for sampling.
+
+
+- GADETREBO: 0.1783, 111.03 seconds, **GADETREBO: Gradient-Aware Diversity Enhanced Trust Region Bayesian Optimization with Exploration Regularization:** This algorithm synergistically combines the strengths of GADETBO and TREDABO, incorporating gradient information, diversity enhancement, trust region adaptation, and exploration regularization to achieve a robust and efficient optimization process. It uses a Gaussian Process Regression (GPR) model with a Matérn kernel for surrogate modeling. The acquisition function is a combination of Expected Improvement (EI), a gradient-based exploration term, a distance-based diversity term, and an exploration regularization term, all evaluated within an adaptive trust region. The trust region size is adjusted based on the agreement between the GPR model and the true objective function. Clustering is used to identify diverse regions for sampling. The exploration regularization term dynamically adjusts the exploration-exploitation balance based on the uncertainty of the GPR model and the trust region size.
+
+
+- AGATBO: 0.1767, 510.80 seconds, **AGATBO: Adaptive Gradient-Aware Trust Region Bayesian Optimization:** This algorithm combines the strengths of AGABO and ATRBO, incorporating gradient information into the acquisition function within an adaptive trust region framework. It uses a Gaussian Process Regression (GPR) model with a Matérn kernel for surrogate modeling. The acquisition function is a combination of Expected Improvement (EI) and a gradient-based exploration term, evaluated within a trust region. The size of the trust region is adaptively adjusted based on the agreement between the GPR model and the true objective function. Halton sequence is used for initial exploration, and Sobol sequence is used for sampling within the trust region.
+
+
+- GADETBO_RBF: 0.1755, 111.20 seconds, **GADETBO-RBF: Gradient-Aware Diversity Enhanced Trust Region Bayesian Optimization with RBF Kernel:** This algorithm builds upon GADETBO by replacing the Matérn kernel with a Radial Basis Function (RBF) kernel in the Gaussian Process Regression (GPR) model. The RBF kernel's smoothness can be beneficial for certain types of black-box functions. Additionally, the gradient prediction is enhanced by using a more accurate central difference method. The diversity term is also modified to be more robust to outliers by using the median distance instead of the minimum distance. Finally, the trust region update is modified to use a more robust agreement check based on the Spearman correlation.
+
+
+- GRADEBO: 0.1745, 303.07 seconds, **GRADEBO: Gradient-Regularized Adaptive Diversity Enhanced Bayesian Optimization:** This algorithm combines gradient information, adaptive regularization, and diversity enhancement within a trust region framework to improve Bayesian optimization. It leverages a Gaussian Process Regression (GPR) model with a Matérn kernel for surrogate modeling. The acquisition function integrates Expected Improvement (EI), a gradient-based exploration term, an adaptive regularization term, and a distance-based diversity term. The trust region size is adaptively adjusted based on the agreement between the GPR model and the true objective function. The gradient is estimated efficiently using finite differences. An adaptive batch size strategy is also incorporated to dynamically balance exploration and exploitation.
+
+
+- AGAPTRBO: 0.1727, 512.47 seconds, **AGAPTRBO: Adaptive Gradient-Aware Pareto Trust Region Bayesian Optimization:** This algorithm combines the strengths of AGATBO and APTRBO by integrating gradient information into the Pareto-based multi-acquisition function approach within an adaptive trust region framework. It uses a Gaussian Process Regression (GPR) model with a Matérn kernel for surrogate modeling. The acquisition function is a Pareto front of Expected Improvement (EI), Probability of Improvement (PI), Upper Confidence Bound (UCB), and a gradient-based exploration term, evaluated within a trust region. The size of the trust region is adaptively adjusted based on the agreement between the GPR model and the true objective function. The UCB's kappa parameter is dynamically adjusted based on the trust region size to balance exploration and exploitation.
+
+
+- APTRBO: 0.1724, 104.60 seconds, **Adaptive Pareto Trust Region Bayesian Optimization (APTRBO):** This algorithm combines the strengths of Adaptive Trust Region Bayesian Optimization (ATRBO) and Pareto-based Acquisition Steering Bayesian Optimization (PaSBO) to achieve a more robust and efficient optimization process. It adaptively adjusts the trust region based on model agreement, uses a Pareto-based approach to manage multiple acquisition functions (EI, PI, UCB) within the trust region, and incorporates a dynamic exploration-exploitation balance by adjusting the UCB kappa parameter based on the trust region size. A Matern kernel is used for the Gaussian Process Regression (GPR) model.
+
+
+- ARPTRBO: 0.1723, 288.39 seconds, **Adaptive Regularized Pareto Trust Region Bayesian Optimization (ARPTRBO):** This algorithm synergistically integrates the strengths of APTRBO and ARBO. It employs a trust region, adaptively adjusted based on model agreement, and utilizes a Pareto-based approach to manage multiple acquisition functions (EI, PI, UCB) within the trust region, similar to APTRBO. Additionally, it incorporates the adaptive regularization term and dynamic batch size strategy from ARBO to enhance exploration and exploitation. The regularization term is modified to include uncertainty from the Gaussian Process, and an exploration factor is added to the acquisition function. This combination aims to balance exploration and exploitation more effectively, leading to improved performance.
+
+
+
+
+The selected solutions to update are:
+## GADETBO
+**GADETBO: Gradient-Aware Diversity Enhanced Trust Region Bayesian Optimization:** This algorithm combines the strengths of AGATBO and DEBO, focusing on balancing exploration and exploitation by incorporating gradient information, diversity enhancement, and a trust region strategy. It uses a Gaussian Process Regression (GPR) model with a Matérn kernel for surrogate modeling. The acquisition function is a combination of Expected Improvement (EI), a gradient-based exploration term, and a distance-based diversity term, all evaluated within an adaptive trust region. The trust region size is adjusted based on the agreement between the GPR model and the true objective function. Clustering is used to identify diverse regions for sampling.
+
+
+With code:
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern, ConstantKernel as C
+from sklearn.cluster import KMeans
+from sklearn.metrics import pairwise_distances
+import warnings
+
+class GADETBO:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = 2 * dim
+        self.gradient_weight = 0.01
+        self.diversity_weight = 0.1
+        self.n_clusters = 5
+        self.best_x = None
+        self.best_y = float('inf')
+        self.trust_region_radius = 2.0  # Initial trust region radius
+        self.trust_region_shrink_factor = 0.5
+        self.trust_region_expand_factor = 2.0
+        self.model_agreement_threshold = 0.75
+        self.kernel = C(1.0, (1e-3, 1e3)) * Matern(length_scale=1.0, length_scale_bounds=(1e-2, 1e2), nu=1.5)
+        self.model = None
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points):
+        # sample points
+        # return array of shape (n_points, n_dims)
+        sampler = qmc.Sobol(d=self.dim, seed=42)
+        sample = sampler.random(n=n_points)
+        return qmc.scale(sample, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model
+        # return the model
+        # Do not change the function signature
+        try:
+            model = GaussianProcessRegressor(kernel=self.kernel, n_restarts_optimizer=5, alpha=1e-5)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model.fit(X, y)
+            self.kernel = model.kernel_  # Update kernel with optimized parameters
+            return model
+        except Exception as e:
+            print(f"GP fitting failed: {e}. Returning None.")
+            return None
+
+    def _acquisition_function(self, X, model):
+        # Implement acquisition function
+        # calculate the acquisition function value for each point in X
+        # return array of shape (n_points, 1)
+        mu, sigma = model.predict(X, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+
+        if self.best_y is None:
+            ei = np.zeros_like(mu)
+        else:
+            imp = self.best_y - mu
+            Z = imp / sigma
+            ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
+            ei[sigma <= 1e-6] = 0.0  # handle zero sigma
+
+        # Add gradient-based exploration term
+        if self.X is not None:
+            dmu_dx = self._predict_gradient(X, model)
+            gradient_norm = np.linalg.norm(dmu_dx, axis=1, keepdims=True)
+            ei = ei + self.gradient_weight * gradient_norm
+
+        # Add diversity term
+        if self.X is not None:
+            distances = pairwise_distances(X, self.X)
+            min_distances = np.min(distances, axis=1).reshape(-1, 1)
+            ei = ei + self.diversity_weight * min_distances
+
+        return ei
+
+    def _predict_gradient(self, X, model):
+        # Predict the gradient of the GPR mean function
+        # return array of shape (n_points, n_dims)
+        X = np.atleast_2d(X)
+        dmu_dx = np.zeros((X.shape[0], self.dim))
+        
+        # Efficient gradient calculation using finite differences
+        delta = 1e-6
+        for i in range(self.dim):
+            X_plus = X.copy()
+            X_plus[:, i] += delta
+            dmu_dx[:, i] = (model.predict(X_plus) - model.predict(X)) / delta
+        
+        return dmu_dx
+
+    def _select_next_points(self, batch_size, trust_region_center):
+        # Select the next points to evaluate
+        # Use a selection strategy to optimize/leverage the acquisition function
+        # The selection strategy can be any heuristic/evolutionary/mathematical/hybrid methods.
+        # return array of shape (batch_size, n_dims)
+
+        # Sample within the trust region using Sobol sequence
+        sobol_engine = qmc.Sobol(d=self.dim, seed=42)
+        samples = sobol_engine.random(n=100 * batch_size)
+
+        # Scale and shift samples to be within the trust region
+        scaled_samples = trust_region_center + self.trust_region_radius * (2 * samples - 1)
+
+        # Clip samples to stay within the problem bounds
+        scaled_samples = np.clip(scaled_samples, self.bounds[0], self.bounds[1])
+
+        # Identify diverse regions using clustering
+        if self.X is not None:
+            kmeans = KMeans(n_clusters=self.n_clusters, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(self.X)
+            cluster_centers = kmeans.cluster_centers_
+        else:
+            cluster_centers = self._sample_points(self.n_clusters)
+
+        # Calculate acquisition function values
+        if self.model is None:
+            return scaled_samples[:batch_size]
+        acquisition_values = self._acquisition_function(scaled_samples, self.model)
+
+        # Select top batch_size points based on acquisition function values
+        indices = np.argsort(-acquisition_values.flatten())[:batch_size]
+        selected_points = scaled_samples[indices]
+
+        return selected_points
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # return array of shape (n_points, 1)
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += len(X)
+        return y
+    
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        # Do not change the function signature
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+        
+        # Update best seen value
+        idx = np.argmin(self.y)
+        if self.y[idx][0] < self.best_y:
+            self.best_y = self.y[idx][0]
+            self.best_x = self.X[idx]
+    
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
+        # Return a tuple (best_y, best_x)
+
+        # Initial sampling
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        trust_region_center = self.X[np.argmin(self.y)] # Initialize trust region center
+        batch_size = 5
+        while self.n_evals < self.budget:
+            # Optimization
+            self.model = self._fit_model(self.X, self.y)
+            if self.model is None:
+                print("GP model fitting failed. Returning current best.")
+                return self.best_y, self.best_x
+
+            # select points by acquisition function
+            next_X = self._select_next_points(batch_size, trust_region_center)
+            next_y = self._evaluate_points(func, next_X)
+            self._update_eval_points(next_X, next_y)
+
+            # Model agreement check (simplified)
+            predicted_y = self.model.predict(next_X)
+            agreement = np.corrcoef(next_y.flatten(), predicted_y.flatten())[0, 1]
+
+            # Adjust trust region size
+            if np.isnan(agreement) or agreement < self.model_agreement_threshold:
+                self.trust_region_radius *= self.trust_region_shrink_factor
+            else:
+                self.trust_region_radius *= self.trust_region_expand_factor
+                self.trust_region_radius = min(self.trust_region_radius, 5.0) # Limit expansion
+
+            # Update trust region center
+            trust_region_center = self.X[np.argmin(self.y)]
+
+        return self.best_y, self.best_x
+
+```
+The algorithm GADETBO got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1795 with standard deviation 0.1174.
+
+took 109.58 seconds to run.
+
+## GRADEBO
+**GRADEBO: Gradient-Regularized Adaptive Diversity Enhanced Bayesian Optimization:** This algorithm combines gradient information, adaptive regularization, and diversity enhancement within a trust region framework to improve Bayesian optimization. It leverages a Gaussian Process Regression (GPR) model with a Matérn kernel for surrogate modeling. The acquisition function integrates Expected Improvement (EI), a gradient-based exploration term, an adaptive regularization term, and a distance-based diversity term. The trust region size is adaptively adjusted based on the agreement between the GPR model and the true objective function. The gradient is estimated efficiently using finite differences. An adaptive batch size strategy is also incorporated to dynamically balance exploration and exploitation.
+
+
+With code:
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern, ConstantKernel as C
+from sklearn.metrics import pairwise_distances
+import warnings
+
+class GRADEBO:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = 2 * dim
+        self.gradient_weight = 0.01
+        self.reg_weight = 0.1 # Initial weight for the regularization term
+        self.diversity_weight = 0.1
+        self.n_clusters = 5
+        self.best_x = None
+        self.best_y = float('inf')
+        self.trust_region_radius = 2.0  # Initial trust region radius
+        self.trust_region_shrink_factor = 0.5
+        self.trust_region_expand_factor = 2.0
+        self.model_agreement_threshold = 0.75
+        self.kernel = C(1.0, (1e-3, 1e3)) * Matern(length_scale=1.0, length_scale_bounds=(1e-2, 1e2), nu=1.5)
+        self.model = None
+        self.exploration_factor = 0.01
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points):
+        # sample points
+        # return array of shape (n_points, n_dims)
+        sampler = qmc.Sobol(d=self.dim, seed=42)
+        sample = sampler.random(n=n_points)
+        return qmc.scale(sample, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model
+        # return the model
+        # Do not change the function signature
+        try:
+            model = GaussianProcessRegressor(kernel=self.kernel, n_restarts_optimizer=5, alpha=1e-5)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model.fit(X, y)
+            self.kernel = model.kernel_  # Update kernel with optimized parameters
+            return model
+        except Exception as e:
+            print(f"GP fitting failed: {e}. Returning None.")
+            return None
+
+    def _acquisition_function(self, X, model, iteration):
+        # Implement acquisition function
+        # calculate the acquisition function value for each point in X
+        # return array of shape (n_points, 1)
+        mu, sigma = model.predict(X, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+
+        if self.best_y is None:
+            ei = np.zeros_like(mu)
+        else:
+            imp = self.best_y - mu
+            Z = imp / sigma
+            ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
+            ei[sigma <= 1e-6] = 0.0  # handle zero sigma
+
+        # Add gradient-based exploration term
+        if self.X is not None:
+            dmu_dx = self._predict_gradient(X, model)
+            gradient_norm = np.linalg.norm(dmu_dx, axis=1, keepdims=True)
+            ei = ei + self.gradient_weight * gradient_norm
+
+        # Adaptive Regularization
+        reg_weight = self.reg_weight * (1 - (iteration / self.budget))
+        regularization_term = -reg_weight * np.linalg.norm(mu / (sigma + 1e-6), axis=1, keepdims=True)**2 # Uncertainty aware regularization
+        ei = ei + regularization_term + self.exploration_factor * sigma # Add exploration factor
+
+        # Add diversity term
+        if self.X is not None:
+            distances = pairwise_distances(X, self.X)
+            min_distances = np.min(distances, axis=1).reshape(-1, 1)
+            ei = ei + self.diversity_weight * min_distances
+
+        return ei
+
+    def _predict_gradient(self, X, model):
+        # Predict the gradient of the GPR mean function
+        # return array of shape (n_points, n_dims)
+        X = np.atleast_2d(X)
+        dmu_dx = np.zeros((X.shape[0], self.dim))
+        
+        # Efficient gradient calculation using finite differences
+        delta = 1e-6
+        for i in range(self.dim):
+            X_plus = X.copy()
+            X_plus[:, i] += delta
+            dmu_dx[:, i] = (model.predict(X_plus) - model.predict(X)) / delta
+        
+        return dmu_dx
+
+    def _select_next_points(self, batch_size, trust_region_center, model, iteration):
+        # Select the next points to evaluate
+        # Use a selection strategy to optimize/leverage the acquisition function
+        # The selection strategy can be any heuristic/evolutionary/mathematical/hybrid methods.
+        # return array of shape (batch_size, n_dims)
+
+        # Sample within the trust region using Sobol sequence
+        sobol_engine = qmc.Sobol(d=self.dim, seed=42)
+        samples = sobol_engine.random(n=100 * batch_size)
+
+        # Scale and shift samples to be within the trust region
+        scaled_samples = trust_region_center + self.trust_region_radius * (2 * samples - 1)
+
+        # Clip samples to stay within the problem bounds
+        scaled_samples = np.clip(scaled_samples, self.bounds[0], self.bounds[1])
+
+        # Calculate acquisition function values
+        if self.model is None:
+            return scaled_samples[:batch_size]
+        acquisition_values = self._acquisition_function(scaled_samples, model, iteration)
+
+        # Select top batch_size points based on acquisition function values
+        indices = np.argsort(-acquisition_values.flatten())[:batch_size]
+        selected_points = scaled_samples[indices]
+
+        return selected_points
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # return array of shape (n_points, 1)
+        y = np.array([func(x) for x in X]).reshape(-1, 1)
+        self.n_evals += len(X)
+        return y
+    
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        # Do not change the function signature
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+        
+        # Update best seen value
+        idx = np.argmin(self.y)
+        if self.y[idx][0] < self.best_y:
+            self.best_y = self.y[idx][0]
+            self.best_x = self.X[idx]
+    
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
+        # Return a tuple (best_y, best_x)
+
+        # Initial sampling
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        trust_region_center = self.X[np.argmin(self.y)] # Initialize trust region center
+        iteration = self.n_init
+        while self.n_evals < self.budget:
+            # Adaptive batch size
+            batch_size = max(1, int(5 * (1 - self.n_evals / self.budget))) # Linearly decreasing batch size
+
+            # Optimization
+            self.model = self._fit_model(self.X, self.y)
+            if self.model is None:
+                print("GP model fitting failed. Returning current best.")
+                return self.best_y, self.best_x
+
+            # select points by acquisition function
+            next_X = self._select_next_points(batch_size, trust_region_center, self.model, iteration)
+            next_y = self._evaluate_points(func, next_X)
+            self._update_eval_points(next_X, next_y)
+
+            # Model agreement check (simplified)
+            predicted_y = self.model.predict(next_X)
+            agreement = np.corrcoef(next_y.flatten(), predicted_y.flatten())[0, 1]
+
+            # Adjust trust region size
+            if np.isnan(agreement) or agreement < self.model_agreement_threshold:
+                self.trust_region_radius *= self.trust_region_shrink_factor
+            else:
+                self.trust_region_radius *= self.trust_region_expand_factor
+                self.trust_region_radius = min(self.trust_region_radius, 5.0) # Limit expansion
+
+            # Update trust region center
+            trust_region_center = self.X[np.argmin(self.y)]
+            iteration += batch_size
+
+        return self.best_y, self.best_x
+
+```
+The algorithm GRADEBO got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1745 with standard deviation 0.0994.
+
+took 303.07 seconds to run.
+
+Combine the selected solutions to create a new solution. Then refine the strategy of the new solution to improve it. If the errors from the previous algorithms are provided, analyze them. The new algorithm should be designed to avoid these errors.
+
+
+
+
+Give the response in the format:
+# Description 
+<description>
+# Justification 
+<justification for the key components of the algorithm or the changes made>
+# Code 
+<code>
+

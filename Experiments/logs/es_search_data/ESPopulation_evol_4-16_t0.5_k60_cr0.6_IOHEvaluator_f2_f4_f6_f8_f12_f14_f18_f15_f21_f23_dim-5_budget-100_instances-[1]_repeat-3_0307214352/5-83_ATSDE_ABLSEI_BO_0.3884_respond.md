@@ -1,0 +1,200 @@
+# Description
+**ATSDE_ABLSEI_BO: Adaptive Temperature and Success-Rate based DE-BO with Adaptive Batch size, Enhanced Local Search with EI and Adaptive EI exploration weight.** This algorithm combines the strengths of ATSDE_ABLS_LCB_BO and ASRDE_ExTempLS_BO_v2. It integrates adaptive temperature control, success-rate based F and CR adaptation with momentum, adaptive batch size, and an enhanced local search strategy that incorporates Expected Improvement (EI) directly into the local search objective. Additionally, the exploration weight in the EI acquisition function is adapted based on the success rate of the DE iterations.
+
+# Justification
+The algorithm builds upon the existing successful components of ATSDE_ABLS_LCB_BO and ASRDE_ExTempLS_BO_v2.
+*   **Adaptive Temperature and Success-Rate based DE:** This ensures a good balance between exploration and exploitation. The momentum for F and CR adaptation from ASRDE_ExTempLS_BO_v2 helps to smooth the updates and avoid oscillations.
+*   **Adaptive Batch Size:** This allows the algorithm to adapt its sampling strategy based on the GP's uncertainty, improving sampling efficiency.
+*   **Enhanced Local Search with EI:** The local search is enhanced by incorporating the Expected Improvement directly into the objective function. This allows the local search to focus on regions that are not only promising but also have high uncertainty. The local search initialization is improved by using a combination of Latin Hypercube sampling and the best point found so far.
+*   **Adaptive EI exploration weight:** Adjusting the exploration weight in the EI acquisition function based on the success rate of DE helps to further balance exploration and exploitation. If DE is performing well, the exploration weight is decreased to focus on exploitation. If DE is not performing well, the exploration weight is increased to encourage exploration.
+*   **Computational Efficiency:** The algorithm aims to be computationally efficient by using L-BFGS-B for local search and by adapting the batch size based on the GP's uncertainty.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+from scipy.optimize import minimize
+
+class ATSDE_ABLSEI_BO:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0
+        self.n_init = 4 * dim
+        self.pop_size = 5 * dim
+        self.F = 0.8
+        self.CR = 0.7
+        self.learning_rate = 0.1
+        self.F_step = 0.05
+        self.CR_step = 0.05
+        self.temperature = 1.0
+        self.temperature_decay = 0.95
+        self.success_history = []
+        self.success_window = 10
+        self.F_momentum = 0.0
+        self.CR_momentum = 0.0
+        self.momentum_factor = 0.5
+        self.exploration_weight = 2.0
+        self.exploration_weight_decay = 0.95
+        self.batch_size = 1
+
+        self.gp = None
+        self.best_y = float('inf')
+        self.best_x = None
+
+    def _sample_points(self, n_points):
+        sampler = qmc.LatinHypercube(d=self.dim)
+        points = sampler.random(n=n_points)
+        return qmc.scale(points, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-3, 1e3))
+        self.gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5)
+        self.gp.fit(X, y)
+        return self.gp
+
+    def _acquisition_function(self, X):
+        mu, sigma = self.gp.predict(X, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+
+        imp = self.best_y - mu
+        Z = imp / sigma
+        ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
+        ei[sigma <= 1e-6] = 0.0
+        return ei
+
+    def _select_next_points(self, batch_size):
+        population = self._sample_points(self.pop_size)
+        success_count = 0
+        
+        for _ in range(20):
+            for i in range(self.pop_size):
+                # Mutation
+                idxs = np.random.choice(self.pop_size, 3, replace=False)
+                x_r1, x_r2, x_r3 = population[idxs]
+                x_mutated = x_r1 + self.F * (x_r2 - x_r3) * self.temperature
+                x_mutated = np.clip(x_mutated, self.bounds[0], self.bounds[1])
+
+                # Crossover
+                x_trial = np.copy(population[i])
+                for j in range(self.dim):
+                    if np.random.rand() < self.CR:
+                        x_trial[j] = x_mutated[j]
+
+                # Selection
+                ei_trial = self._acquisition_function(x_trial.reshape(1, -1))
+                ei_current = self._acquisition_function(population[i].reshape(1, -1))
+                
+                if ei_trial[0, 0] > ei_current[0, 0]:
+                    population[i] = x_trial
+                    improvement = ei_trial[0, 0] - ei_current[0, 0]
+                    
+                    # Adaptive F and CR step size
+                    if len(self.success_history) > 0:
+                        success_rate = np.mean(self.success_history)
+                    else:
+                        success_rate = 0.5
+                    
+                    f_step = self.F_step * (1 - success_rate)  # Smaller step when success is high
+                    cr_step = self.CR_step * (1 - success_rate)
+                    
+                    # Momentum for F and CR
+                    self.F_momentum = self.momentum_factor * self.F_momentum + (1 - self.momentum_factor) * f_step * improvement
+                    self.CR_momentum = self.momentum_factor * self.CR_momentum + (1 - self.momentum_factor) * cr_step * improvement
+                    
+                    self.F = np.clip(self.F + self.F_momentum, 0.1, 0.9)
+                    self.CR = np.clip(self.CR + self.CR_momentum, 0.1, 0.9)
+                    success_count += 1
+                
+            self.success_history.append(success_count / self.pop_size)
+            if len(self.success_history) > self.success_window:
+                self.success_history.pop(0)
+
+        # Anneal temperature
+        self.temperature *= self.temperature_decay
+
+        # Adapt exploration weight
+        if len(self.success_history) > 0:
+            success_rate = np.mean(self.success_history)
+            self.exploration_weight = max(0.1, self.exploration_weight * (1 + self.learning_rate * (success_rate - 0.5)))
+
+        ei_values = self._acquisition_function(population)
+        best_idx = np.argmax(ei_values)
+        best_x = population[best_idx]
+        _, sigma = self.gp.predict(best_x.reshape(1, -1), return_std=True)
+        best_sigma = sigma[0]
+
+        # Enhanced Local Search with EI
+        def obj_func(x):
+            ei = self._acquisition_function(x.reshape(1, -1))
+            return -ei[0,0]
+
+        # Adjust local search range based on GP uncertainty
+        search_range = min(best_sigma * 2, (self.bounds[1][0] - self.bounds[0][0]) / 2) # Limit search range
+
+        # Improved Local search initialization
+        local_search_points = self._sample_points(3) * search_range + best_x
+        if self.best_x is not None:
+            local_search_points = np.vstack([local_search_points, self.best_x + np.random.randn(1, self.dim) * search_range/2])
+        local_search_points = np.clip(local_search_points, self.bounds[0], self.bounds[1])
+
+        best_local_x = best_x
+        best_local_ei = -obj_func(best_x)
+        
+        for start_point in local_search_points:
+            res = minimize(obj_func, start_point, bounds=[(self.bounds[0][i], self.bounds[1][i]) for i in range(self.dim)], method='L-BFGS-B')
+            if -res.fun > best_local_ei:
+                best_local_ei = -res.fun
+                best_local_x = res.x
+
+        return best_local_x.reshape(1, -1)
+
+    def _evaluate_points(self, func, X):
+        y = np.array([func(x) for x in X])
+        self.n_evals += len(X)
+        return y.reshape(-1, 1)
+    
+    def _update_eval_points(self, new_X, new_y):
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+            
+        if np.min(new_y) < self.best_y:
+            self.best_y = np.min(new_y)
+            self.best_x = new_X[np.argmin(new_y)]
+    
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+        
+        while self.n_evals < self.budget:
+            self._fit_model(self.X, self.y)
+
+            # Adaptive batch size
+            _, std = self.gp.predict(self.X, return_std=True)
+            mean_std = np.mean(std)
+            self.batch_size = max(1, int(self.dim / (1 + mean_std * 10))) # Adjust batch size based on uncertainty
+            self.batch_size = min(self.batch_size, self.budget - self.n_evals) # Ensure not exceeding budget
+
+            next_X = np.vstack([self._select_next_points(1) for _ in range(self.batch_size)])
+            next_y = self._evaluate_points(func, next_X)
+            self._update_eval_points(next_X, next_y)
+
+        return self.best_y, self.best_x
+```
+## Feedback
+ The algorithm ATSDE_ABLSEI_BO got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1639 with standard deviation 0.0974.
+
+took 1726.62 seconds to run.

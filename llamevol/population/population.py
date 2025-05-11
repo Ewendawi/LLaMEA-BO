@@ -116,7 +116,7 @@ class Population(ABC):
             self._save_dir_suffix = f"{self.__class__.__name__}_{file_name}_{time_stamp}"
             
 
-    def save_on_the_fly(self, individual: Individual, generation: int):
+    def save_on_the_fly(self, individual: Individual, generation: int, index: int =None):
         if self.debug_save_on_the_fly:
             self._update_save_dir_if_need()
             _save_dir = self.save_dir + '/' + self._save_dir_suffix
@@ -126,7 +126,8 @@ class Population(ABC):
             handler = Population.get_handler_from_individual(individual)
             code = handler.code
             name = handler.code_name
-            index = self.get_population_size()
+            if index is None:
+                index = self.get_population_size()
             fitness = individual.fitness
             file_name = f'{generation}-{index}_{name}_{fitness:.4f}'
 

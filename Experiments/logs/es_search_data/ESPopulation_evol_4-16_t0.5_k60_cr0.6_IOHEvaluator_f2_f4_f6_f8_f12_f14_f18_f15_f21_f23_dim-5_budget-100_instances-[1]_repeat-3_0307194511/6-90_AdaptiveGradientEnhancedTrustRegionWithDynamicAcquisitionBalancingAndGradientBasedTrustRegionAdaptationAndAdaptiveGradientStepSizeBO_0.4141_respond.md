@@ -1,0 +1,283 @@
+# Description
+**Adaptive Gradient-enhanced Trust Region with Dynamic Acquisition Balancing, Gradient-Based Trust Region Adaptation, and Adaptive Gradient Step Size BO (AGTRDAB-GTA-AGS BO)**: This algorithm builds upon AGTRDAB-GTA BO by incorporating an adaptive step size for gradient estimation, which is crucial for balancing accuracy and stability. The step size is dynamically adjusted based on the GP's lengthscale and the local curvature of the function landscape. Additionally, the local search is enhanced by considering not only the gradient but also the predictive variance from the GP model. This allows for a more robust and efficient exploration of the trust region, especially in noisy or multimodal landscapes.
+
+# Justification
+The key improvements are:
+
+1.  **Adaptive Gradient Step Size:** The original algorithm uses a fixed step size (`delta`) for gradient estimation. This can be problematic because a small `delta` can lead to numerical instability, while a large `delta` can result in inaccurate gradient estimates. The updated algorithm adjusts `delta` based on the GP's lengthscale, ensuring that the step size is appropriate for the local function landscape. Specifically, `delta` is proportional to the lengthscale, allowing for larger steps in flat regions and smaller steps in regions with high curvature.
+2.  **Variance-Aware Local Search:** The original local search only considers the gradient information. The updated algorithm incorporates the predictive variance from the GP model into the local search. This allows the algorithm to prioritize regions with high uncertainty, potentially leading to better exploration of the trust region. The acquisition function for local search is modified to include a term that penalizes points with low predictive variance.
+3. **Refined Trust Region Adaptation**: The trust region adaptation is refined by incorporating a moving average of the cosine angle between the predicted gradient and the actual improvement direction. This provides a more stable and robust adaptation of the trust region size.
+4. **Simplified Success Rate Calculation**: The success rate calculation is simplified by directly using the improvement in function value instead of a binary success/failure indicator. This provides a more fine-grained measure of local search success.
+
+These changes aim to improve the algorithm's ability to balance exploration and exploitation, adapt to different function landscapes, and avoid premature convergence.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel
+from sklearn.neighbors import NearestNeighbors
+
+class AdaptiveGradientEnhancedTrustRegionWithDynamicAcquisitionBalancingAndGradientBasedTrustRegionAdaptationAndAdaptiveGradientStepSizeBO:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = 2 * self.dim # initial number of samples
+        self.batch_size = min(5, self.dim)
+        self.trust_region_size = 2.0
+        self.trust_region_shrink = 0.5
+        self.trust_region_expand = 2.0
+        self.beta = 2.0  # Exploration parameter for UCB
+        self.beta_decay = 0.99 # Decay rate for beta
+        self.global_search_prob = 0.05 # Probability of performing a global search step
+        self.delta_initial = 1e-3 # Initial step size for finite differences in gradient estimation
+        self.delta_momentum = 0.5 # Momentum for delta update
+        self.trust_region_momentum = 0.5 # Momentum for trust region size update
+        self.ei_weight = 0.5 # Initial weight for EI
+        self.ucb_weight = 0.5 # Initial weight for UCB
+        self.success_threshold = 0.7 # Threshold for adjusting EI/UCB weights
+        self.success_rate = 0.0 # Moving average of local search success
+        self.success_momentum = 0.8 # Momentum for updating success rate
+        self.gradient_points = 3 # Number of points to average for gradient estimation
+        self.lengthscale = 1.0 # Initial lengthscale
+        self.lengthscale_momentum = 0.5
+        self.cos_angle_momentum = 0.8 # Momentum for cosine angle moving average
+        self.avg_cos_angle = 0.0 # Moving average of cosine angle
+        self.delta = self.delta_initial # Current step size for gradient estimation
+
+        # Do not add any other arguments without a default value
+
+    def _sample_points(self, n_points):
+        # sample points
+        # return array of shape (n_points, n_dims)
+        sampler = qmc.LatinHypercube(d=self.dim)
+        sample = sampler.random(n=n_points)
+        return qmc.scale(sample, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        # Fit and tune surrogate model
+        # return the model
+        # Do not change the function signature
+
+        # Define the kernel with the estimated lengthscale
+        kernel = ConstantKernel(constant_value=1.0, constant_value_bounds=(1e-3, 1e3)) * RBF(length_scale=self.lengthscale, length_scale_bounds=(1e-3, 1e3))
+
+        # Gaussian Process Regressor
+        model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=2, alpha=1e-6)
+        model.fit(X, y)
+        return model
+
+    def _acquisition_function_ei(self, X):
+        # Implement Expected Improvement acquisition function
+        if self.X is None or self.y is None:
+            return np.zeros((len(X), 1))
+
+        model = self._fit_model(self.X, self.y)
+        mu, sigma = model.predict(X, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+
+        y_best = np.min(self.y)
+        imp = y_best - mu
+        Z = imp / sigma
+        ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
+        ei[sigma <= 1e-6] = 0.0
+
+        return ei
+
+    def _acquisition_function_ucb(self, X):
+        # Implement Upper Confidence Bound acquisition function
+        model = self._fit_model(self.X, self.y)
+        mu, sigma = model.predict(X, return_std=True)
+        mu = mu.reshape(-1, 1)
+        sigma = sigma.reshape(-1, 1)
+
+        ucb = mu - self.beta * sigma  # minimize
+
+        return ucb
+
+    def _acquisition_function(self, X):
+        # Combine EI and UCB with dynamic weights
+        ei = self._acquisition_function_ei(X)
+        ucb = self._acquisition_function_ucb(X)
+        return self.ei_weight * ei + self.ucb_weight * ucb
+
+    def _select_next_points(self, batch_size):
+        # Select the next points to evaluate
+        candidate_points = self._sample_points(10 * batch_size)
+        acquisition_values = self._acquisition_function(candidate_points)
+
+        indices = np.argsort(acquisition_values.flatten())[::-1][:batch_size]
+        return candidate_points[indices]
+
+    def _evaluate_points(self, func, X):
+        # Evaluate the points in X
+        y = np.array([func(x) for x in X])
+        self.n_evals += len(X)
+        return y.reshape(-1, 1)
+
+    def _update_eval_points(self, new_X, new_y):
+        # Update self.X and self.y
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+    def _estimate_gradient(self, model, x):
+        # Estimate the gradient of the function at point x using finite differences
+        gradient = np.zeros(self.dim)
+        
+        # Average gradient over multiple points near x
+        for _ in range(self.gradient_points):
+            x_sample = x + np.random.normal(0, self.trust_region_size / 5, self.dim) # Add some noise
+            x_sample = np.clip(x_sample, self.bounds[0], self.bounds[1]) # Clip to bounds
+            
+            gradient_sample = np.zeros(self.dim)
+            for i in range(self.dim):
+                x_plus = x_sample.copy()
+                x_minus = x_sample.copy()
+                x_plus[i] += self.delta
+                x_minus[i] -= self.delta
+                
+                # Clip to ensure the points are within bounds
+                x_plus[i] = np.clip(x_plus[i], self.bounds[0][i], self.bounds[1][i])
+                x_minus[i] = np.clip(x_minus[i], self.bounds[0][i], self.bounds[1][i])
+
+                # Use the GP model to predict function values
+                y_plus, sigma_plus = model.predict(x_plus.reshape(1, -1), return_std=True)
+                y_minus, sigma_minus = model.predict(x_minus.reshape(1, -1), return_std=True)
+
+                gradient_sample[i] = (y_plus - y_minus) / (2 * self.delta)
+            
+            gradient += gradient_sample
+        
+        return gradient / self.gradient_points
+
+    def _local_search(self, model, center, gradient, n_points=50):
+        # Perform local search within the trust region using the GP model and gradient information
+        # Generate candidate points within the trust region
+        candidate_points = np.random.normal(center, self.trust_region_size / 3, size=(n_points, self.dim))
+
+        # Clip the candidate points to stay within the bounds
+        candidate_points = np.clip(candidate_points, self.bounds[0], self.bounds[1])
+
+        # Predict the mean and variance values using the GP model
+        mu, sigma = model.predict(candidate_points, return_std=True)
+        mu = mu.reshape(-1)
+        sigma = sigma.reshape(-1)
+
+        # Incorporate gradient information and predictive variance into the prediction
+        # Acquisition function: minimize mu - 0.1 * gradient term - 0.01 * sigma (exploration)
+        acquisition_values = mu - 0.1 * np.sum(gradient * (candidate_points - center), axis=1) - 0.01 * sigma
+
+        # Select the point with the minimum acquisition value
+        best_index = np.argmin(acquisition_values)
+        best_point = candidate_points[best_index]
+
+        return best_point
+
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64.
+        # !!! Do not call func directly. Use _evaluate_points instead and be aware of the budget when calling it. !!!
+        # Return a tuple (best_y, best_x)
+
+        # Initial sampling
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        best_index = np.argmin(self.y)
+        best_x = self.X[best_index]
+        best_y = self.y[best_index][0]
+        
+        num_success = 0
+        previous_y = best_y
+
+        while self.n_evals < self.budget:
+            # Fit the GP model
+            model = self._fit_model(self.X, self.y)
+
+            # Update lengthscale
+            nn = NearestNeighbors(n_neighbors=min(len(self.X), 10)).fit(self.X)
+            distances, _ = nn.kneighbors(self.X)
+            median_distance = np.median(distances[:, 1])
+            self.lengthscale = self.lengthscale_momentum * self.lengthscale + (1 - self.lengthscale_momentum) * median_distance
+            
+            # Update delta based on lengthscale
+            self.delta = self.delta_momentum * self.delta + (1 - self.delta_momentum) * self.lengthscale / 10
+
+            # Global search with probability global_search_prob
+            if np.random.rand() < self.global_search_prob:
+                next_x = self._select_next_points(1)[0] # Select a point using EI for global search
+            else:
+                # Estimate gradient at the best point
+                gradient = self._estimate_gradient(model, best_x)
+
+                # Perform local search within the trust region
+                next_x = self._local_search(model, best_x.copy(), gradient)
+                next_x = np.clip(next_x, self.bounds[0], self.bounds[1]) # Ensure it's within bounds
+
+            next_y = self._evaluate_points(func, next_x.reshape(1, -1))[0, 0] # Evaluate the actual function
+            self._update_eval_points(next_x.reshape(1, -1), np.array([[next_y]]))
+
+            # Check if the new point is better than the current best
+            if next_y < best_y:
+                # Calculate the angle between the predicted gradient and the actual improvement direction
+                improvement_direction = best_x - next_x
+                cos_angle = np.dot(gradient, improvement_direction) / (np.linalg.norm(gradient) * np.linalg.norm(improvement_direction) + 1e-8)
+
+                best_x = next_x
+                best_y = next_y
+                
+                # Update success rate
+                num_success += 1
+                
+                # Adjust trust region size based on gradient agreement
+                self.avg_cos_angle = self.cos_angle_momentum * self.avg_cos_angle + (1 - self.cos_angle_momentum) * cos_angle
+                if self.avg_cos_angle > 0.5:
+                    self.trust_region_size *= self.trust_region_expand
+                else:
+                    self.trust_region_size *= (1 + self.trust_region_shrink) / 2 # Less aggressive expansion
+
+            else:
+                # Shrink trust region if no improvement
+                self.trust_region_size *= self.trust_region_shrink
+
+            # Apply momentum to trust region size update
+            self.trust_region_size = self.trust_region_momentum * self.trust_region_size + (1 - self.trust_region_momentum) * np.clip(self.trust_region_size, 0.1, 5.0) # Keep trust region within reasonable bounds
+            
+            # Decay exploration parameter
+            self.beta *= self.beta_decay
+            
+            # Update success rate and adjust EI/UCB weights
+            improvement = previous_y - next_y
+            self.success_rate = self.success_momentum * self.success_rate + (1 - self.success_momentum) * improvement
+            previous_y = next_y
+            
+            if self.success_rate > self.success_threshold:
+                # Increase UCB weight, decrease EI weight
+                self.ucb_weight = min(1.0, self.ucb_weight + 0.05)
+                self.ei_weight = max(0.0, self.ei_weight - 0.05)
+            else:
+                # Increase EI weight, decrease UCB weight
+                self.ei_weight = min(1.0, self.ei_weight + 0.05)
+                self.ucb_weight = max(0.0, self.ucb_weight - 0.05)
+
+        return best_y, best_x
+```
+## Feedback
+ The algorithm AdaptiveGradientEnhancedTrustRegionWithDynamicAcquisitionBalancingAndGradientBasedTrustRegionAdaptationAndAdaptiveGradientStepSizeBO got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1895 with standard deviation 0.1167.
+
+took 193.57 seconds to run.

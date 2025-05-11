@@ -1,0 +1,238 @@
+# Description
+**Adaptive Batch Ensemble with Thompson Sampling, Density-Aware Exploration, and Uncertainty-Aware Local Search Bayesian Optimization (ABETSALSDEBO):** This algorithm combines the strengths of ABDAHBO and AETSALSBO. It uses an ensemble of Gaussian Process Regression (GPR) models with varying length scales and Thompson Sampling for efficient acquisition. It incorporates both density-aware exploration using Kernel Density Estimation (KDE) and uncertainty-aware adaptive local search with momentum. The batch size and exploration weight are dynamically adjusted based on the model uncertainty. The KDE bandwidth is also adaptively adjusted based on the local distribution of evaluated points.
+
+# Justification
+This algorithm aims to improve upon ABDAHBO and AETSALSBO by combining their strengths.
+
+*   **Ensemble of GPR models with Thompson Sampling (from AETSALSBO):** Using an ensemble of GPR models with different length scales improves the robustness of the surrogate model and allows for better exploration of the search space. Thompson Sampling provides an efficient way to balance exploration and exploitation within the ensemble.
+*   **Adaptive Batch Size (from ABDAHBO):** Adjusting the batch size based on model uncertainty allows for more efficient use of the budget. When the model is uncertain, a larger batch size is used to promote exploration. When the model is confident, a smaller batch size is used to focus on exploitation.
+*   **Density-Aware Exploration (from ABDAHBO):** Incorporating KDE into the acquisition function helps to focus the search on promising regions of the search space. The adaptive bandwidth adjustment ensures that the KDE accurately reflects the local density of evaluated points.
+*   **Uncertainty-Aware Adaptive Local Search (from AETSALSBO):** Refining selected points using local search, guided by the uncertainty estimates from the GPR models, can improve the quality of the solutions. Momentum-based acceleration can speed up the local search process.
+*   **Adaptive Exploration Weight:** Dynamically adjusting the exploration weight based on the optimization progress and model uncertainty allows for a more robust and efficient exploration-exploitation trade-off.
+
+# Code
+```python
+from collections.abc import Callable
+from scipy.stats import qmc
+from scipy.stats import norm
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+from sklearn.neighbors import KernelDensity, NearestNeighbors
+from scipy.optimize import minimize
+
+class ABETSALSDEBO:
+    def __init__(self, budget: int, dim: int):
+        self.budget = budget
+        self.dim = dim
+        self.bounds = np.array([[-5.0] * dim, [5.0] * dim])
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0
+        self.n_init = 2 * dim
+        self.k_neighbors = min(10, 2 * dim)
+        self.best_y = np.inf
+        self.best_x = None
+        self.kde_bandwidth = 0.5
+        self.max_batch_size = min(10, dim)
+        self.min_batch_size = 1
+        self.exploration_weight = 0.2
+        self.exploration_decay = 0.995
+        self.min_exploration = 0.01
+        self.uncertainty_threshold = 0.5
+
+        self.n_models = 3  # Number of surrogate models in the ensemble
+        self.models = []
+        for i in range(self.n_models):
+            length_scale = 1.0 * (i + 1) / self.n_models  # Varying length scales
+            kernel = C(1.0, (1e-3, 1e3)) * RBF(length_scale, (1e-2, 1e2))
+            model = GaussianProcessRegressor(
+                kernel=kernel, n_restarts_optimizer=5, alpha=1e-5
+            )
+            self.models.append(model)
+        self.momentum = 0.0 #initial momentum
+        self.momentum_decay = 0.9
+
+    def _sample_points(self, n_points):
+        sampler = qmc.LatinHypercube(d=self.dim)
+        sample = sampler.random(n=n_points)
+        return qmc.scale(sample, self.bounds[0], self.bounds[1])
+
+    def _fit_model(self, X, y):
+        for model in self.models:
+            model.fit(X, y)
+
+    def _acquisition_function(self, X):
+        # Thompson Sampling: Sample from the posterior distribution of each model
+        sampled_values = np.zeros((X.shape[0], self.n_models))
+        sigmas = np.zeros((X.shape[0], self.n_models))
+        for i, model in enumerate(self.models):
+            mu, sigma = model.predict(X, return_std=True)
+            mu = mu.reshape(-1, 1)
+            sigma = sigma.reshape(-1, 1)
+            sampled_values[:, i] = np.random.normal(mu.flatten(), sigma.flatten())
+            sigmas[:, i] = sigma.flatten()
+
+        # Average the sampled values across all models
+        acquisition = np.mean(sampled_values, axis=1, keepdims=True)
+        acquisition = acquisition.reshape(-1, 1)
+
+        # Hybrid acquisition function (EI + exploration + KDE)
+        mu = np.mean([model.predict(X) for model in self.models], axis=0).reshape(-1, 1)
+        sigma = np.mean(sigmas, axis=1).reshape(-1, 1)
+
+        imp = self.best_y - mu
+        Z = imp / sigma
+        ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
+        ei[sigma <= 1e-6] = 0.0
+
+        # Distance-based exploration term
+        if self.X is not None and len(self.X) > 0:
+            min_dist = np.min(
+                np.linalg.norm(X[:, None, :] - self.X[None, :, :], axis=2),
+                axis=1,
+                keepdims=True,
+            )
+            exploration = min_dist / np.max(min_dist)
+        else:
+            exploration = np.ones(X.shape[0]).reshape(-1, 1)
+
+        # KDE-based exploration term
+        if self.X is not None and len(self.X) > self.dim + 1:
+            bandwidth = self._adaptive_bandwidth()
+            kde = KernelDensity(bandwidth=bandwidth).fit(self.X)
+            kde_scores = kde.score_samples(X)
+            kde_scores = np.exp(kde_scores).reshape(-1, 1)  # Convert to density
+            kde_exploration = kde_scores / np.max(kde_scores)  # Normalize
+        else:
+            kde_exploration = np.zeros(X.shape[0]).reshape(-1, 1)
+
+        # Dynamic weighting
+        exploration_weight = np.clip(1.0 - self.n_evals / self.budget, 0.1, 1.0)
+        kde_weight = 1.0 - exploration_weight
+
+        # Hybrid acquisition function
+        acquisition = (
+            ei + self.exploration_weight * exploration + kde_weight * kde_exploration
+        )
+        return acquisition
+
+    def _adaptive_bandwidth(self):
+        if self.X is None or len(self.X) < self.k_neighbors:
+            return self.kde_bandwidth
+
+        nbrs = NearestNeighbors(
+            n_neighbors=self.k_neighbors, algorithm="ball_tree"
+        ).fit(self.X)
+        distances, _ = nbrs.kneighbors(self.X)
+        k_distances = distances[:, -1]
+        bandwidth = np.median(k_distances)
+        return bandwidth
+
+    def _select_next_points(self, batch_size):
+        candidate_points = self._sample_points(100 * batch_size)
+        acquisition_values = self._acquisition_function(candidate_points)
+        indices = np.argsort(acquisition_values.flatten())[-batch_size:]
+        next_points = candidate_points[indices]
+
+        # Adaptive Local search to improve the selected points
+        for i in range(batch_size):
+            def obj_func(x):
+                x = x.reshape(1, -1)
+                return np.mean([model.predict(x)[0] for model in self.models])  # Minimize the average predicted value
+
+            x0 = next_points[i]
+            bounds = [(self.bounds[0][j], self.bounds[1][j]) for j in range(self.dim)]
+
+            # Adaptive local search iterations based on uncertainty
+            uncertainty = np.mean([model.predict(x0.reshape(1, -1), return_std=True)[1] for model in self.models])
+            maxiter = int(5 + 10 * uncertainty)  # More iterations for higher uncertainty
+            maxiter = min(maxiter, 20) # Cap the iterations
+
+            # Momentum-based acceleration
+            if i == 0:
+                self.momentum = np.zeros_like(x0)
+            self.momentum = self.momentum_decay * self.momentum
+
+            def grad_func(x):
+                x = x.reshape(1, -1)
+                grads = []
+                for model in self.models:
+                    # numerical gradient
+                    delta = 1e-5
+                    grad = np.zeros_like(x0)
+                    for j in range(self.dim):
+                        x_plus = x0.copy()
+                        x_plus[j] += delta
+                        x_minus = x0.copy()
+                        x_minus[j] -= delta
+                        grad[j] = (model.predict(x_plus.reshape(1, -1))[0] - model.predict(x_minus.reshape(1, -1))[0]) / (2 * delta)
+                    grads.append(grad)
+                return np.mean(grads, axis=0)
+
+            def obj_func_momentum(x):
+                x = x.reshape(1, -1)
+                return np.mean([model.predict(x)[0] for model in self.models])
+
+            res = minimize(obj_func_momentum, x0, method='L-BFGS-B', jac=grad_func, bounds=bounds, options={'maxiter': maxiter})  # Limited iterations
+            next_points[i] = res.x
+
+        return next_points
+
+    def _evaluate_points(self, func, X):
+        y = np.array([func(x) for x in X])
+        self.n_evals += len(X)
+        return y.reshape(-1, 1)
+
+    def _update_eval_points(self, new_X, new_y):
+        if self.X is None:
+            self.X = new_X
+            self.y = new_y
+        else:
+            self.X = np.vstack((self.X, new_X))
+            self.y = np.vstack((self.y, new_y))
+
+        idx = np.argmin(self.y)
+        if self.y[idx][0] < self.best_y:
+            self.best_y = self.y[idx][0]
+            self.best_x = self.X[idx]
+
+    def __call__(self, func: Callable[[np.ndarray], np.float64]) -> tuple[
+        np.float64, np.array
+    ]:
+        initial_X = self._sample_points(self.n_init)
+        initial_y = self._evaluate_points(func, initial_X)
+        self._update_eval_points(initial_X, initial_y)
+
+        self._fit_model(self.X, self.y)
+
+        while self.n_evals < self.budget:
+            remaining_evals = self.budget - self.n_evals
+
+            # Adjust batch size based on uncertainty
+            sigma = np.mean([model.predict(self.X, return_std=True)[1] for model in self.models], axis=0)
+            avg_sigma = np.mean(sigma)
+            
+            if avg_sigma > self.uncertainty_threshold:
+                batch_size = self.max_batch_size
+                exploration_decay = 0.99
+            else:
+                batch_size = self.min_batch_size
+                exploration_decay = 0.999
+            
+            batch_size = min(batch_size, remaining_evals)
+
+            next_X = self._select_next_points(batch_size)
+            next_y = self._evaluate_points(func, next_X)
+            self._update_eval_points(next_X, next_y)
+            self._fit_model(self.X, self.y)
+
+            # Update exploration weight
+            self.exploration_weight = max(self.min_exploration, self.exploration_weight * exploration_decay)
+
+        return self.best_y, self.best_x
+```
+## Feedback
+ The algorithm ABETSALSDEBO got an average Area over the convergence curve (AOCC, 1.0 is the best) score of 0.1705 with standard deviation 0.1018.
+
+took 985.75 seconds to run.
