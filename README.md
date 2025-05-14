@@ -14,7 +14,7 @@
 
 ## Reproducing Results
 
-### Result files and Raw Data
+### The Raw Data of results
 - The raw data files are stored in the [Zenodo](https://doi.org/10.5281/zenodo.15384610).
 
 ### Run ES Search 
