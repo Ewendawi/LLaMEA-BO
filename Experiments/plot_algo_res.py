@@ -267,7 +267,7 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
     for result in results:
         algo = result.name
         for res in result.result:
-            _bound = 1e9 if len(res.best_x) == 40 else 1e4
+            _bound = 1e4 if len(res.best_x) == 5 else 1e9
             res.update_aoc_with_new_bound_if_needed(upper_bound=_bound)
             row = res_to_row(res, algo)
             if row is not None:
@@ -474,8 +474,8 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=Non
         # 'uncertainty' : 'Uncertainty on test',
         # 'uncertainty_on_train' : 'Uncertainty on X',
 
-        'kappa': 'Kappa',
-        'tr_radius': 'Trust Region Radius',
+        # 'kappa': 'Kappa',
+        # 'tr_radius': 'Trust Region Radius',
 
         # 'grid_coverage' : 'Grid Coverage',
 
@@ -720,34 +720,34 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=Non
         dir_name = f"algo_loss_{dim}D"
         if fig_dir is not None:
             dir_name = os.path.join(fig_dir, dir_name)
-        os.makedirs(dir_name, exist_ok=True)
-        file_name = f"{dir_name}/algo_loss_{dim}D_F{problem_id}{file_name_suffix}"
+        # os.makedirs(dir_name, exist_ok=True)
+        # file_name = f"{dir_name}/algo_loss_{dim}D_F{problem_id}{file_name_suffix}"
 
 
-        plot_lines(
-            y=plot_data, x=x_data, 
-            y_scales=y_scales,
-            baselines=baselines,
-            baseline_labels=baseline_labels,
-            colors=colors,
-            labels=labels,
-            line_styles=line_styles,
-            label_fontsize=8,
-            linewidth=1.2,
-            filling=plot_filling,
-            x_dot=x_dots,
-            n_cols=1,
-            combined_legend=True,
-            combined_legend_fontsize=11,
-            combined_legend_bottom=0.12,
-            tick_fontsize=11,
-            sub_titles=sub_titles,
-            sub_title_fontsize=11,
-            # title=f"F{problem_id}({dim}D)",
-            figsize=(8, 6),
-            show=False,
-            filename=file_name,
-        )
+        # plot_lines(
+        #     y=plot_data, x=x_data, 
+        #     y_scales=y_scales,
+        #     baselines=baselines,
+        #     baseline_labels=baseline_labels,
+        #     colors=colors,
+        #     labels=labels,
+        #     line_styles=line_styles,
+        #     label_fontsize=8,
+        #     linewidth=1.2,
+        #     filling=plot_filling,
+        #     x_dot=x_dots,
+        #     n_cols=1,
+        #     combined_legend=False,
+        #     combined_legend_fontsize=11,
+        #     combined_legend_bottom=0.12,
+        #     tick_fontsize=11,
+        #     sub_titles=sub_titles,
+        #     sub_title_fontsize=11,
+        #     # title=f"F{problem_id}({dim}D)",
+        #     figsize=(8, 6),
+        #     show=False,
+        #     filename=file_name,
+        # )
 
     file_name = f"algo_loss_{dim}D{file_name_suffix}"
     if fig_dir is not None:
@@ -762,20 +762,20 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=Non
         line_styles=best_loss_line_styles,
         label_fontsize=11,
         combined_legend=True,
-        combined_legend_fontsize=16,
+        combined_legend_fontsize=14,
         combined_legend_bottom=0.1,
-        combined_legend_ncols=5,
-        tick_fontsize=15,
+        combined_legend_ncols=10,
+        tick_fontsize=13,
         linewidth=1.2,
         filling=best_loss_plot_filling,
         x_dot=best_loss_x_dots,
         n_cols=6,
         sub_titles=best_loss_sub_titles,
-        sub_title_fontsize=15,
+        sub_title_fontsize=14,
         # y_labels=["Loss", ""],
-        y_label_fontsize=15,
+        y_label_fontsize=14,
         # title=f"Best Loss({dim}D)" if title is None else title,
-        figsize=(15, 9),
+        figsize=(16, 8),
         show=False,
         filename=file_name,
     )
@@ -795,15 +795,18 @@ def plot_algo_result(results:list[EvaluatorResult], fig_dir=None):
     if fig_dir is not None:
         os.makedirs(fig_dir, exist_ok=True)
 
-    _plot_algo_aoc(res_df, dim=dim, file_name=f"algo_aoc_{dim}D", fig_dir=fig_dir)
+    algo_aoc = _plot_algo_aoc(res_df, dim=dim, file_name=f"algo_aoc_{dim}D", fig_dir=fig_dir)
+    algo_aoc_list.append(algo_aoc)
+
     problem_filters = [4, 8, 9, 19, 20, 24]
-    _plot_algo_aoc(res_df, dim=dim, problem_filters=problem_filters, file_name=f"algo_aoc_{dim}D_except", fig_dir=fig_dir)
+    algo_filter_aoc = _plot_algo_aoc(res_df, dim=dim, problem_filters=problem_filters, file_name=f"algo_aoc_{dim}D_except_{problem_filters}", fig_dir=fig_dir)
+    algo_filter_aoc_list.append(algo_filter_aoc)
 
     # _plot_algo_aoc_on_problems(res_df)
 
-    _plot_algo_problem_aoc(res_df, dim=dim, fig_dir=fig_dir)
+    # _plot_algo_problem_aoc(res_df, dim=dim, fig_dir=fig_dir)
 
-    _plot_algo_iter(res_df, dim=dim, fig_dir=fig_dir)
+    # _plot_algo_iter(res_df, dim=dim, fig_dir=fig_dir)
 
 
 def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
@@ -994,9 +997,9 @@ def plot_algo_0220():
 
     dir_paths = [
         'Experiments/log_eater/final_eval_res_5dim',
-        # 'Experiments/log_eater/final_eval_res_10dim_0320',
-        # 'Experiments/log_eater/final_eval_res_20dim_0320',
-        # 'Experiments/log_eater/final_eval_res_40dim_0320',
+        'Experiments/log_eater/final_eval_res_10dim_0320',
+        'Experiments/log_eater/final_eval_res_20dim_0320',
+        'Experiments/log_eater/final_eval_res_40dim_0320',
 
         # 'Experiments/log_eater/final_eval_res_atr_20dim',
     ]
@@ -1007,8 +1010,6 @@ def plot_algo_0220():
 
         plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
         # extract_algo_result(dir_path=dir_path)
-    
-    return
 
     file_name = 'all_algo_aoc'
     plot_y = []
@@ -1025,8 +1026,8 @@ def plot_algo_0220():
         data=plot_y,
         labels=plot_labels,
         label_fontsize=8,
-        x_tick_fontsize=10,
-        y_tick_fontsize=11,
+        x_tick_fontsize=11,
+        y_tick_fontsize=12,
         colors=plot_colors,
         show_inside_box=True,
         sharex=True,
