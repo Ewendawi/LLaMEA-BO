@@ -15,8 +15,7 @@
 ## Reproducing Results
 
 ### Result files and Raw Data
-- The results of the experiments are stored in the `Experiments/logs/` directory.
-- The raw data files are stored in the `[TODO]`.
+- The raw data files are stored in the [Zenodo](https://doi.org/10.5281/zenodo.15384610).
 
 ### Run ES Search 
 1. Replace `GEMINI_API_KEY` in `run_es_search.sh` with your Gemini API key.
