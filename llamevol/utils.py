@@ -642,6 +642,9 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 combined_legend:bool = False,
                 combined_legend_ncols:int = 10,
                 combined_legend_bottom:float = 0.07,
+                combined_legend_fontsize:int = 7,
+
+                tick_fontsize:int = 0,
 
                 filling:list[np.ndarray]=None, 
                 linewidth:float = 1.0,
@@ -655,6 +658,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
                 x_dot:list[np.ndarray]=None,
 
                 x_labels:list[str]=None, y_labels:list[str]=None, 
+                y_label_fontsize:int = 0,
 
                 sub_titles:list[str]=None,
                 sub_title_fontsize:int = 10,
@@ -751,12 +755,18 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
             ax.legend(fontsize=label_fontsize)
         ax.grid(True)
 
+        # set ticks fontsize
+        if tick_fontsize > 0:
+            ax.tick_params(axis='both', which='major', labelsize=tick_fontsize)
+
         if x_labels is not None:
             x_label = x_labels[i] if len(x_labels) > i else ""
             ax.set_xlabel(x_label)
         if y_labels is not None:
             y_label = y_labels[i] if len(y_labels) > i else ""
             ax.set_ylabel(y_label)
+            if y_label_fontsize > 0:
+                ax.yaxis.label.set_size(y_label_fontsize)
         if sub_titles is not None:
             sub_title = sub_titles[i] if len(sub_titles) > i else ""
             ax.set_title(sub_title, fontsize=sub_title_fontsize)
@@ -771,7 +781,7 @@ def plot_lines(y:list[np.ndarray], x:list[np.ndarray],
 
     if combined_legend:
         handles, labels = ax.get_legend_handles_labels()
-        fig.legend(handles, labels, loc='lower center', ncol=combined_legend_ncols, fontsize=label_fontsize, bbox_to_anchor=(0.5, 0.0))
+        fig.legend(handles, labels, loc='lower center', ncol=combined_legend_ncols, fontsize=combined_legend_fontsize, bbox_to_anchor=(0.5, 0.0))
         plt.subplots_adjust(bottom=combined_legend_bottom)
 
     
@@ -856,10 +866,15 @@ def plot_box_violin(
     data:list[np.ndarray],
     labels: list[list[str]], 
     label_fontsize:int = 9,
+    x_tick_fontsize:int = 0,
+    y_tick_fontsize:int = 0,
     sub_titles: list[str] = None,
+    sub_title_fontsize:int = 10,
     x_labels: list[str] = None,
     y_labels: list[str] = None,
+    sharex:bool = False,
     title = "",
+    width:float = 0.8,
     colors: list[list] = None,
     show_inside_box:bool = False,
     show_scatter:bool = False,
@@ -882,7 +897,7 @@ def plot_box_violin(
         for col in range(n_cols):
             row_ids.append(row * n_cols + col)
         axs_ids.append(row_ids)
-    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize)
+    fig, axs = plt.subplot_mosaic(axs_ids, figsize=figsize, sharex=sharex)
 
     for i in range(n_plots):
         row = i // n_cols
@@ -892,9 +907,9 @@ def plot_box_violin(
 
         sub_title = sub_titles[i] if sub_titles is not None else ""
         if show_inside_box or show_scatter:
-            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=False, showextrema=False, widths=0.8)
+            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=False, showextrema=False, widths=width)
         else:
-            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=True, showextrema=True, widths=0.8)
+            _violin_parts = ax.violinplot(data[i], showmeans=False, showmedians=True, showextrema=True, widths=width)
 
         box_colors = []
         for _pc_i, pc in enumerate(_violin_parts['bodies']):
@@ -943,13 +958,19 @@ def plot_box_violin(
                 _x = np.full(len(scatter), _scatter_i + 1)
                 ax.scatter(_x, scatter, color=box_colors[_scatter_i], alpha=0.5)
 
-        ax.set_title(sub_title)
-        ax.tick_params(axis='y', labelsize=label_fontsize+1)
+        ax.set_title(sub_title, fontsize=sub_title_fontsize)
+
+        if y_tick_fontsize > 0:
+            ax.tick_params(axis='y', which='major', labelsize=y_tick_fontsize)
+        else:
+            ax.tick_params(axis='y', which='major', labelsize=label_fontsize+2)
+
         ax.yaxis.grid(True)
 
         _labels = _plot_get_element_from_list(labels, i, None)
         if _labels is not None:
-            ax.set_xticks([y + 1 for y in range(len(data[i]))], labels=_labels, fontsize=label_fontsize)
+            _tick_size = x_tick_fontsize if x_tick_fontsize > 0 else label_fontsize
+            ax.set_xticks([y + 1 for y in range(len(data[i]))], labels=_labels, fontsize=_tick_size)
         _x_labels = _plot_get_element_from_list(x_labels, i, "")
         ax.set_xlabel(_x_labels, fontsize=label_fontsize)
         _y_labels = _plot_get_element_from_list(y_labels, i, "")

@@ -138,13 +138,15 @@ def _shorthand_algo_name(algo:str):
     if 'EvolutionaryBO' in algo:
         return 'TREvol'
     elif 'Optimistic' in algo:
-        return 'TROptimistic'
+        return 'TROpt'
     elif 'Pareto' in algo:
         return 'TRPareto'
     elif 'ARM' in algo:
         return 'ARM'
     elif 'MaternVanilla' in algo:
         return 'VanillaBO'
+    elif 'VanillaEIBO' in algo:
+        return 'Vanilla'
 
     if 'BL' in algo:
         return algo.replace("BL", "")
@@ -265,7 +267,8 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
     for result in results:
         algo = result.name
         for res in result.result:
-            res.update_aoc_with_new_bound_if_needed()
+            _bound = 1e9 if len(res.best_x) == 40 else 1e4
+            res.update_aoc_with_new_bound_if_needed(upper_bound=_bound)
             row = res_to_row(res, algo)
             if row is not None:
                 res_df.loc[len(res_df)] = row
@@ -343,13 +346,23 @@ def _plot_algo_aoc(res_df:pd.DataFrame, dim:int, problem_filters=None, file_name
         data=[all_log_plot_data],
         labels=[labels],
         label_fontsize=8,
+        x_tick_fontsize=10,
+        y_tick_fontsize=10,
         colors=[colors],
         show_inside_box=True,
-        title=title,
-        figsize=(8, 4),
+        # title=title,
+        figsize=(7, 3),
         show=False,
         filename=file_name,
     )
+
+    return {
+        'plot_data': all_log_plot_data,
+        'labels': labels,
+        'colors': colors,
+        'dim': dim,
+        'filter': problem_filters,
+    }
 
 def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int, fig_dir=None):
     problem_id_list = res_df['problem_id'].unique()
@@ -461,8 +474,8 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=Non
         # 'uncertainty' : 'Uncertainty on test',
         # 'uncertainty_on_train' : 'Uncertainty on X',
 
-        # 'kappa': 'Kappa',
-        # 'tr_radius': 'Trust Region Radius',
+        'kappa': 'Kappa',
+        'tr_radius': 'Trust Region Radius',
 
         # 'grid_coverage' : 'Grid Coverage',
 
@@ -678,7 +691,7 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=Non
             labels.append(_labels)
 
             _sub_title = data_col_map.get(col, col)
-            _sub_title = f"{_sub_title} On F{problem_id}({dim}D)"
+            # _sub_title = f"{_sub_title} On F{problem_id}({dim}D)"
             sub_titles.append(_sub_title)
 
             if col in y_scale_cols:
@@ -723,9 +736,13 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=Non
             linewidth=1.2,
             filling=plot_filling,
             x_dot=x_dots,
-            n_cols=3,
+            n_cols=1,
+            combined_legend=True,
+            combined_legend_fontsize=11,
+            combined_legend_bottom=0.12,
+            tick_fontsize=11,
             sub_titles=sub_titles,
-            sub_title_fontsize=10,
+            sub_title_fontsize=11,
             # title=f"F{problem_id}({dim}D)",
             figsize=(8, 6),
             show=False,
@@ -743,19 +760,28 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=Non
         colors=best_loss_colors,
         labels=best_loss_labels,
         line_styles=best_loss_line_styles,
-        label_fontsize=10,
+        label_fontsize=11,
         combined_legend=True,
+        combined_legend_fontsize=16,
+        combined_legend_bottom=0.1,
+        combined_legend_ncols=5,
+        tick_fontsize=15,
         linewidth=1.2,
         filling=best_loss_plot_filling,
         x_dot=best_loss_x_dots,
         n_cols=6,
         sub_titles=best_loss_sub_titles,
-        sub_title_fontsize=10,
-        title=f"Best Loss({dim}D)" if title is None else title,
+        sub_title_fontsize=15,
+        # y_labels=["Loss", ""],
+        y_label_fontsize=15,
+        # title=f"Best Loss({dim}D)" if title is None else title,
         figsize=(15, 9),
         show=False,
         filename=file_name,
     )
+
+algo_aoc_list = []
+algo_filter_aoc_list = []
 
 def plot_algo_result(results:list[EvaluatorResult], fig_dir=None):
     res_df = _process_algo_result(results)
@@ -782,6 +808,10 @@ def plot_algo_result(results:list[EvaluatorResult], fig_dir=None):
 
 def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
     res_list = []
+    _file_paths = []
+    if file_paths is not None:
+        _file_paths.extend(file_paths) 
+
     if pop_path is not None:
         with open(pop_path, "rb") as f:
             pop = RenameUnpickler.unpickle(f)
@@ -792,23 +822,40 @@ def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
                     continue
                 res_list.append(handler.eval_result)
     elif dir_path is not None:
-        file_paths = []
         if not os.path.isdir(dir_path):
             raise ValueError(f"Invalid directory path: {dir_path}")
         for file in os.listdir(dir_path):
             if file.endswith(".pkl"):
-                file_paths.append(os.path.join(dir_path, file))
+                _file_paths.append(os.path.join(dir_path, file))
 
-    if len(res_list) == 0:
-        for file_path in file_paths:
-            with open(file_path, "rb") as f:
-                target = RenameUnpickler.unpickle(f)
-                if target.error is not None:
-                    continue
-                if isinstance(target, EvaluatorResult):
-                    res_list.append(target)
-                elif isinstance(target, ResponseHandler):
-                    res_list.append(target.eval_result)
+    for file_path in _file_paths:
+        with open(file_path, "rb") as f:
+            target = RenameUnpickler.unpickle(f)
+            if target.error is not None:
+                continue
+            if isinstance(target, EvaluatorResult):
+                # import re
+                # pattern = re.compile(r"(f?\d)_IOHEvaluator")
+                # match = pattern.search(file_path)
+                # fixed_suffix = ''
+                # rho = 0.0
+                # if match:
+                #     name = match.group(1)
+                #     if 'f' in name:
+                #         fixed_suffix = '_fixed'
+                #         name = name.replace("f", "")
+                #     if name == '8':
+                #         rho = 0.85
+                #     elif name == '9':
+                #         rho = 0.95
+                #     algo = f'rho_{rho}{fixed_suffix}'
+                #     target.name = algo
+                # if len(fixed_suffix) == 0:
+                #     res_list.append(target)
+
+                res_list.append(target)
+            elif isinstance(target, ResponseHandler):
+                res_list.append(target.eval_result)
 
     plot_algo_result(results=res_list, fig_dir=fig_dir)
 
@@ -942,15 +989,85 @@ def extract_algo_result(dir_path:str, file_path_map:dict=None):
 
 def plot_algo_0220():
     file_paths = [
-
+        # 'Experiments/log_eater/final_eval_res/TrustRegionAdaptiveTempBOv2_0.1299_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211000039.pkl',
     ] 
 
-    dir_path = 'Experiments/log_eater/final_eval_res_40dim_0320'
-    pop_path = None
+    dir_paths = [
+        'Experiments/log_eater/final_eval_res_5dim',
+        # 'Experiments/log_eater/final_eval_res_10dim_0320',
+        # 'Experiments/log_eater/final_eval_res_20dim_0320',
+        # 'Experiments/log_eater/final_eval_res_40dim_0320',
 
-    plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
+        # 'Experiments/log_eater/final_eval_res_atr_20dim',
+    ]
 
-    extract_algo_result(dir_path=dir_path)
+    for dir_path in dir_paths:
+
+        pop_path = None
+
+        plot_algo(file_paths=file_paths, dir_path=dir_path, pop_path=pop_path)
+        # extract_algo_result(dir_path=dir_path)
+    
+    return
+
+    file_name = 'all_algo_aoc'
+    plot_y = []
+    plot_labels = []
+    plot_colors = []
+    plot_sub_titles = []
+    for algo_aoc in algo_aoc_list:
+        plot_y.append(algo_aoc['plot_data'])
+        plot_labels.append(algo_aoc['labels'])
+        plot_colors.append(algo_aoc['colors'])
+        dim = algo_aoc['dim']
+        plot_sub_titles.append(f'$d={dim}$')
+    plot_box_violin(
+        data=plot_y,
+        labels=plot_labels,
+        label_fontsize=8,
+        x_tick_fontsize=10,
+        y_tick_fontsize=11,
+        colors=plot_colors,
+        show_inside_box=True,
+        sharex=True,
+        sub_titles=plot_sub_titles,
+        sub_title_fontsize=13,
+        n_cols=2,
+        # title=title,
+        figsize=(13, 6),
+        show=False,
+        filename=file_name,
+    )
+
+    file_name = 'all_algo_aoc_except'
+    plot_y = []
+    plot_labels = []
+    plot_colors = []
+    plot_sub_titles = []
+    for algo_aoc in algo_filter_aoc_list:
+        plot_y.append(algo_aoc['plot_data'])
+        plot_labels.append(algo_aoc['labels'])
+        plot_colors.append(algo_aoc['colors'])
+        dim = algo_aoc['dim']
+        plot_sub_titles.append(f'$d={dim}$')
+    plot_box_violin(
+        data=plot_y,
+        labels=plot_labels,
+        label_fontsize=9,
+        x_tick_fontsize=10,
+        y_tick_fontsize=11,
+        sharex=True,
+        width=0.8,
+        colors=plot_colors,
+        show_inside_box=True,
+        sub_titles=plot_sub_titles,
+        sub_title_fontsize=13,
+        n_cols=2,
+        # title=title,
+        figsize=(13, 6),
+        show=False,
+        filename=file_name,
+    )
 
 
 def get_atrbo_result_file_path_map():
@@ -1004,7 +1121,7 @@ def plot_atrbo_results():
             para_map[key] = value
         return para_map
 
-    dir_path = 'Experiments/atrbo_eval_res_5dim'
+    dir_path = 'Experiments/log_eater/atrbo_eval_res_5dim'
     res_list = []
     df_list = []
     paras_df = []
@@ -1149,9 +1266,9 @@ def convert_atrbo_results_to_ioh_csv():
 def calculate_mannwhitneyu_test():
     dir_paths = [
         'Experiments/log_eater/final_eval_res_5dim',
-        'Experiments/log_eater/final_eval_res_10dim_0320',
-        'Experiments/log_eater/final_eval_res_20dim_0320',
-        'Experiments/log_eater/final_eval_res_40dim_0320',
+        # 'Experiments/log_eater/final_eval_res_10dim_0320',
+        # 'Experiments/log_eater/final_eval_res_20dim_0320',
+        # 'Experiments/log_eater/final_eval_res_40dim_0320',
     ]
 
     for dir_path in dir_paths:
@@ -1263,3 +1380,7 @@ if __name__ == "__main__":
     setup_logger(level=logging.INFO)
 
     plot_algo_0220()
+
+    # calculate_mannwhitneyu_test()
+
+    # plot_atrbo_results()

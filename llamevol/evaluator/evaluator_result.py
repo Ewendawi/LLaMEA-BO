@@ -682,14 +682,11 @@ class EvaluatorBasicResult:
         self.uncertainty_list = []
         self.uncertainty_list_on_train = []
 
-        self.aoc_upper_bound = 1e9
+        self.aoc_upper_bound = 1e4
 
     def update_aoc_with_new_bound_if_needed(self, upper_bound=None):
         if upper_bound is None:
-            if hasattr(self, "aoc_upper_bound"):
-                upper_bound = self.aoc_upper_bound
-            else:
-                upper_bound = 1e9
+            upper_bound = 1e4
         if hasattr(self, "aoc_upper_bound") and self.aoc_upper_bound == upper_bound:
             pass
         else:

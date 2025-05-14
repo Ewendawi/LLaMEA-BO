@@ -213,10 +213,13 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str], fig_dir=N
         data=[_volin_y],
         labels=[unique_strategies],
         y_labels=['AOC'],
+        y_tick_fontsize=12,
+        x_tick_fontsize=13,
         show_scatter=True,
+        width=0.6,
         n_cols=4,
-        label_fontsize=10,
-        figsize=(8, 6),
+        label_fontsize=11,
+        figsize=(8, 4),
         filename=file_name,
         show=False
         )
@@ -329,7 +332,7 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         plot_y = [np.array(strategy_log_aoc)]
         fillings = [strategy_log_filling]
         plot_labels = [labels]
-        # y_scale = [("log", {})]
+        # y_scale = [("symlog", {})]
 
     file_name = 'es_aoc_lines'
     if fig_dir is not None:
@@ -337,18 +340,35 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
 
     x_base = np.arange(len(strategy_aoc[0]), dtype=np.int16)
     x = np.tile(x_base, (len(plot_y), 1))
+
+    # for main content
+    _label_fontsize = 13
+    _tick_fontsize = 13
+    _y_label_fontsize = 12
+    _line_width = 1.4
+    _figsize = (5, 4)
+
+    # for sub content
+    # _label_fontsize = 13
+    # _tick_fontsize = 13
+    # _y_label_fontsize = 13
+    # _line_width = 1.5
+    # _figsize = (8, 4)
+
     plot_lines(
         y = plot_y,
         x = x,
         labels = plot_labels,
+        label_fontsize=_label_fontsize,
+        tick_fontsize=_tick_fontsize,
         y_labels=['AOC'],
+        y_label_fontsize=_y_label_fontsize,
         filling=fillings,
-        sub_titles=sub_titles,
+        # sub_titles=sub_titles,
         y_scales=y_scale,
-        linewidth=1.5,
+        linewidth=_line_width,
         n_cols=3,
-        label_fontsize=9,
-        figsize=(8, 6),
+        figsize=_figsize,
         filename=file_name,
         show=False,
         )
@@ -554,7 +574,7 @@ def _process_error_data(results:list[tuple[str,Population]]):
                 _err_df.loc[len(_err_df)] = res
     return _err_df
 
-def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]):
+def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
     _all_error_df = err_df.groupby(['strategy', 'n_repeat'])['err_type'].agg(list).reset_index()
     _all_error_df['err_rate'] = _all_error_df['err_type'].apply(lambda x: len([ele for ele in x if ele is not None]) / len(x))
 
@@ -565,13 +585,24 @@ def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]
         _error_rate = _strategy_error_df['err_rate'].to_list()
         y_err_rates.append(_error_rate)
 
+    file_name = 'overall_error_rate_voilin'
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+
     plot_box_violin(
         data=[y_err_rates],
         labels=[unique_strategies],
+        y_labels=['Error Rate'],
+        y_tick_fontsize=12,
+        x_tick_fontsize=13,
+        show_scatter=True,
         n_cols=4,
-        label_fontsize=10,
-        title="Error rate by strategy",
-        figsize=(15, 9),
+        width=0.6,
+        label_fontsize=11,
+        # title="Error rate by strategy",
+        figsize=(8, 4),
+        filename=file_name,
+        show=False,
         ) 
 
 def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str]):
@@ -920,21 +951,62 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None, fig_di
                 figsize=(15, 9),
                 )
     else:
+        n_cols = 5
         aoc_and_loss = []
         subtitles = []
         filling = []
         y_scale = []
-        n_cols = 5
+        y_labels = []
+
 
         aoc_and_loss.extend(problem_log_aoc)
-        subtitles.extend([f"F{problem}-AOC" for problem in unique_problems])
+        subtitles.extend([f"F{problem}" for problem in unique_problems])
         filling.extend(problem_log_aoc_filling)
         y_scale.extend([("linear", {}) for _ in range(len(unique_problems))])
+        aoc_y_labels = ['AOC'] + [''] * (len(unique_problems)//2-1)
+        aoc_y_labels = aoc_y_labels * 2
+        y_labels.extend(aoc_y_labels)
 
         aoc_and_loss.extend(problem_loss)
-        subtitles.extend([f"F{problem}-Loss" for problem in unique_problems])
+        loss_subtitles = [f"F{problem}" for problem in unique_problems]
+        loss_y_scale = [("symlog", {}) for _ in range(len(unique_problems))]
+        loss_y_labels = ['Loss'] + [''] * (len(unique_problems)//2-1)
+        loss_y_labels = loss_y_labels * 2
+
+        subtitles.extend(loss_subtitles)
         filling.extend(problem_loss_filling)
-        y_scale.extend([("symlog", {}) for _ in range(len(unique_problems))])
+        y_scale.extend(loss_y_scale)
+        y_labels.extend(loss_y_labels)
+
+        loss_plot_y = np.array(problem_loss)
+        x_base = np.arange(len(problem_loss[0][0]), dtype=np.int16)
+        loss_x = np.tile(x_base, (len(loss_plot_y), 1))
+
+        file_name = 'es_problem_loss'
+        if fig_dir is not None:
+            file_name = os.path.join(fig_dir, file_name)
+
+        plot_lines(
+            y = loss_plot_y,
+            x = loss_x,
+            labels = labels,
+            label_fontsize=10,
+            filling=problem_loss_filling,
+            y_scales=loss_y_scale,
+            y_labels=loss_y_labels,
+            y_label_fontsize=12,
+            tick_fontsize=12,
+            sub_titles=loss_subtitles,
+            sub_title_fontsize=12,
+            linewidth=1.3,
+            combined_legend=True,
+            combined_legend_bottom=0.18,
+            combined_legend_fontsize=13,
+            n_cols=n_cols,
+            figsize=(10, 4),
+            filename=file_name,
+            show=False,
+            )
 
         # step n_cols
         # for i in range(0, len(unique_problems), n_cols):
@@ -971,11 +1043,19 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None, fig_di
             y = plot_y,
             x = x,
             labels = labels,
+            label_fontsize=10,
+            tick_fontsize=14,
             filling=filling,
             y_scales=y_scale,
+            y_labels=y_labels,
+            y_label_fontsize=14,
             sub_titles=subtitles,
+            sub_title_fontsize=15,
+            combined_legend=True,
+            combined_legend_bottom=0.1,
+            combined_legend_fontsize=15,
             n_cols=n_cols,
-            figsize=(15, 9),
+            figsize=(14, 8),
             filename=file_name,
             show=False,
             )
@@ -1151,19 +1231,19 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         )
 
 def plot_search_result(result_dir, save_name=None, extract_fn=None, fig_dir=None):
-    res_df = _load_results(result_dir, save_name=save_name, extract_fn=extract_fn)
+    res_df, results = _load_results(result_dir, save_name=save_name, extract_fn=extract_fn)
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
 
     # _plot_search_token_usage(results, unique_strategies)
 
-    _plot_search_aoc(res_df, unique_strategies, fig_dir=fig_dir)
+    # _plot_search_aoc(res_df, unique_strategies, fig_dir=fig_dir)
     _plot_search_group_aoc(res_df, unique_strategies, fig_dir=fig_dir)
 
     # _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
 
     # err_df = _process_error_data(results)
-    # _plot_search_all_error_rate(err_df, unique_strategies)
+    # _plot_search_all_error_rate(err_df, unique_strategies, fig_dir=fig_dir)
     # _plot_search_error_type(err_df, unique_strategies=unique_strategies)
     # _plot_search_error_rate_by_generation(err_df, unique_strategies)
 
@@ -1358,9 +1438,6 @@ def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
         if os.path.exists(save_name):
             res_df = pd.read_pickle(save_name)
 
-    if res_df is not None:
-        return res_df
-
     if file_paths is None:
         file_paths = []
         for dir_name in os.listdir(dir_path):
@@ -1412,12 +1489,14 @@ def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
         #         pop.save_on_the_fly(ind, gen, ind_index)
         #         ind_index += 1
 
-    res_df = _process_search_result(pop_list, save_name=save_name)
+    if res_df is not None:
+        return res_df, pop_list
 
-    return res_df
+    res_df = _process_search_result(pop_list, save_name=save_name)
+    return res_df, pop_list
 
 def extract_results_to_ioh_csv(dir_path, pop_save_path, extract_fn=None):
-    res_df = _load_results(dir_path, file_paths=None, extract_fn=extract_fn, save_name=pop_save_path)
+    res_df, _ = _load_results(dir_path, file_paths=None, extract_fn=extract_fn, save_name=pop_save_path)
 
     aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_ind'])[["log_y_aoc"]].agg(np.mean).reset_index()
 
@@ -1533,15 +1612,14 @@ if __name__ == "__main__":
     extract_fn = None
 
     # dir_path = 'Experiments/log_eater/pop_40_f_0220'
-    # save_name = 'Experiments/pop_40_f_0220/df_res_02230646.pkl'
+    # save_name = 'Experiments/log_eater/pop_40_f_0220/df_res_05230546.pkl'
 
-    dir_path = 'Experiments/log_eater/pop_100_tkcr'
     
     # dir_path = 'Experiments/pop_100_f'
     # save_name = 'Experiments/pop_100_f/df_res_02250235.pkl'
 
-    # dir_path = 'Experiments/pop_40_cr'
-    # save_name = 'Experiments/pop_40_cr/df_res_02250316.pkl'
+    # dir_path = 'Experiments/log_eater/pop_40_cr'
+    # save_name = 'Experiments/log_eater/pop_40_cr/df_res_05240416.pkl'
 
     def _extract_fn(file_path):
         if 'temperature' in file_path:
@@ -1574,25 +1652,32 @@ if __name__ == "__main__":
             if match:
                 f = match.group(1)
                 return f"{f}"
+        elif 'pop_40_cr' in file_path:
+            pattern = re.compile(r'_cr(\d+)_IOHEvaluator')
+            match = pattern.search(file_path)
+            if match:
+                cr = int(match.group(1)) / 10
+                return f"{cr}"
         return ''
                 
-    # dir_path = 'Experiments/pop_40_temperature'
-    # save_name = 'Experiments/pop_40_temperature/df_res_02250414.pkl'
+    # dir_path = 'Experiments/log_eater/pop_40_temperature'
+    # save_name = 'Experiments/log_eater/pop_40_temperature/df_res_05250314.pkl'
 
-    # dir_path = 'Experiments/pop_40_top_k'
-    # save_name = 'Experiments/pop_40_top_k/df_res_02250447.pkl'
+    # dir_path = 'Experiments/log_eater/pop_40_top_k'
+    # save_name = 'Experiments/log_eater/pop_40_top_k/df_res_05250347.pkl'
 
     # dir_path = 'Experiments/log_eater/pop_40_top_p'
-    # save_name = 'Experiments/pop_40_top_p/df_res_02250407.pkl'
+    # save_name = 'Experiments/log_eater/pop_40_top_p/df_res_05250307.pkl'
 
     extract_fn = _extract_fn
 
-    save_name = 'Experiments/log_eater/pop_100_tkcr/df_res_03241329.pkl'
+    dir_path = 'Experiments/log_eater/pop_100_tkcr'
+    save_name = 'Experiments/log_eater/pop_100_tkcr/df_res_05241329.pkl'
     # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
 
 
     # extract_results_to_ioh_csv(dir_path, save_name, extract_fn=extract_fn)
 
-    plot_search_result(dir_path, save_name=save_name, extract_fn=extract_fn)
+    plot_search_result(dir_path, save_name=save_name, extract_fn=extract_fn, fig_dir=dir_path)
 
 
