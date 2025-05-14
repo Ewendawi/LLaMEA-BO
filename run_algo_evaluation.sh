@@ -24,11 +24,11 @@ done
 
 # Evaluate the generated algorithms
 GENERATED_ALGO_PATHS=(
-    ["AdaptiveTrustRegionOptimisticHybridBO"]="Experiments/logs/algorithms_0319/AdaptiveTrustRegionOptimisticHybridBO.py"
-    ["AdaptiveEvolutionaryParetoTrustRegionBO"]="Experiments/logs/algorithms_0319/AdaptiveEvolutionaryParetoTrustRegionBO.py"
-    ["AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE"]="Experiments/logs/algorithms_0319/AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE.py"
-    ["ATRBO"]="Experiments/logs/algorithms_0319/ATRBO.py"
-    ["ABETSALSDE_ARM_MBO"]="Experiments/logs/algorithms_0319/ABETSALSDE_ARM_MBO.py"
+    ["AdaptiveTrustRegionOptimisticHybridBO"]="Experiments/generated_algorithms/AdaptiveTrustRegionOptimisticHybridBO.py"
+    ["AdaptiveEvolutionaryParetoTrustRegionBO"]="Experiments/generated_algorithms/AdaptiveEvolutionaryParetoTrustRegionBO.py"
+    ["AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE"]="Experiments/generated_algorithms/AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE.py"
+    ["ATRBO"]="Experiments/generated_algorithms/ATRBO.py"
+    ["ABETSALSDE_ARM_MBO"]="Experiments/generated_algorithms/ABETSALSDE_ARM_MBO.py"
 )
 for ALGO in "${!GENERATED_ALGO_PATHS[@]}"; do
     ALGO_PATH=${GENERATED_ALGO_PATHS[$ALGO]}
