@@ -21,7 +21,7 @@ APP=python
 ARGS="LLAMBO/Experiments/ea_bo_exp.py --mpi"
 
 OMPI_OPTS=""
-# DAS-6/OpenHPC modules do not set MPI_RUN, so:
+# D-6/OpenHPC modules do not set MPI_RUN, so:
 MPI_RUN=mpirun
 
 $MPI_RUN $OMPI_OPTS $APP $ARGS

@@ -6,9 +6,9 @@
 #SBATCH --job-name=bo_algo_eval
 
 . /etc/bashrc
-# DAS-5:
+# D-5:
 # . /etc/profile.d/modules.sh
-# DAS-6:
+# D-6:
 . /etc/profile.d/lmod.sh
 
 module load openmpi/gcc/64
@@ -22,7 +22,7 @@ ARGS='-m mpi4py.futures LLAMBO/Experiments/jobs/mpi_py_test.py'
 # ARGS='LLAMBO/Experiments/jobs/mpi_py_test.py'
 
 # OMPI_OPTS="--mca btl ^usnic"
-# DAS-6/OpenHPC modules do not set MPI_RUN, so:
+# D-6/OpenHPC modules do not set MPI_RUN, so:
 MPI_RUN=mpirun
 
 $MPI_RUN $OMPI_OPTS $APP $ARGS

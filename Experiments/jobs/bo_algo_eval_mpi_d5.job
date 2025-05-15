@@ -24,7 +24,6 @@ APP=python
 ARGS="LLAMBO/Experiments/ea_bo_algo_exp.py --mpi"
 
 # OMPI_OPTS="--mca btl ^usnic"
-# DAS-6/OpenHPC modules do not set MPI_RUN, so:
 MPI_RUN=mpirun
 $MPI_RUN $OMPI_OPTS $APP $ARGS
 

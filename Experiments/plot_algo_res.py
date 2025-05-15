@@ -1320,11 +1320,11 @@ def _calculate_mannwhitneyu_test_on_dir(dir_path:str):
         stat_list.append({
             'algorithm_name': best_algo,
             'contrast_algo': None,
+            'stat': np.nan,
+            'p_value': np.nan,
             'size': len(best_aoc_list),
             'median': np.median(best_aoc_list),
             'mean': np.mean(best_aoc_list),
-            'stat': np.nan,
-            'p_value': np.nan,
             'pid': problem_id,
         })
         if verbose:
@@ -1335,16 +1335,17 @@ def _calculate_mannwhitneyu_test_on_dir(dir_path:str):
         for algo in other_algos:
             algo_aoc_list = res_df[res_df['algorithm_name'] == algo]['y_aoc'].to_list()
             # perform mannwhitneyu test
-            stat, p_value = stats.mannwhitneyu(best_aoc_list, algo_aoc_list)
+            # stat, p_value = stats.mannwhitneyu(best_aoc_list, algo_aoc_list)
+            stat, p_value = stats.ttest_rel(best_aoc_list, algo_aoc_list)
 
             stat_list.append({
                 'algorithm_name': algo,
                 'contrast_algo': best_algo,
+                'stat': stat,
+                'p_value': p_value,
                 'size': len(algo_aoc_list),
                 'median': np.median(algo_aoc_list),
                 'mean': np.mean(algo_aoc_list),
-                'stat': stat,
-                'p_value': p_value,
                 'pid': problem_id,
             })
 
@@ -1372,7 +1373,8 @@ def _calculate_mannwhitneyu_test_on_dir(dir_path:str):
     res_stat_df = pd.DataFrame(res_stat_list)
 
     # save to csv
-    res_stat_df.to_csv(f"{dir_path}/mannwhitneyu_test.csv", index=False)
+    # res_stat_df.to_csv(f"{dir_path}/mannwhitneyu_test.csv", index=False)
+    res_stat_df.to_csv(f"{dir_path}/t_test.csv", index=False)
 
 
 

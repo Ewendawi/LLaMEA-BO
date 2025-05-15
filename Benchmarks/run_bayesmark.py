@@ -15,6 +15,7 @@ from sklearn.metrics import get_scorer
 from sklearn.model_selection import cross_val_score
 
 from llamevol.utils import setup_logger
+from llamevol.utils import plot_lines
 
 def update_init(self, init_X):
     self.init_X = init_X
@@ -477,6 +478,29 @@ def _get_dataset_type(dataset):
     else:
         return 'Unknown'
 
+def _get_dim_from_model(model):
+    if model == 'SVM':
+        return 3
+    elif model == 'AdaBoost':
+        return 2
+    elif model == 'RandomForest':
+        return 6
+    elif model == 'MLP_SGD':
+        return 6
+    elif model == 'DecisionTree':
+        return 6
+    else:
+        raise ValueError(f'Invalid model: {model}')
+
+
+def _get_metric(dataset):
+    if dataset in BAYESMARK_TASK_MAP:
+        return BAYESMARK_TASK_MAP[dataset][1]
+    elif dataset in PRIVATE_TASK_MAP:
+        return PRIVATE_TASK_MAP[dataset][1]
+    else:
+        return 'Unknown'
+
 def _get_line_type(algo):
     if 'BL' in algo:
         return '--'
@@ -509,7 +533,6 @@ def plot_bayesmark_results():
     ]
 
     data_map = {}
-
     for dir_path in dir_paths:
         for _dataset in os.listdir(dir_path):
             for _model in os.listdir(os.path.join(dir_path, _dataset)):
@@ -704,6 +727,8 @@ def plot_bayesmark_results():
                         'model': _model,
                         'seed': i,
                         'regret': _regrets,
+                        'generalization_score': y_data[i],
+                        'best_g_score': best_y_data[i],
                     })
 
             labels.append([_shorthand_algo_name(_algo) for _algo in _algo_labels])
@@ -717,133 +742,202 @@ def plot_bayesmark_results():
 
             line_styles.append(_algo_line_styles)
 
-
-        def _axis0_mean(row):
-            return np.mean(row, axis=0)
-        regret_df = pd.DataFrame(regret_df_data)
-        regret_df['best_regret'] = regret_df['regret'].apply(np.minimum.accumulate)
-        overall_regret_df = regret_df.groupby(['algo', 'short_algo', 'dataset_type', 'seed'])[['best_regret']].agg(_axis0_mean).reset_index()
-        dataset_types = overall_regret_df['dataset_type'].unique()
-        type_plot_x = []
-        type_plot_y = []
-        type_plot_filling = []
-        type_labels = []
-        type_sub_titles = []
-        type_y_labels = ['Avg Regret', ''] 
-        type_line_styles = []
-        _x_range = (5, 30)
-        for dataset_type in dataset_types:
-            overall_type_df = overall_regret_df[overall_regret_df['dataset_type'] == dataset_type]
-
-            _algos = overall_type_df['algo'].unique()
-            _algos = sorted(_algos, key=cmp_to_key(compare_expressions))
-            _type_y = []
-            _type_filling = []
-            _type_labels = []
-            _type_line_styles = []
-            for algo in _algos:
-                overall_algo_df = overall_type_df[overall_type_df['algo'] == algo]
-                _algo_y = overall_algo_df['best_regret'].to_list()
-                _algo_filling = [np.min(_algo_y, axis=0), np.max(_algo_y, axis=0)]
-                _type_y.append(np.mean(_algo_y, axis=0))
-                _type_filling.append(_algo_filling)
-                _type_labels.append(_shorthand_algo_name(algo))
-                _type_line_styles.append(_get_line_type(algo))
-            type_labels.append(_type_labels)
-            type_sub_titles.append(dataset_type)
-            type_line_styles.append(_type_line_styles)
-            clip_index = _x_range[0]
-            type_plot_x.append(list(range(clip_index+1, _x_range[1] + 1)))
-            type_plot_y.append([_y[clip_index:] for _y in _type_y])
-            type_plot_filling.append([[_l[clip_index:], _r[clip_index:]] for _l, _r in _type_filling])
-
         fig_dir = 'Benchmarks/bayesmark_results_figs'
-        os.makedirs(fig_dir, exist_ok=True)
-
-        from llamevol.utils import plot_lines
-
-
-        # plot the overall regret 
-        file_name = "regret"
-        if fig_dir is not None:
-            file_name = os.path.join(fig_dir, file_name)
-        type_plot_x = np.array(type_plot_x)
-        type_plot_y = np.array(type_plot_y)
-        plot_lines(
-            y=type_plot_y, x=type_plot_x,
-            # y_scales=best_loss_y_scales,
-            # colors=best_loss_colors,
-            y_labels=type_y_labels,
-            # sharey=True,
-            labels=type_labels,
-            line_styles=type_line_styles,
-            label_fontsize=13,
-            tick_fontsize=10,
-            combined_legend=True,
-            combined_legend_bottom=0.2,
-            combined_legend_ncols=5,
-            combined_legend_fontsize=9,
-            linewidth=1.3,
-            # filling=type_plot_filling,
-            n_cols=4,
-            sub_titles=type_sub_titles,
-            sub_title_fontsize=12,
-            # title=f"Best Loss({dim}D)",
-            figsize=(7, 4),
-            show=False,
-            filename=file_name,
-        )
-
         # plot the results
         file_name = f"{_model}"
         if fig_dir is not None:
             file_name = os.path.join(fig_dir, file_name)
 
-
         plot_y = np.array(plot_y)
         plot_x = np.array(plot_x)
-        plot_lines(
-            y=plot_y, x=plot_x,
-            # y_scales=best_loss_y_scales,
-            # colors=best_loss_colors,
-            y_labels=y_labels,
-            # sharey=True,
-            labels=labels,
-            line_styles=line_styles,
-            label_fontsize=11,
-            y_label_fontsize=10,
-            tick_fontsize=11,
-            combined_legend=True,
-            combined_legend_ncols=10,
-            combined_legend_bottom=0.13,
-            combined_legend_fontsize=11,
-            linewidth=1.3,
-            # filling=plot_filling,
-            n_cols=4,
-            sub_titles=sub_titles,
-            sub_title_fontsize=12,
-            # title=f"Best Loss({dim}D)",
-            figsize=(12, 5),
-            show=False,
-            filename=file_name,
-        )
+        # plot_lines(
+        #     y=plot_y, x=plot_x,
+        #     # y_scales=best_loss_y_scales,
+        #     # colors=best_loss_colors,
+        #     y_labels=y_labels,
+        #     # sharey=True,
+        #     labels=labels,
+        #     line_styles=line_styles,
+        #     label_fontsize=11,
+        #     y_label_fontsize=10,
+        #     tick_fontsize=11,
+        #     combined_legend=True,
+        #     combined_legend_ncols=10,
+        #     combined_legend_bottom=0.13,
+        #     combined_legend_fontsize=11,
+        #     linewidth=1.3,
+        #     # filling=plot_filling,
+        #     n_cols=4,
+        #     sub_titles=sub_titles,
+        #     sub_title_fontsize=12,
+        #     # title=f"Best Loss({dim}D)",
+        #     figsize=(12, 5),
+        #     show=False,
+        #     filename=file_name,
+        # )
 
         # plot the regret
         file_name = f"{_model}_regret"
         if fig_dir is not None:
             file_name = os.path.join(fig_dir, file_name)
 
-        from llamevol.utils import plot_lines
-
         plot_y_regret = np.array(plot_y_regret)
-        plot_lines(
-            y=plot_y_regret, x=plot_x,
+        # plot_lines(
+        #     y=plot_y_regret, x=plot_x,
+        #     # y_scales=best_loss_y_scales,
+        #     # colors=best_loss_colors,
+        #     y_labels=y_labels_regret,
+        #     # sharey=True,
+        #     labels=labels,
+        #     line_styles=line_styles,
+        #     label_fontsize=11,
+        #     y_label_fontsize=10,
+        #     tick_fontsize=11,
+        #     combined_legend=True,
+        #     combined_legend_ncols=10,
+        #     combined_legend_bottom=0.13,
+        #     combined_legend_fontsize=11,
+        #     linewidth=1.3,
+        #     # filling=plot_filling_regret,
+        #     n_cols=4,
+        #     sub_titles=sub_titles,
+        #     sub_title_fontsize=12,
+        #     # title=f"Best Loss({dim}D)",
+        #     figsize=(12, 5),
+        #     show=False,
+        #     filename=file_name,
+        # )
+
+    def _axis0_mean(row):
+        return np.mean(row, axis=0)
+    regret_df = pd.DataFrame(regret_df_data)
+    regret_df['best_regret'] = regret_df['regret'].apply(np.minimum.accumulate)
+    overall_regret_df = regret_df.groupby(['algo', 'short_algo', 'dataset_type', 'seed'])[['best_regret']].agg(_axis0_mean).reset_index()
+    dataset_types = overall_regret_df['dataset_type'].unique()
+    type_plot_x = []
+    type_plot_y = []
+    type_plot_filling = []
+    type_labels = []
+    type_sub_titles = []
+    type_y_labels = ['Avg Regret', ''] 
+    type_line_styles = []
+    _x_range = (5, 30)
+    for dataset_type in dataset_types:
+        overall_type_df = overall_regret_df[overall_regret_df['dataset_type'] == dataset_type]
+
+        _algos = overall_type_df['algo'].unique()
+        _algos = sorted(_algos, key=cmp_to_key(compare_expressions))
+        _type_y = []
+        _type_filling = []
+        _type_labels = []
+        _type_line_styles = []
+        for algo in _algos:
+            overall_algo_df = overall_type_df[overall_type_df['algo'] == algo]
+            _algo_y = overall_algo_df['best_regret'].to_list()
+            _algo_filling = [np.min(_algo_y, axis=0), np.max(_algo_y, axis=0)]
+            _type_y.append(np.mean(_algo_y, axis=0))
+            _type_filling.append(_algo_filling)
+            _type_labels.append(_shorthand_algo_name(algo))
+            _type_line_styles.append(_get_line_type(algo))
+        type_labels.append(_type_labels)
+        type_sub_titles.append(dataset_type)
+        type_line_styles.append(_type_line_styles)
+        clip_index = _x_range[0]
+        type_plot_x.append(list(range(clip_index+1, _x_range[1] + 1)))
+        type_plot_y.append([_y[clip_index:] for _y in _type_y])
+        type_plot_filling.append([[_l[clip_index:], _r[clip_index:]] for _l, _r in _type_filling])
+
+    fig_dir = 'Benchmarks/bayesmark_results_figs'
+    os.makedirs(fig_dir, exist_ok=True)
+
+    # plot the overall regret 
+    file_name = "regret"
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+    type_plot_x = np.array(type_plot_x)
+    type_plot_y = np.array(type_plot_y)
+    plot_lines(
+        y=type_plot_y, x=type_plot_x,
+        # y_scales=best_loss_y_scales,
+        # colors=best_loss_colors,
+        y_labels=type_y_labels,
+        # sharey=True,
+        labels=type_labels,
+        line_styles=type_line_styles,
+        label_fontsize=13,
+        tick_fontsize=10,
+        combined_legend=True,
+        combined_legend_bottom=0.2,
+        combined_legend_ncols=5,
+        combined_legend_fontsize=9,
+        linewidth=1.3,
+        # filling=type_plot_filling,
+        n_cols=4,
+        sub_titles=type_sub_titles,
+        sub_title_fontsize=12,
+        # title=f"Best Loss({dim}D)",
+        figsize=(7, 4),
+        show=False,
+        filename=file_name,
+    )
+
+    # plot the overall regret by model and dataset type
+    overall_regret_df = regret_df.groupby(['algo', 'model', 'dataset_type', 'seed'])[['best_regret']].agg(_axis0_mean).reset_index()
+    models = overall_regret_df['model'].unique()
+    data_types = overall_regret_df['dataset_type'].unique()
+    data_types = [1]
+    model_sub_titles = []
+    model_y_labels = []
+    model_line_styles = []
+    model_plot_x = []
+    model_plot_y = []
+    model_plot_filling = []
+    model_plot_labels = []
+    for i, data_type in enumerate(data_types):
+        for j, model in enumerate(models):
+            _model_df = overall_regret_df[overall_regret_df['model'] == model]
+            # _model_df = _model_df[_model_df['dataset_type'] == data_type]
+            _model_y = []
+            _model_filling = []
+            _model_labels = []
+            _model_line_styles = []
+            for algo in algos:
+                _algo_df = _model_df[_model_df['algo'] == algo]
+                _algo_y = _algo_df['best_regret'].to_list()
+                _algo_filling = [np.min(_algo_y, axis=0), np.max(_algo_y, axis=0)]
+                _model_y.append(np.mean(_algo_y, axis=0))
+                _model_filling.append(_algo_filling)
+                _model_labels.append(_shorthand_algo_name(algo))
+                _model_line_styles.append(_get_line_type(algo))
+            clip_index = _x_range[0]
+            if i == 0:
+                model_sub_titles.append(f'{model}({_get_dim_from_model(model)}D)')
+            else:
+                model_sub_titles.append('')
+            if j == 0:
+                # model_y_labels.append(f'{data_type}')
+                model_y_labels.append('')
+            else:
+                model_y_labels.append('')
+            model_plot_labels.append(_model_labels)
+            model_plot_x.append(list(range(clip_index+1, _x_range[1] + 1)))
+            model_plot_y.append([_y[clip_index:] for _y in _model_y])
+            model_plot_filling.append([[_l[clip_index:], _r[clip_index:]] for _l, _r in _model_filling])
+            model_line_styles.append(_model_line_styles)
+    
+    # plot the overall model
+    file_name = "overall_model_regret"
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+    model_plot_x = np.array(model_plot_x)
+    model_plot_y = np.array(model_plot_y)
+    plot_lines(
+            y=model_plot_y, x=model_plot_x,
             # y_scales=best_loss_y_scales,
             # colors=best_loss_colors,
-            y_labels=y_labels_regret,
-            # sharey=True,
-            labels=labels,
-            line_styles=line_styles,
+            y_labels=model_y_labels,
+            labels=model_plot_labels,
+            line_styles=model_line_styles,
             label_fontsize=11,
             y_label_fontsize=10,
             tick_fontsize=11,
@@ -852,9 +946,82 @@ def plot_bayesmark_results():
             combined_legend_bottom=0.13,
             combined_legend_fontsize=11,
             linewidth=1.3,
-            # filling=plot_filling_regret,
+            # filling=dataset_plot_filling,
+            n_cols=5,
+            sub_titles=model_sub_titles,
+            sub_title_fontsize=12,
+            # title=f"Best Loss({dim}D)",
+            figsize=(13, 5),
+            show=False,
+            filename=file_name,
+        )
+
+
+    overall_dataset_df = regret_df.groupby(['algo', 'dataset', 'seed'])[['best_g_score']].agg(_axis0_mean).reset_index()
+    datasets = ['breast', 'digits', 'wine', 'iris', 'diabetes', 'griewank', 'ktablet', 'rosenbrock']
+    y_label_datasets = set(['breast', 'diabetes'])
+    algos = overall_dataset_df['algo'].unique()
+    algos = sorted(algos, key=cmp_to_key(compare_expressions))
+    dataset_sub_titles = []
+    dataset_y_labels = []
+    dataset_line_styles = []
+    dataset_plot_x = []
+    dataset_plot_y = []
+    dataset_plot_filling = []
+    dataset_plot_labels = []
+    for dataset in datasets:
+        _dataset_df = overall_dataset_df[overall_dataset_df['dataset'] == dataset]
+        _dataset_y = []
+        _dataset_filling = []
+        _dataset_labels = []
+        _dataset_line_styles = []
+        for algo in algos:
+            _algo_df = _dataset_df[_dataset_df['algo'] == algo]
+            _algo_y = _algo_df['best_g_score'].to_list()
+            _algo_filling = [np.min(_algo_y, axis=0), np.max(_algo_y, axis=0)]
+            _dataset_y.append(np.mean(_algo_y, axis=0))
+            _dataset_filling.append(_algo_filling)
+            _dataset_labels.append(_shorthand_algo_name(algo))
+            _dataset_line_styles.append(_get_line_type(algo))
+        clip_index = _x_range[0]
+        dataset_sub_titles.append(dataset)
+        dataset_plot_labels.append(_dataset_labels)
+        dataset_plot_x.append(list(range(clip_index+1, _x_range[1] + 1)))
+        dataset_plot_y.append([_y[clip_index:] for _y in _dataset_y])
+        dataset_plot_filling.append([[_l[clip_index:], _r[clip_index:]] for _l, _r in _dataset_filling])
+        dataset_line_styles.append(_dataset_line_styles)
+        if dataset in y_label_datasets:
+            _metric = _get_metric(dataset)
+            if _metric == 'accuracy':
+                dataset_y_labels.append('Avg ACC')
+            else:
+                dataset_y_labels.append('Avg MSE')
+        else:
+            dataset_y_labels.append('')
+    # plot the overall dataset
+    file_name = "overall_dataset_acc_mse"
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+    dataset_plot_x = np.array(dataset_plot_x)
+    dataset_plot_y = np.array(dataset_plot_y)
+    plot_lines(
+            y=dataset_plot_y, x=dataset_plot_x,
+            # y_scales=best_loss_y_scales,
+            # colors=best_loss_colors,
+            y_labels=dataset_y_labels,
+            labels=dataset_plot_labels,
+            line_styles=dataset_line_styles,
+            label_fontsize=11,
+            y_label_fontsize=10,
+            tick_fontsize=11,
+            combined_legend=True,
+            combined_legend_ncols=10,
+            combined_legend_bottom=0.13,
+            combined_legend_fontsize=11,
+            linewidth=1.3,
+            # filling=dataset_plot_filling,
             n_cols=4,
-            sub_titles=sub_titles,
+            sub_titles=dataset_sub_titles,
             sub_title_fontsize=12,
             # title=f"Best Loss({dim}D)",
             figsize=(12, 5),
@@ -1092,11 +1259,11 @@ if __name__ == '__main__':
     # plot_bayesmark_results()
     # plot_bayesmark_profile_results()
 
-    from Experiments.logs.algorithms_logs.ATRBO import ATRBO
-    from Experiments.logs.algorithms_logs.AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE import AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE 
-    from Experiments.logs.algorithms_logs.AdaptiveTrustRegionOptimisticHybridBO import AdaptiveTrustRegionOptimisticHybridBO
-    from Experiments.logs.algorithms_logs.AdaptiveEvolutionaryParetoTrustRegionBO import AdaptiveEvolutionaryParetoTrustRegionBO
-    from Experiments.logs.algorithms_logs.ABETSALSDE_ARM_MBO import ABETSALSDE_ARM_MBO
+    from Experiments.generated_algorithms.ATRBO import ATRBO
+    from Experiments.generated_algorithms.AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE import AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE 
+    from Experiments.generated_algorithms.AdaptiveTrustRegionOptimisticHybridBO import AdaptiveTrustRegionOptimisticHybridBO
+    from Experiments.generated_algorithms.AdaptiveEvolutionaryParetoTrustRegionBO import AdaptiveEvolutionaryParetoTrustRegionBO
+    from Experiments.generated_algorithms.ABETSALSDE_ARM_MBO import ABETSALSDE_ARM_MBO
 
     from Experiments.baselines.bo_baseline import (BLVanillaEIBO, BLCMAES, BLHEBO, BLTuRBO1)
 

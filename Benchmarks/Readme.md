@@ -51,14 +51,3 @@ The logs and results will be saved in `Benchmarks/hpo_logs` and `Benchmarks/hpo_
     rm ./hpo_bench
     rm ./hp_configurations
     ```
-
-### Import results into ioh profiler
-
-- `bayesmark_ioh_results*.csv` - The benchmark results of the bayesmark
-- `hpo_ioh_results*.csv` - The benchmark results of the hpo
-
-To analyze the results:
-1. Visit [IOHanalyzer](https://iohanalyzer.liacs.nl/)
-2. Check the checkbox `use custom csv format`
-3. Upload the dimension-specific CSV files
-4. Use the IOHanalyzer interface to generate comparisons and visualizations

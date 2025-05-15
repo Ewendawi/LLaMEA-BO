@@ -212,7 +212,7 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str], fig_dir=N
     plot_box_violin(
         data=[_volin_y],
         labels=[unique_strategies],
-        y_labels=['AOC'],
+        y_labels=['AOCC'],
         y_tick_fontsize=12,
         x_tick_fontsize=13,
         show_scatter=True,
@@ -349,11 +349,11 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
     _figsize = (5, 4)
 
     # for sub content
-    # _label_fontsize = 13
-    # _tick_fontsize = 13
-    # _y_label_fontsize = 13
-    # _line_width = 1.5
-    # _figsize = (8, 4)
+    _label_fontsize = 13
+    _tick_fontsize = 13
+    _y_label_fontsize = 13
+    _line_width = 1.5
+    _figsize = (8, 4)
 
     plot_lines(
         y = plot_y,
@@ -361,7 +361,7 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         labels = plot_labels,
         label_fontsize=_label_fontsize,
         tick_fontsize=_tick_fontsize,
-        y_labels=['AOC'],
+        y_labels=['AOCC'],
         y_label_fontsize=_y_label_fontsize,
         filling=fillings,
         # sub_titles=sub_titles,
@@ -963,7 +963,7 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None, fig_di
         subtitles.extend([f"F{problem}" for problem in unique_problems])
         filling.extend(problem_log_aoc_filling)
         y_scale.extend([("linear", {}) for _ in range(len(unique_problems))])
-        aoc_y_labels = ['AOC'] + [''] * (len(unique_problems)//2-1)
+        aoc_y_labels = ['AOCC'] + [''] * (len(unique_problems)//2-1)
         aoc_y_labels = aoc_y_labels * 2
         y_labels.extend(aoc_y_labels)
 
@@ -1237,7 +1237,7 @@ def plot_search_result(result_dir, save_name=None, extract_fn=None, fig_dir=None
 
     # _plot_search_token_usage(results, unique_strategies)
 
-    # _plot_search_aoc(res_df, unique_strategies, fig_dir=fig_dir)
+    _plot_search_aoc(res_df, unique_strategies, fig_dir=fig_dir)
     _plot_search_group_aoc(res_df, unique_strategies, fig_dir=fig_dir)
 
     # _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)

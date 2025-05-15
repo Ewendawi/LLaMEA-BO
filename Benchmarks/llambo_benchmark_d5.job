@@ -17,7 +17,7 @@ APP=python
 ARGS="LLAMBO/Benchmarks/run_bayesmark.py"
 
 # OMPI_OPTS="--mca btl ^usnic"
-# DAS-6/OpenHPC modules do not set MPI_RUN, so:
+# D-6/OpenHPC modules do not set MPI_RUN, so:
 MPI_RUN=mpirun
 $MPI_RUN $OMPI_OPTS $APP $ARGS
 
