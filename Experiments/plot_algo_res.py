@@ -804,9 +804,9 @@ def plot_algo_result(results:list[EvaluatorResult], fig_dir=None):
 
     # _plot_algo_aoc_on_problems(res_df)
 
-    # _plot_algo_problem_aoc(res_df, dim=dim, fig_dir=fig_dir)
+    _plot_algo_problem_aoc(res_df, dim=dim, fig_dir=fig_dir)
 
-    # _plot_algo_iter(res_df, dim=dim, fig_dir=fig_dir)
+    _plot_algo_iter(res_df, dim=dim, fig_dir=fig_dir)
 
 
 def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):

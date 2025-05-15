@@ -10,13 +10,17 @@ from llamevol.evaluator.ioh_evaluator import IOHEvaluator
 from Experiments.plot_algo_res import extract_algo_result, plot_algo
 
 
-def get_evaluator():
-    budget = 100
-    dim = 5
+def get_evaluator(dim=5):
+    budget = 10 * dim + 50
     problems = list(range(1, 25))
-    problems = [4]
     instances = [[4, 5, 6]] * len(problems)
-    repeat = 2
+    repeat = 5
+
+    # for testing
+    # problems = [4]
+    # instances = [[4]] * len(problems)
+    # repeat = 1
+
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
     evaluator.ignore_over_budget = True # won't raise exception when over budget
 
@@ -72,8 +76,8 @@ def run_algo_eval_from_file_map(evaluator, file_map, options, is_baseline=False)
 
     return res_list
 
-def run_evaluation(algo_name, algo_path, save_dir, is_baseline=False):
-    evaluator = get_evaluator()
+def run_evaluation(algo_name, algo_path, dim, save_dir, is_baseline=False):
+    evaluator = get_evaluator(dim=dim)
     evaluator.timeout = 30 * 60 # set the timeout(seconds) for each evaluation(all tasks) 
 
     options = {
@@ -99,6 +103,10 @@ def run_evaluation(algo_name, algo_path, save_dir, is_baseline=False):
         algo_name: algo_path,
     }
 
+    print("Evaluating the algorithm: %s" % algo_name)
+    print("Algorithm path: %s" % algo_path)
+    print("Evaluator: %s" % evaluator)
+
     run_algo_eval_from_file_map(evaluator, file_map, options, is_baseline=is_baseline)
 
 
@@ -119,8 +127,9 @@ if __name__ == "__main__":
     is_baseline = False
     is_plot = False
     save_dir = 'exp_eval'
+    dim = 5
 
-    opts, args = getopt.getopt(sys.argv[1:], "n:p:bem", )
+    opts, args = getopt.getopt(sys.argv[1:], "n:p:bemd:", )
     for opt, arg in opts:
         if opt == "-n":
             algo_name = arg
@@ -132,9 +141,12 @@ if __name__ == "__main__":
             is_plot = True
         elif opt == "-m":
             use_mpi = True
+        elif opt == "-d":
+            dim = int(arg)
 
     if is_plot:
-        extract_plot_result(save_dir)
+        print("Plotting the results...")
+        plot_algo(dir_path=save_dir, fig_dir=save_dir)
     else:
         if algo_name is None or algo_path is None:
             print("Please provide the algorithm name and path with -n and -p options.")
@@ -145,7 +157,7 @@ if __name__ == "__main__":
 
             with start_mpi_task_manager(result_recv_buffer_size=1024*1024*50) as task_manager:
                 if task_manager.is_master:
-                    run_evaluation(algo_name, algo_path, save_dir, is_baseline=is_baseline)
+                    run_evaluation(algo_name, algo_path, dim, save_dir, is_baseline=is_baseline)
         else:
-            run_evaluation(algo_name, algo_path, save_dir, is_baseline=is_baseline)
+            run_evaluation(algo_name, algo_path, dim, save_dir, is_baseline=is_baseline)
 

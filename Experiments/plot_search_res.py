@@ -583,6 +583,8 @@ def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]
     for strategy in unique_strategies:
         _strategy_error_df = _all_error_df[_all_error_df['strategy'] == strategy]
         _error_rate = _strategy_error_df['err_rate'].to_list()
+        if len(_error_rate) == 0:
+            _error_rate = [0]
         y_err_rates.append(_error_rate)
 
     file_name = 'overall_error_rate_voilin'
@@ -1242,8 +1244,8 @@ def plot_search_result(result_dir, save_name=None, extract_fn=None, fig_dir=None
 
     # _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
 
-    # err_df = _process_error_data(results)
-    # _plot_search_all_error_rate(err_df, unique_strategies, fig_dir=fig_dir)
+    err_df = _process_error_data(results)
+    _plot_search_all_error_rate(err_df, unique_strategies, fig_dir=fig_dir)
     # _plot_search_error_type(err_df, unique_strategies=unique_strategies)
     # _plot_search_error_rate_by_generation(err_df, unique_strategies)
 

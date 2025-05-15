@@ -66,7 +66,7 @@ def run_exp(n_parent, n_offspring, is_elitist, api_key, n_population=4):
     model_name = 'gemini-2.0-flash'
     base_url = None # use default
 
-    # choose the llm client, e.g. openai, google. 
+    # choose the llm client, e.g. openai, google.
     # openai: OpenaiClient; google: google genai client; others: AISuiteClient
     client = 'google'
 
@@ -96,10 +96,6 @@ def run_exp(n_parent, n_offspring, is_elitist, api_key, n_population=4):
 
     population.save(suffix='final')
 
-    # plot the search results
-    # combine all the log files with 'final' suffix
-    plot_search_result(log_dir, fig_dir=log_dir)
-
 
 if __name__ == '__main__':
     setup_logger(level=logging.INFO)
@@ -109,8 +105,9 @@ if __name__ == '__main__':
     is_elitist = False
     n_population = 4
     api_key = ''
+    is_ploting = False 
 
-    opts, args = getopt.getopt(sys.argv[1:], "p:o:k:en:", )
+    opts, args = getopt.getopt(sys.argv[1:], "p:o:k:en:f", )
     for opt, arg in opts:
         if opt == "-p":
             n_parents = int(arg)
@@ -122,6 +119,15 @@ if __name__ == '__main__':
             is_elitist = True
         elif opt == "-n":
             n_population = int(arg)
+        elif opt == "-f":
+            is_ploting = True
+    
+    if is_ploting:
+        # plot the search results: combine all the log files with 'final' suffix
+        print("Plotting the search results...")
+        log_dir = 'exp_es_search'
+        plot_search_result(log_dir, fig_dir=log_dir)
+        sys.exit(0)
 
     print(f"n_parents: {n_parents}, n_offspring: {n_offspring}, is_elitist: {is_elitist}, n_population: {n_population}, api_key: {api_key}")
 
@@ -131,5 +137,4 @@ if __name__ == '__main__':
 
     run_exp(n_parents, n_offspring, is_elitist, api_key, n_population=n_population)
 
-    # log_dir = 'exp_es_search'
-    # plot_search_result(log_dir, fig_dir=log_dir)
+    
