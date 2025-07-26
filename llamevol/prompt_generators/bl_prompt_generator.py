@@ -32,7 +32,9 @@ class BaselineResponseHandler(ResponseHandler):
                     "Code"]
         for section in sections:
             if section == "Code":
-                self.code, _ = self.extract_from_response(response, section)
+                self.code, err = self.extract_from_response(response, section)
+                if err:
+                    self.code, _ = self.extract_from_response(response, "Code2")
                 self.code_name, _ = self.extract_from_response(response, "class_name")
             elif section == "Description":
                 self.desc, _ = self.extract_from_response(response, section)
@@ -47,7 +49,8 @@ class BaselineResponseHandler(ResponseHandler):
                 pattern = r"```(?:python)?[\s\S]*?class\s+(\w+BO\w*):"
             elif section == "Code":
                 pattern = r"#\s*Code[\s\S]*```(?:python)?\s([\s\S]*?)```"
-                # pattern = r"```(?:python)?\s([\s\S]*?)```"
+            elif section == "Code2":
+                pattern = r"```(?:python)?\s([\s\S]*?)```"
             else:
                 pattern = rf"#\s*{section}\s*([\s\S]*?)#\s"
                 # pattern = rf"#\s*{section}\s*:\s*(.*)"

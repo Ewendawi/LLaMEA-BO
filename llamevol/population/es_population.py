@@ -321,6 +321,19 @@ class ESPopulation(Population):
             inds = [self.individuals[id] for id in ind_ids]
             return inds
 
+    def get_parent(self, individual: Individual):
+        generation = individual.generation
+        if generation < 0 or generation >= len(self.selected_generations) or individual.parent_id is None:
+            return [] 
+        parend_ids = individual.parent_id
+        parents = []
+        for parent_id in parend_ids:
+            if parent_id in self.individuals:
+                parents.append(self.individuals[parent_id])
+            else:
+                logging.warning(f"Parent {parent_id} not found in individuals.")
+        return parents
+
     def get_best_of_all(self, maximize: bool = True):
         best = None
         for ind in self.all_individuals():
