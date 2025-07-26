@@ -3,7 +3,7 @@
 ## Setup
 1. Clone the repository:
    ```bash
-   git clone  
+   git clone <repository_url> 
    cd LLaMEA-BO
    ```
 2. Install the required dependencies via Poetry:

@@ -1234,6 +1234,9 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
 
 def plot_search_result(result_dir, save_name=None, extract_fn=None, fig_dir=None):
     res_df, results = _load_results(result_dir, save_name=save_name, extract_fn=extract_fn)
+
+    _calculate_error_info(results)
+
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
 
@@ -1434,6 +1437,90 @@ def plot_light_evol_and_final():
                    fig_size=(15,9))
 
 
+def _calculate_error_info(pop_list:list[tuple[str,Population]]):
+    # total error: number / total number, P(err)
+    # initial error: number / total number, P(err|gen==1)
+    # error crossover error: number / total number, P(err|err_p == True and op == crossover)
+    # error mutation error: number / total number, P(err|err_p == True and op == mutation)
+    # non-error crossover error: number / total number, P(err|err_p == False and op == crossover)
+    # non-error mutation error: number / total number, P(err|err_p == False and op == mutation)
+    error_infos = {}
+    for name, pop in pop_list:
+        n_generation = pop.get_current_generation()
+        for gen in range(n_generation):
+            gen_offsprings = pop.get_offsprings(generation=gen)
+            for ind in gen_offsprings:
+                handler = Population.get_handler_from_individual(ind)
+                has_error = handler.eval_result is None or handler.eval_result.score == 0.0
+                error_count = 1 if has_error else 0
+
+                if name not in error_infos:
+                    error_info = {
+                        'total': (0, 0),  # (error_count, total_count)
+                        'initial': (0, 0),  # (error_count, total_count)
+                        'error_crossover': (0, 0),  # (error_count, total_count)
+                        'error_mutation': (0, 0),  # (error_count, total_count)
+                        'non_error_crossover': (0, 0),  # (error_count, total_count)
+                        'non_error_mutation': (0, 0),  # (error_count, total_count)
+                    }
+                    error_infos[name] = error_info
+                else:
+                    error_info = error_infos[name]
+
+                # total error
+                error_info['total'] = (
+                    error_info['total'][0] + error_count,
+                    error_info['total'][1] + 1
+                )
+
+                if gen == 0:
+                    error_info['initial'] = (
+                        error_info['initial'][0] + error_count,
+                        error_info['initial'][1] + 1
+                    )
+                else:
+                    parents = pop.get_parent(ind)
+                    if len(parents) == 1:
+                        # mutation
+                        parent = parents[0]
+                        parent_handler = Population.get_handler_from_individual(parent)
+                        has_p_error = parent_handler.eval_result is None or parent_handler.eval_result.score == 0.0
+                        if has_p_error:
+                            error_info['error_mutation'] = (
+                                error_info['error_mutation'][0] + error_count,
+                                error_info['error_mutation'][1] + 1
+                            )
+                        else:
+                            error_info['non_error_mutation'] = (
+                                error_info['non_error_mutation'][0] + error_count,
+                                error_info['non_error_mutation'][1] + 1
+                            )
+                    elif len(parents) == 2:
+                        # crossover
+                        has_error = False
+                        for parent in parents:
+                            parent_handler = Population.get_handler_from_individual(parent)
+                            has_error = has_error or (parent_handler.eval_result is None or parent_handler.eval_result.score == 0.0)
+                            if has_error:
+                                break
+                        if has_error:
+                            error_info['error_crossover'] = (
+                                error_info['error_crossover'][0] + error_count,
+                                error_info['error_crossover'][1] + 1
+                            )
+                        else:
+                            error_info['non_error_crossover'] = (
+                                error_info['non_error_crossover'][0] + error_count,
+                                error_info['non_error_crossover'][1] + 1
+                            )
+
+    for name, error_info in error_infos.items():
+        print(f"Error info for {name}:")
+        for key in error_info:
+            ratio = error_info[key][0] / error_info[key][1] if error_info[key][1] > 0 else 0.0
+            print(f"  {key}: {ratio:.4f} ({error_info[key][0]} / {error_info[key][1]})")
+
+
 def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
     res_df = None
     if save_name is not None: 
@@ -1617,8 +1704,8 @@ if __name__ == "__main__":
     # save_name = 'Experiments/log_eater/pop_40_f_0220/df_res_05230546.pkl'
 
     
-    # dir_path = 'Experiments/pop_100_f'
-    # save_name = 'Experiments/pop_100_f/df_res_02250235.pkl'
+    # dir_path = 'Experiments/log_eater/pop_100_f'
+    # save_name = 'Experiments/log_eater/pop_100_f/df_res_02250235.pkl'
 
     # dir_path = 'Experiments/log_eater/pop_40_cr'
     # save_name = 'Experiments/log_eater/pop_40_cr/df_res_05240416.pkl'
@@ -1661,6 +1748,9 @@ if __name__ == "__main__":
                 cr = int(match.group(1)) / 10
                 return f"{cr}"
         return ''
+
+    # dir_path = 'Experiments/log_eater/pop_40_f'
+    # save_name = 'Experiments/log_eater/pop_40_f/df_res_05250314.pkl'
                 
     # dir_path = 'Experiments/log_eater/pop_40_temperature'
     # save_name = 'Experiments/log_eater/pop_40_temperature/df_res_05250314.pkl'

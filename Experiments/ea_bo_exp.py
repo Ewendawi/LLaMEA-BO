@@ -438,7 +438,7 @@ def main():
             # 'use_mpi_future': True,
 
             # 'eval_gpu_name': None,
-            'eval_overwrite_type': 'test', # 'test', 'light_evol', 'evol', 'final_eval' 
+            'eval_overwrite_type': 'light_evol', # 'test', 'light_evol', 'evol', 'final_eval' 
             'test_eval_problems': [4], # [4, 10],
             # 'test_eval_problems': [2, 4, 8, 14, 15, 23],
             'test_eval_instances': [1],

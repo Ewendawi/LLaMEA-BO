@@ -702,13 +702,31 @@ def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=Non
                 y_scales.append(None)
                 # sub_titles.append(_sub_title)
 
+            traning_problems = set([2, 4, 6, 8, 12, 14, 15, 18, 21, 23])
+            bbob_group = {
+                1: [1, 2, 3, 4, 5],
+                2: [6, 7, 8, 9],
+                3: [10, 11, 12, 13, 14],
+                4: [15, 16, 17, 18, 19],
+                5: [20, 21, 22, 23, 24],
+            }
+
+            groud_id = None
+            for gid, problems in bbob_group.items():
+                if problem_id in problems:
+                    groud_id = gid
+                    break
+
             if col == 'best_loss':
                 best_loss_plot_data.append(plot_data[-1])
                 best_loss_x_data.append(x_data[-1])
                 best_loss_plot_filling.append(plot_filling[-1])
                 best_loss_labels.append(labels[-1])
                 best_loss_x_dots.append(x_dots[-1])
-                best_loss_sub_titles.append(f'F{problem_id}')
+                if problem_id in traning_problems:
+                    best_loss_sub_titles.append('$\overline{F%s} (%d)$' % (problem_id, groud_id))
+                else:
+                    best_loss_sub_titles.append(f'$F{problem_id} ({groud_id})$')
                 best_loss_y_scales.append(y_scales[-1])
                 best_loss_colors.append(colors[-1])
                 best_loss_line_styles.append(line_styles[-1])
@@ -1122,46 +1140,49 @@ def plot_atrbo_results():
             para_map[key] = value
         return para_map
 
-    dir_path = 'Experiments/log_eater/atrbo_eval_res_5dim'
+    dir_paths = [
+        'Experiments/log_eater/atrbo_eval_res_5dim',
+    ]
     res_list = []
     df_list = []
     paras_df = []
-    for file_path in os.listdir(dir_path):
-        if file_path.endswith(".pkl"):
-            file_path = os.path.join(dir_path, file_path)
-            with open(file_path, "rb") as f:
-                unpickler = RenameUnpickler(f)
-                target = unpickler.load()
-                if isinstance(target, ResponseHandler):
-                    target = target.eval_result
+    for dir_path in dir_paths:
+        for file_path in os.listdir(dir_path):
+            if file_path.endswith(".pkl"):
+                file_path = os.path.join(dir_path, file_path)
+                with open(file_path, "rb") as f:
+                    unpickler = RenameUnpickler(f)
+                    target = unpickler.load()
+                    if isinstance(target, ResponseHandler):
+                        target = target.eval_result
 
-                res_list.append(target)
-                res_index = len(res_list) - 1
+                    res_list.append(target)
+                    res_index = len(res_list) - 1
 
-                column_name_map = {
-                    'algorithm' : None,
-                    'algorithm_name' : None,
-                    'algorithm_short_name' : None,
-                    'problem_id' : None,
-                    'instance_id' : None,
-                    'exec_id' : None,
-                    'n_init' : 'n_initial_points',
+                    column_name_map = {
+                        'algorithm' : None,
+                        'algorithm_name' : None,
+                        'algorithm_short_name' : None,
+                        'problem_id' : None,
+                        'instance_id' : None,
+                        'exec_id' : None,
+                        'n_init' : 'n_initial_points',
 
-                    'optimum' : 'optimal_value',
+                        'optimum' : 'optimal_value',
 
-                    'y_hist': 'y_hist',
-                    'x_hist': 'x_hist',
+                        'y_hist': 'y_hist',
+                        'x_hist': 'x_hist',
 
-                    'loss': None,
-                    'best_loss': None,
-                    'y_aoc': 'log_y_aoc',
-                }
-                res_df = _process_algo_result([target], column_name_map)
-                df_list.append(res_df)
+                        'loss': None,
+                        'best_loss': None,
+                        'y_aoc': 'log_y_aoc',
+                    }
+                    res_df = _process_algo_result([target], column_name_map)
+                    df_list.append(res_df)
 
-                paras = _extract_paras(file_path)
-                paras['index'] = res_index
-                paras_df.append(paras)
+                    paras = _extract_paras(file_path)
+                    paras['index'] = res_index
+                    paras_df.append(paras)
 
     paras_df = pd.DataFrame(paras_df)
     # plot bug pair
@@ -1199,23 +1220,36 @@ def plot_atrbo_results():
     fig_dir = 'Experiments/atrbo_eval_res_5dim/atrbo_algo_iter'
     os.makedirs(fig_dir, exist_ok=True)
 
-    _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_bug', title='')
+    # _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_bug', title='')
 
     # plot project
-    result_df = paras_df[paras_df['fixed'] == False]
-    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['proj'] == True else 'no_project')
-    _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_proj', title='')
+    # result_df = paras_df[paras_df['fixed'] == False]
+    # _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['proj'] == True else 'no_project')
+    # _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_proj', title='')
 
 
-    bl_df = paras_df[(paras_df['fixed'] == False) & (paras_df['proj'] == True)]
+    bl_df = paras_df[
+        (paras_df['fixed'] == False) 
+        & (paras_df['proj'] == True)
+        & (paras_df['trr'] == 2.5)
+        & (paras_df['rho'] == 0.95)
+        & (paras_df['k'] == 2.0)
+        & (paras_df['adaptr'] == True)
+        & (paras_df['adaptk'] == True)
+        ]
 
     # plot rho
     other_columns = [col for col in paras_df.columns if col != 'rho' and col != 'index']
     result_df = paras_df.groupby(other_columns).filter(
         lambda group: group['rho'].nunique() > 1
     )
+    result_df = result_df[
+        (result_df['rho'] != 0.95)
+        & (result_df['fixed'] == False)
+        ]
     result_df = pd.concat([bl_df, result_df], axis=0)
-    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"rho_{paras['rho']}")
+    # _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"rho_{paras['rho']}")
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline(0.95)' if paras['rho'] == 0.95 else f"rho_{paras['rho']}")
     _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_rho', title='')
 
     # plot kappa
@@ -1223,8 +1257,13 @@ def plot_atrbo_results():
     result_df = paras_df.groupby(other_columns).filter(
         lambda group: group['k'].nunique() > 1
     )
+    result_df = result_df[
+        (result_df['k'] != 2.0)
+        & (result_df['fixed'] == False)
+        ]
     result_df = pd.concat([bl_df, result_df], axis=0)
-    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"kappa_{paras['k']}")
+    # _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"kappa_{paras['k']}")
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline(2.0)' if paras['k'] == 2.0 else f"kappa_{paras['k']}")
     _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_kappa', title='')
 
     # plot tr_radius
@@ -1232,8 +1271,13 @@ def plot_atrbo_results():
     result_df = paras_df.groupby(other_columns).filter(
         lambda group: group['trr'].nunique() > 1
     )
+    result_df = result_df[
+        (result_df['trr'] != 2.5)
+        & (result_df['fixed'] == False)
+        ]
     result_df = pd.concat([bl_df, result_df], axis=0)
-    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"radius_{paras['trr']}")
+    # _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline' if paras['fixed'] == False else f"radius_{paras['trr']}")
+    _res_df = _res_df_from_result_df(result_df, paras_df, df_list, lambda paras: 'baseline(2.5)' if paras['trr'] == 2.5 else f"radius_{paras['trr']}")
     _plot_algo_iter(_res_df, dim=5, fig_dir=fig_dir, data_col_map=data_col_map, need_seperate_plot=False, file_name_suffix='_radius', title='')
 
     # plot adaptr
@@ -1241,6 +1285,9 @@ def plot_atrbo_results():
     result_df = paras_df.groupby(other_columns).filter(
         lambda group: group['adaptr'].nunique() > 1 and group['adaptk'].nunique() > 1
     )
+    result_df = result_df[
+        (result_df['fixed'] == False)
+        ]
     result_df = pd.concat([bl_df, result_df], axis=0)
     def _adaptr_mapping_func(paras):
         if paras['adaptr'] == False and paras['adaptk'] == False:

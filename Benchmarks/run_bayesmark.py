@@ -129,28 +129,31 @@ class BayesmarkExpRunner:
         self.bbox_func = get_bayesmark_func(self.model, self.task, dataset['test_y'])
 
         self.ordered_hyperparams = list(self.hyperparameter_constraints.keys())
-        self.bounds = []
-        self.linear_bounds = []
-        self.is_log = []
+        self.bounds = [] # the original bounds
+        self.search_bounds = [] # the bounds in the search space(linear space)
+        self.space_types = []
         self.is_int = []
         lower_bounds = []
-        linear_lower_bounds = []
+        search_lower_bounds = []
         upper_bounds = []
-        linear_upper_bounds = []
+        search_upper_bounds = []
         for hyperparam in self.ordered_hyperparams:
             constraint = self.hyperparameter_constraints[hyperparam]
 
-            is_log = constraint[1] != 'linear' if use_log else False
-            self.is_log.append(is_log)
+            _space_type = 'linear'
+            if use_log:
+                _space_type = constraint[1]
+            self.space_types.append(_space_type)
             lower_bounds.append(constraint[2][0])
             upper_bounds.append(constraint[2][1])
-            linear_lower_bounds.append(np.log(constraint[2][0]) if is_log else constraint[2][0])
-            linear_upper_bounds.append(np.log(constraint[2][1]) if is_log else constraint[2][1])
+
+            search_lower_bounds.append(self._space_type_to_linear(_space_type, constraint[2][0]))
+            search_upper_bounds.append(self._space_type_to_linear(_space_type, constraint[2][1]))
 
             self.is_int.append(constraint[0] == 'int')
 
         self.bounds = np.array([lower_bounds, upper_bounds])
-        self.linear_bounds = np.array([linear_lower_bounds, linear_upper_bounds])
+        self.search_bounds = np.array([search_lower_bounds, search_upper_bounds])
 
         dim = len(self.ordered_hyperparams)
         self.x_bounds = np.array([[-1.0]*dim, [1.0]*dim])
@@ -180,6 +183,32 @@ class BayesmarkExpRunner:
         scaled_x = new_bounds[0] + (x - bounds[0]) * (new_bounds[1] - new_bounds[0]) / (bounds[1] - bounds[0])
         return scaled_x
 
+    def _space_type_to_linear(self, space_type, x):
+        '''
+        Convert space type to linear space
+        Args: space_type (str), x (numpy array)
+        Returns: x (numpy array)
+        '''
+        if space_type == 'log':
+            return np.log(x)
+        elif space_type == 'logit':
+            return np.log(x / (1 - x))
+        else:
+            return x
+    
+    def _linear_to_space_type(self, space_type, x):
+        '''
+        Convert linear space to space type
+        Args: space_type (str), x (numpy array)
+        Returns: x (numpy array)
+        '''
+        if space_type == 'log':
+            return np.exp(x)
+        elif space_type == 'logit':
+            return 1 / (1 + np.exp(-x))
+        else:
+            return x
+
     def x_to_config(self, x):
         '''
         Convert x (numpy array) to config (dictionary)
@@ -189,12 +218,10 @@ class BayesmarkExpRunner:
         config = {}
         for i, hyperparam in enumerate(self.ordered_hyperparams):
             x_bound = self.x_bounds[:,i]
-            config_bound = self.linear_bounds[:,i]
+            config_bound = self.search_bounds[:,i]
             config_x = self._map_bounds(x[i], x_bound, config_bound)
 
-            is_log = self.is_log[i]
-            if is_log:
-                config_x = np.exp(config_x)
+            config_x = self._linear_to_space_type(self.space_types[i], config_x)
             if self.is_int[i]:
                 config_x = int(np.round(config_x))
 
@@ -213,12 +240,9 @@ class BayesmarkExpRunner:
             config_x.append(config[hyperparam])
 
         for i, _x in enumerate(config_x):
-            if self.is_log[i]:
-                x.append(np.log(_x))
-            else:
-                x.append(_x)
+            x.append(self._space_type_to_linear(self.space_types[i], _x))
         
-        x = self._map_bounds(x, self.linear_bounds, self.x_bounds)
+        x = self._map_bounds(x, self.search_bounds, self.x_bounds)
 
         return np.array(x)
     
@@ -449,26 +473,38 @@ def _run_bayesmark_exp(bo_cls, dataset, model, num_seeds = 5, budget = 30, n_ini
             logger.info(df_hist)
 
 def _shorthand_algo_name(algo:str):
-    if 'EvolutionaryBO' in algo:
-        return 'TREvol'
-    elif 'Optimistic' in algo:
-        return 'TROpt'
-    elif 'Pareto' in algo:
-        return 'TRPareto'
-    elif 'ARM' in algo:
-        return 'ARM'
-    elif 'MaternVanilla' in algo:
-        return 'Vanilla'
-    elif 'Vanilla' in algo:
-        return 'Vanilla'
+    short_name = algo
 
-    if 'BL' in algo:
-        return algo.replace("BL", "")
+    if 'BL' in short_name:
+        short_name = short_name.replace("BL", "")
 
-    if 'A_' in algo:
-        return algo.replace("A_", "")
+    if 'A_' in short_name:
+        short_name = short_name.replace("A_", "")
 
-    return algo
+    has_log_suffix = False
+    if short_name.endswith('_log'):
+        has_log_suffix = True
+
+    if 'EvolutionaryBO' in short_name:
+        short_name = 'TREvol'
+        short_name += '_log' if has_log_suffix else ''
+    elif 'Optimistic' in short_name:
+        short_name = 'TROpt'
+        short_name += '_log' if has_log_suffix else ''
+    elif 'Pareto' in short_name:
+        short_name = 'TRPareto'
+        short_name += '_log' if has_log_suffix else ''
+    elif 'ARM' in short_name:
+        short_name = 'ARM'
+        short_name += '_log' if has_log_suffix else ''
+    elif 'MaternVanilla' in short_name:
+        short_name = 'Vanilla'
+        short_name += '_log' if has_log_suffix else ''
+    elif 'Vanilla' in short_name:
+        short_name = 'Vanilla'
+        short_name += '_log' if has_log_suffix else ''
+
+    return short_name
 
 def _get_dataset_type(dataset):
     if dataset in BAYESMARK_TASK_MAP:
@@ -506,6 +542,8 @@ def _get_line_type(algo):
         return '--'
     elif 'LLAMBO' in algo:
         return '-.'
+    elif '_log' in algo:
+        return ':'
     else:
         return '-'
 
@@ -530,6 +568,7 @@ def plot_bayesmark_results():
         'Benchmarks/LLAMBO/exp_bayesmark/results_discriminative',
         'Benchmarks/bayesmark_results_0422',
         'Benchmarks/bayesmark_results_bl',
+        # 'Benchmarks/bayesmark_results_log',
     ]
 
     data_map = {}
@@ -571,12 +610,15 @@ def plot_bayesmark_results():
                             data_map[_model] = df
                         else:
                             data_map[_model] = pd.concat([data_map[_model], df], ignore_index=True)
-                
+
+    fig_dir = 'Benchmarks/bayesmark_results_figs'
+    os.makedirs(fig_dir, exist_ok=True)
+    csv_save_dir = 'Benchmarks/bayesmark_result_files'
+    os.makedirs(csv_save_dir, exist_ok=True)
+
     regret_df_data = []
     for _model, df in data_map.items():
         df = df[['algo', 'short_algo', 'dataset', 'model', 'seed', 'n_iterations', 'score', 'generalization_score']]
-        csv_save_dir = 'Benchmarks/bayesmark_result_files'
-        os.makedirs(csv_save_dir, exist_ok=True)
         df.to_csv(os.path.join(csv_save_dir, f'{_model}.csv'), index=False)
 
         best_df = df[['algo', 'short_algo', 'dataset', 'model', 'seed', 'generalization_score']]
@@ -604,16 +646,6 @@ def plot_bayesmark_results():
         y_label_datasets = set(['breast', 'diabetes'])
         algos = df['algo'].unique()
         algos = sorted(algos, key=cmp_to_key(compare_expressions))
-
-        default_line_styles = {}
-        for algo in algos:
-            if 'LLAMBO' in algo:
-                default_line_styles[algo] = '-.'
-            elif 'BL' in algo:
-                default_line_styles[algo] = '--'
-            else:
-                default_line_styles[algo] = '-'
-
 
         plot_y = []
         plot_x = []
@@ -709,7 +741,7 @@ def plot_bayesmark_results():
                 max_y_data = np.max(best_y_data, axis=0)
                 _algo_y.append(mean_y_data)
                 _algo_filling.append([min_y_data, max_y_data])
-                _algo_line_styles.append(default_line_styles[algo])
+                _algo_line_styles.append(_get_line_type(algo))
 
                 _y_regret = np.abs(y_data - _regret_min) / np.abs(_regret_max - _regret_min)
                 _best_y_regret = np.minimum.accumulate(_y_regret, axis=1)
@@ -723,6 +755,7 @@ def plot_bayesmark_results():
                         'algo': algo,
                         'short_algo': _shorthand_algo_name(algo),
                         'dataset': dataset,
+                        'metric': _metric,
                         'dataset_type': _get_dataset_type(dataset),
                         'model': _model,
                         'seed': i,
@@ -742,7 +775,6 @@ def plot_bayesmark_results():
 
             line_styles.append(_algo_line_styles)
 
-        fig_dir = 'Benchmarks/bayesmark_results_figs'
         # plot the results
         file_name = f"{_model}"
         if fig_dir is not None:
@@ -750,31 +782,31 @@ def plot_bayesmark_results():
 
         plot_y = np.array(plot_y)
         plot_x = np.array(plot_x)
-        # plot_lines(
-        #     y=plot_y, x=plot_x,
-        #     # y_scales=best_loss_y_scales,
-        #     # colors=best_loss_colors,
-        #     y_labels=y_labels,
-        #     # sharey=True,
-        #     labels=labels,
-        #     line_styles=line_styles,
-        #     label_fontsize=11,
-        #     y_label_fontsize=10,
-        #     tick_fontsize=11,
-        #     combined_legend=True,
-        #     combined_legend_ncols=10,
-        #     combined_legend_bottom=0.13,
-        #     combined_legend_fontsize=11,
-        #     linewidth=1.3,
-        #     # filling=plot_filling,
-        #     n_cols=4,
-        #     sub_titles=sub_titles,
-        #     sub_title_fontsize=12,
-        #     # title=f"Best Loss({dim}D)",
-        #     figsize=(12, 5),
-        #     show=False,
-        #     filename=file_name,
-        # )
+        plot_lines(
+            y=plot_y, x=plot_x,
+            # y_scales=best_loss_y_scales,
+            # colors=best_loss_colors,
+            y_labels=y_labels,
+            # sharey=True,
+            labels=labels,
+            line_styles=line_styles,
+            label_fontsize=11,
+            y_label_fontsize=10,
+            tick_fontsize=11,
+            combined_legend=True,
+            combined_legend_ncols=10,
+            combined_legend_bottom=0.13,
+            combined_legend_fontsize=11,
+            linewidth=1.3,
+            # filling=plot_filling,
+            n_cols=4,
+            sub_titles=sub_titles,
+            sub_title_fontsize=12,
+            # title=f"Best Loss({dim}D)",
+            figsize=(12, 5),
+            show=False,
+            filename=file_name,
+        )
 
         # plot the regret
         file_name = f"{_model}_regret"
@@ -782,31 +814,31 @@ def plot_bayesmark_results():
             file_name = os.path.join(fig_dir, file_name)
 
         plot_y_regret = np.array(plot_y_regret)
-        # plot_lines(
-        #     y=plot_y_regret, x=plot_x,
-        #     # y_scales=best_loss_y_scales,
-        #     # colors=best_loss_colors,
-        #     y_labels=y_labels_regret,
-        #     # sharey=True,
-        #     labels=labels,
-        #     line_styles=line_styles,
-        #     label_fontsize=11,
-        #     y_label_fontsize=10,
-        #     tick_fontsize=11,
-        #     combined_legend=True,
-        #     combined_legend_ncols=10,
-        #     combined_legend_bottom=0.13,
-        #     combined_legend_fontsize=11,
-        #     linewidth=1.3,
-        #     # filling=plot_filling_regret,
-        #     n_cols=4,
-        #     sub_titles=sub_titles,
-        #     sub_title_fontsize=12,
-        #     # title=f"Best Loss({dim}D)",
-        #     figsize=(12, 5),
-        #     show=False,
-        #     filename=file_name,
-        # )
+        plot_lines(
+            y=plot_y_regret, x=plot_x,
+            # y_scales=best_loss_y_scales,
+            # colors=best_loss_colors,
+            y_labels=y_labels_regret,
+            # sharey=True,
+            labels=labels,
+            line_styles=line_styles,
+            label_fontsize=11,
+            y_label_fontsize=10,
+            tick_fontsize=11,
+            combined_legend=True,
+            combined_legend_ncols=10,
+            combined_legend_bottom=0.13,
+            combined_legend_fontsize=11,
+            linewidth=1.3,
+            # filling=plot_filling_regret,
+            n_cols=4,
+            sub_titles=sub_titles,
+            sub_title_fontsize=12,
+            # title=f"Best Loss({dim}D)",
+            figsize=(12, 5),
+            show=False,
+            filename=file_name,
+        )
 
     def _axis0_mean(row):
         return np.mean(row, axis=0)
@@ -847,9 +879,6 @@ def plot_bayesmark_results():
         type_plot_y.append([_y[clip_index:] for _y in _type_y])
         type_plot_filling.append([[_l[clip_index:], _r[clip_index:]] for _l, _r in _type_filling])
 
-    fig_dir = 'Benchmarks/bayesmark_results_figs'
-    os.makedirs(fig_dir, exist_ok=True)
-
     # plot the overall regret 
     file_name = "regret"
     if fig_dir is not None:
@@ -885,7 +914,6 @@ def plot_bayesmark_results():
     overall_regret_df = regret_df.groupby(['algo', 'model', 'dataset_type', 'seed'])[['best_regret']].agg(_axis0_mean).reset_index()
     models = overall_regret_df['model'].unique()
     data_types = overall_regret_df['dataset_type'].unique()
-    data_types = [1]
     model_sub_titles = []
     model_y_labels = []
     model_line_styles = []
@@ -896,7 +924,7 @@ def plot_bayesmark_results():
     for i, data_type in enumerate(data_types):
         for j, model in enumerate(models):
             _model_df = overall_regret_df[overall_regret_df['model'] == model]
-            # _model_df = _model_df[_model_df['dataset_type'] == data_type]
+            _model_df = _model_df[_model_df['dataset_type'] == data_type]
             _model_y = []
             _model_filling = []
             _model_labels = []
@@ -915,8 +943,7 @@ def plot_bayesmark_results():
             else:
                 model_sub_titles.append('')
             if j == 0:
-                # model_y_labels.append(f'{data_type}')
-                model_y_labels.append('')
+                model_y_labels.append(f'{data_type}')
             else:
                 model_y_labels.append('')
             model_plot_labels.append(_model_labels)
@@ -926,7 +953,84 @@ def plot_bayesmark_results():
             model_line_styles.append(_model_line_styles)
     
     # plot the overall model
-    file_name = "overall_model_regret"
+    # file_name = "overall_model_regret"
+    # if fig_dir is not None:
+    #     file_name = os.path.join(fig_dir, file_name)
+    # model_plot_x = np.array(model_plot_x)
+    # model_plot_y = np.array(model_plot_y)
+    # plot_lines(
+    #         y=model_plot_y, x=model_plot_x,
+    #         # y_scales=best_loss_y_scales,
+    #         # colors=best_loss_colors,
+    #         y_labels=model_y_labels,
+    #         labels=model_plot_labels,
+    #         line_styles=model_line_styles,
+    #         label_fontsize=11,
+    #         y_label_fontsize=10,
+    #         tick_fontsize=11,
+    #         combined_legend=True,
+    #         combined_legend_ncols=10,
+    #         combined_legend_bottom=0.13,
+    #         combined_legend_fontsize=11,
+    #         linewidth=1.3,
+    #         # filling=dataset_plot_filling,
+    #         n_cols=5,
+    #         sub_titles=model_sub_titles,
+    #         sub_title_fontsize=12,
+    #         # title=f"Best Loss({dim}D)",
+    #         figsize=(13, 5),
+    #         show=False,
+    #         filename=file_name,
+    #     )
+
+    overall_model_metrics_df = regret_df.groupby(['algo', 'model', 'seed', 'metric'])[['best_g_score']].agg(_axis0_mean).reset_index()
+    y_label_datasets = set(['breast', 'diabetes'])
+    algos = overall_model_metrics_df['algo'].unique()
+    algos = sorted(algos, key=cmp_to_key(compare_expressions))
+    models = overall_model_metrics_df['model'].unique()
+    metrics = overall_model_metrics_df['metric'].unique()
+    model_sub_titles = []
+    model_y_labels = []
+    model_line_styles = []
+    model_plot_x = []
+    model_plot_y = []
+    model_plot_filling = []
+    model_plot_labels = []
+
+    for m_i, metric in enumerate(metrics):
+        _metric_df = overall_model_metrics_df[overall_model_metrics_df['metric'] == metric]
+        for m_j, model in enumerate(models):
+            _model_df = _metric_df[_metric_df['model'] == model]
+            _model_y = []
+            _model_filling = []
+            _model_labels = []
+            _model_line_styles = []
+            for algo in algos:
+                _algo_df = _model_df[_model_df['algo'] == algo]
+                _algo_y = _algo_df['best_g_score'].to_list()
+                _algo_filling = [np.min(_algo_y, axis=0), np.max(_algo_y, axis=0)]
+                _model_y.append(np.mean(_algo_y, axis=0))
+                _model_filling.append(_algo_filling)
+                _model_labels.append(_shorthand_algo_name(algo))
+                _model_line_styles.append(_get_line_type(algo))
+            clip_index = _x_range[0]
+            clip_index = 4
+            if m_i == 0:
+                model_sub_titles.append(f'{model}')
+            else:
+                model_sub_titles.append('')
+            if m_j == 0:
+                model_y_labels.append('Avg ACC' if metric == 'accuracy' else 'Avg MSE')
+            else:
+                model_y_labels.append('')
+            model_plot_labels.append(_model_labels)
+            model_plot_x.append(list(range(clip_index+1, _x_range[1] + 1)))
+            model_plot_y.append([_y[clip_index:] for _y in _model_y])
+            model_plot_filling.append([[_l[clip_index:], _r[clip_index:]] for _l, _r in _model_filling])
+            model_line_styles.append(_model_line_styles)
+
+    # plot the overall model metrics
+    file_name = "overall_model_metrics"
     if fig_dir is not None:
         file_name = os.path.join(fig_dir, file_name)
     model_plot_x = np.array(model_plot_x)
@@ -1184,6 +1288,7 @@ def convert_results_to_ioh_format():
         'Benchmarks/LLAMBO/exp_bayesmark/results_discriminative',
         'Benchmarks/bayesmark_results_0422',
         'Benchmarks/bayesmark_results_bl',
+        # 'Benchmarks/bayesmark_results',
     ]
 
     for dir_path in dir_paths:
@@ -1250,6 +1355,7 @@ def convert_results_to_ioh_format():
 
     # save ioh_df to csv
     ioh_df.to_csv('Benchmarks/bayesmark_ioh_results.csv', index=False)
+    # ioh_df.to_csv('Benchmarks/bayesmark_ioh_results_log.csv', index=False)
 
 
 if __name__ == '__main__':
