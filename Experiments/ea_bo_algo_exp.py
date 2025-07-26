@@ -21,6 +21,7 @@ def get_IOHEvaluator_for_final_eval(dim=5, budget=100):
     instances = [[4, 5, 6]] * len(problems)
     repeat = 5
     evaluator = IOHEvaluator(budget=budget, dim=dim, problems=problems, instances=instances, repeat=repeat)
+    evaluator.timeout = None
     return evaluator
 
 def get_IOHEvaluator_for_test(problems=[3], _instances=[1], repeat=1, budget=100, dim=5):
@@ -321,23 +322,23 @@ def eval_atrbo_algo():
         # _copy_update_dict(default_init_params, {}),
         # _copy_update_dict(default_init_params, {'fix_adjust': True}),
         # _copy_update_dict(default_init_params, {'with_proj': False}),
-        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'adaptive_radius': False}),
-        _copy_update_dict(default_init_params, {'fix_adjust': True, 'adaptive_kappa': False}),
-        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'adaptive_radius': False, 'adaptive_kappa': False}),
+        _copy_update_dict(default_init_params, {'fix_adjust': False, 'adaptive_radius': False}),
+        _copy_update_dict(default_init_params, {'fix_adjust': False, 'adaptive_kappa': False}),
+        _copy_update_dict(default_init_params, {'fix_adjust': False, 'adaptive_radius': False, 'adaptive_kappa': False}),
 
         # rho
-        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'rho': 0.8}),
-        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'rho': 0.65}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': False, 'rho': 0.8}),
+        # _copy_update_dict(default_init_params, {'fix_adjust': False, 'rho': 0.65}),
 
         # kappa
-        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'kappa': 4.0, 'adaptive_kappa': False, 'adaptive_radius': False}),
+        _copy_update_dict(default_init_params, {'fix_adjust': False, 'kappa': 4.0, 'adaptive_kappa': False, 'adaptive_radius': False}),
         # _copy_update_dict(default_init_params, {'fix_adjust': True, 'kappa': 2.0, 'adaptive_kappa': False, 'adaptive_radius': False}),
-        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'kappa': 1.0, 'adaptive_kappa': False, 'adaptive_radius': False}),
+        _copy_update_dict(default_init_params, {'fix_adjust': False, 'kappa': 1.0, 'adaptive_kappa': False, 'adaptive_radius': False}),
 
         # tr_radius
-        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'tr_radius': 5, 'adaptive_radius': False, 'adaptive_kappa': False}),
+        _copy_update_dict(default_init_params, {'fix_adjust': False, 'tr_radius': 5, 'adaptive_radius': False, 'adaptive_kappa': False}),
         # _copy_update_dict(default_init_params, {'fix_adjust': True, 'tr_radius': 2.5, 'adaptive_radius': False, 'adaptive_kappa': False}),
-        # _copy_update_dict(default_init_params, {'fix_adjust': True, 'tr_radius': 1, 'adaptive_radius': False, 'adaptive_kappa': False}),
+        _copy_update_dict(default_init_params, {'fix_adjust': False, 'tr_radius': 1, 'adaptive_radius': False, 'adaptive_kappa': False}),
     ]
 
     for init_params in exp_list:
@@ -370,7 +371,8 @@ def main():
     setup_logger(level=logging.INFO)
 
     # debug_algo_eval()
-    eval_final_algo()
+    # eval_final_algo()
+    eval_atrbo_algo()
 
 if __name__ == "__main__":
     use_mpi = False
