@@ -237,6 +237,8 @@ class IOHEvaluator(AbstractEvaluator):
 
     def __process_results(self, res, captured_output, err, exec_time, obj_fn, injector) -> EvaluatorBasicResult:
         eval_basic_result = EvaluatorBasicResult()
+        if self.dim > 5:
+            eval_basic_result.aoc_upper_bound = 1e9
         eval_basic_result.id = f"{obj_fn.problem_id}-{obj_fn.instance_id}-{obj_fn.exec_id}"
         eval_basic_result.budget = obj_fn.budget
         eval_basic_result.name = obj_fn.name

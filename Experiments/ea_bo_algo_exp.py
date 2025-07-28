@@ -221,7 +221,8 @@ def debug_algo_eval():
     }
 
     plot = False
-    res_list = run_algo_eval_from_file_map(evaluator, file_map, cls_list=cls_list, plot=plot, save=False, options=options)
+    save = False
+    res_list = run_algo_eval_from_file_map(evaluator, file_map, cls_list=cls_list, plot=plot, save=save, options=options)
 
     for res in res_list:
         for _, r in enumerate(res.result):

@@ -1424,13 +1424,200 @@ def _calculate_mannwhitneyu_test_on_dir(dir_path:str):
     res_stat_df.to_csv(f"{dir_path}/t_test.csv", index=False)
 
 
+def plot_project_tr():
+    from scipy.stats import qmc
+
+    fig, axes = plt.subplots(1, 3, figsize=(12, 5), sharex=True, sharey=True) 
+    fig, axes = plt.subplots(2, 3, figsize=(12, 8), sharex=True, sharey=True)  
+
+    # Parameters
+    dim = 2  # Dimension of the space
+    bounds = np.array([[-5, -5], [5, 5]])  # Lower and upper bounds
+    center = np.array([0, 0])  # Custom center
+    radius = 5       # Custom radius
+    title_fontsize = 14
+    label_fontsize = 13
+
+    dot_size = 10 if len(axes.shape) == 2 else 40  # Adjust dot size based on number of subplots
+    n_points = 200 if len(axes.shape) == 2 else 20  # Adjust number of points based on number of subplots
+
+    if len(axes.shape) == 1:
+        # n_points distinct colors
+        # colors = plt.cm.viridis(np.linspace(0, 1, n_points))
+        colors = plt.cm.tab20(np.linspace(0, 1, n_points))
+        # colors = plt.cm.plasma(np.linspace(0, 1, n_points))
+        # colors = plt.cm.inferno(np.linspace(0, 1, n_points))
+        # colors = plt.cm.cividis(np.linspace(0, 1, n_points))
+    else:
+        # one color for all points: first default color
+        colors = ['#1f77b4'] * n_points  # Default blue color
+
+    # --- Visualization ---
+   
+
+    # 1. Sobol Sequence [0, 1] and Scaled to [-1, 1]
+    sampler = qmc.Sobol(d=dim, scramble=True)
+    points_sobol = sampler.random(n=n_points)
+    points_scaled = qmc.scale(points_sobol, -1, 1)
+    axe = axes[0, 0] if len(axes.shape) == 2 else axes[0]
+    axe.scatter(points_scaled[:, 0], points_scaled[:, 1], s=dot_size, c=colors)
+    # plot the center point
+    axe.scatter(center[0], center[1], c='r', marker='*', s=dot_size*3)  # Center point in red
+    axe.set_title('1.1 Scale Sobol Sequence to [-1, 1]', fontsize=title_fontsize)
+    axe.set_xlim(-1.1, 1.1)
+    axe.set_ylim(-1.1, 1.1)
+    axe.tick_params(axis='both', which='major', labelsize=label_fontsize)
+    axe.set_aspect('equal')
+
+    # 2. Projected to Circle
+    lengths = np.linalg.norm(points_scaled, axis=1, keepdims=True)
+    unit_points = points_scaled / lengths 
+    # points_hypersphere = points_scaled / lengths ** (1/dim)
+
+    axe = axes[0, 1] if len(axes.shape) == 2 else axes[1]
+    axe.scatter(unit_points[:, 0], unit_points[:, 1], s=dot_size, c=colors)
+    axe.scatter(center[0], center[1], c='r', marker='*', s=dot_size*3)  # Center point in red
+    axe.set_title('1.2 Project to Circle', fontsize=title_fontsize)
+    axe.set_xlim(-1.1, 1.1)
+    axe.set_ylim(-1.1, 1.1)
+    axe.set_aspect('equal')
+    axe.tick_params(axis='both', which='major', labelsize=label_fontsize)
+    axe.add_patch(plt.Circle((0, 0), 1, color='r', alpha=0.1)) # Add a circle
+
+    # 3. Sample The Magnitudes
+    points_hypersphere = unit_points * np.random.uniform(0, 1, size=lengths.shape) ** (1/dim)
+
+    axe = axes[0, 2] if len(axes.shape) == 2 else axes[2]
+    axe.scatter(points_hypersphere[:, 0], points_hypersphere[:, 1], s=dot_size, c=colors)
+    axe.scatter(center[0], center[1], c='r', marker='*', s=dot_size*3)  # Center point in red
+    axe.set_title('1.3 Scaled by $u^{1/d}$', fontsize=title_fontsize)
+    axe.set_xlim(-1.1, 1.1)
+    axe.set_ylim(-1.1, 1.1)
+    axe.set_aspect('equal')
+    axe.tick_params(axis='both', which='major', labelsize=label_fontsize)
+    axe.add_patch(plt.Circle((0, 0), 1, color='r', alpha=0.1)) # Add a circle
+
+    # 4. Final Points (Scaled, Translated, Clipped)
+    # sampled_points = points_hypersphere * radius + center
+    # sampled_points = np.clip(sampled_points, bounds[0], bounds[1])
+
+    # axe = axes[0, 3]
+    # axe.scatter(sampled_points[:, 0], sampled_points[:, 1], s=5, c=colors)
+    # axe.scatter(center[0], center[1], c='r', marker='*', s=100)
+    # axe.set_title('4. Sampled with Projected Sobol Sequence')
+    # # Draw the bounding box
+    # rect = plt.Rectangle(bounds[0], bounds[1, 0] - bounds[0, 0],
+    #                     bounds[1, 1] - bounds[0, 1], linewidth=1, edgecolor='r', facecolor='none')
+    # # axe.add_patch(rect)
+    # # Draw circle of radius
+    # axe.add_patch(plt.Circle(center, radius, color='g', alpha=0.1))
+    # axe.set_xlim(bounds[0,0]-0.5, bounds[1,0]+0.5)
+    # axe.set_ylim(bounds[0,1]-0.5, bounds[1,1]+0.5)
+    # axe.set_aspect('equal')
+
+    
+    # translated and clipped without projection
+    # points_scaled = qmc.scale(points_sobol, center-radius, center+radius)
+    # sampled_points = points_scaled * radius + center
+
+    # axe = axes[1, 1]
+    # sampled_points = np.clip(points_scaled, bounds[0], bounds[1])
+    # axe.scatter(sampled_points[:, 0], sampled_points[:, 1], s=5, c=colors)
+    # axe.scatter(center[0], center[1], c='r', marker='*', s=100)
+    # axe.set_title('Sampled with Sobol Sequence')
+    # # Draw the bounding box
+    # rect = plt.Rectangle(bounds[0], bounds[1, 0] - bounds[0, 0],
+    #                     bounds[1, 1] - bounds[0, 1], linewidth=1, edgecolor='r', facecolor='none')
+    # # axe.add_patch(rect)
+    # # Draw circle of radius
+    # axe.add_patch(plt.Circle(center, radius, facecolor='none', edgecolor='g', linewidth=1, alpha=0.5)) 
+    # # Draw rectangle with radius and center
+    # axe.add_patch(plt.Rectangle(center - radius, 2 * radius, 2 * radius, color='g', alpha=0.1))
+
+    # axe.set_xlim(bounds[0,0]-0.5, bounds[1,0]+0.5)
+    # axe.set_ylim(bounds[0,1]-0.5, bounds[1,1]+0.5)
+    # axe.set_aspect('equal') 
+
+    if len(axes.shape) == 1:
+        # Only one row of subplots, adjust the layout
+        plt.tight_layout()
+        plt.savefig('artbo_proj_20.pdf')
+        return
+
+    # 1. uniform sampling in [-1, 1]
+    uniform_samples = np.random.uniform(-1, 1, size=(n_points, dim))
+
+    axe = axes[1, 0]
+    axe.scatter(uniform_samples[:, 0], uniform_samples[:, 1], s=dot_size, c=colors)
+    axe.scatter(center[0], center[1], c='r', marker='*', s=dot_size*3)  # Center point in red
+    axe.set_title('2.1 Uniform Sampling in [-1, 1]', fontsize=title_fontsize)
+    axe.set_xlim(-1.1, 1.1)
+    axe.set_ylim(-1.1, 1.1)
+    axe.tick_params(axis='both', which='major', labelsize=label_fontsize)
+    axe.set_aspect('equal')
+
+    # 2. Projected to Circle
+    lengths = np.linalg.norm(uniform_samples, axis=1, keepdims=True)
+    projected_samples = uniform_samples / lengths
+
+    axe = axes[1, 1]
+    axe.scatter(projected_samples[:, 0], projected_samples[:, 1], s=dot_size, c=colors)
+    axe.scatter(center[0], center[1], c='r', marker='*', s=dot_size*3)  # Center point in red
+    axe.set_title('2.2 Projected to Circle', fontsize=title_fontsize)
+    axe.set_xlim(-1.1, 1.1)
+    axe.set_ylim(-1.1, 1.1)
+    axe.set_aspect('equal')
+    axe.tick_params(axis='both', which='major', labelsize=label_fontsize)
+    axe.add_patch(plt.Circle((0, 0), 1, color='r', alpha=0.1)) # Add a circle
+
+    # 3. Sample The Magnitudes by uniform distribution
+    magnitudes = np.random.uniform(0, 1, size=(n_points, 1))
+    points_hypersphere = projected_samples * magnitudes 
+
+    axe = axes[1, 2]
+    axe.scatter(points_hypersphere[:, 0], points_hypersphere[:, 1], s=dot_size, c=colors)
+    axe.scatter(center[0], center[1], c='r', marker='*', s=dot_size*3)  # Center point in red
+    axe.set_title('2.3 Scaled by $u$', fontsize=title_fontsize)
+    axe.set_xlim(-1.1, 1.1)
+    axe.set_ylim(-1.1, 1.1)
+    axe.set_aspect('equal')
+    axe.tick_params(axis='both', which='major', labelsize=label_fontsize)
+    axe.add_patch(plt.Circle((0, 0), 1, color='r', alpha=0.1)) # Add a circle
+
+    # 4. Final Points (Scaled, Translated, Clipped)
+    # samples = points_hypersphere * radius + center
+    # samples = np.clip(samples, bounds[0], bounds[1])    
+
+    # axe = axes[1, 3]
+    # axe.scatter(samples[:, 0], samples[:, 1], s=5, c=colors)
+    # axe.scatter(center[0], center[1], c='r', marker='*', s=100)
+    # axe.set_title('4. Sampled with Uniform Distribution')
+    # # Draw the bounding box
+    # rect = plt.Rectangle(bounds[0], bounds[1, 0] - bounds[0, 0],
+    #                     bounds[1, 1] - bounds[0, 1], linewidth=1, edgecolor='r', facecolor='none')
+    # # axe.add_patch(rect)
+    # # Draw circle of radius
+    # axe.add_patch(plt.Circle(center, radius, color='g', alpha=0.1))
+    # # Draw rectangle with radius and center
+    # # axe.add_patch(plt.Rectangle(center - radius, 2 * radius, 2 * radius, color='g', alpha=0.1))
+    # # Draw rectangle with radius and center
+    # # axe.add_patch(plt.Rectangle(center - radius, 2 * radius, 2 * radius, color='g', alpha=0.1))
+    # axe.set_xlim(bounds[0,0]-0.5, bounds[1,0]+0.5)
+    # axe.set_ylim(bounds[0,1]-0.5, bounds[1,1]+0.5)
+    # axe.set_aspect('equal')
+
+    plt.tight_layout()
+    plt.savefig('artbo_proj_200.pdf')
+
 
 if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
-    plot_algo_0220()
+    # plot_algo_0220()
 
     # calculate_mannwhitneyu_test()
 
     # plot_atrbo_results()
+
+    plot_project_tr()

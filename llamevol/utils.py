@@ -863,7 +863,7 @@ def test_group_bar():
     plot_group_bars(data, labels, group_labels)
 
 def plot_box_violin(
-    data:list[np.ndarray],
+    data:list[list],   # list of lists, each sublist is a list of data for one plot
     labels: list[list[str]], 
     label_fontsize:int = 9,
     x_tick_fontsize:int = 0,

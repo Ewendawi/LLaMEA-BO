@@ -547,6 +547,8 @@ def _process_error_data(results:list[tuple[str,Population]]):
     'n_repeat',
     'n_iter',
     'err_type',
+    'err_msg',
+    'algo',
     ]
     _err_df = pd.DataFrame(columns=column_names)
     _strategy_count = {}
@@ -569,10 +571,29 @@ def _process_error_data(results:list[tuple[str,Population]]):
                     'n_gen': gen+1,
                     'n_iter': n_iter,
                     'n_repeat': _strategy_count[strategy_name],
-                    'err_type': handler.error_type
+                    'err_type': handler.error_type,
+                    'err_msg': handler.error,
+                    'algo': handler.code_name,
                 }
                 _err_df.loc[len(_err_df)] = res
     return _err_df
+
+def print_error(err_df:pd.DataFrame):
+
+# ['BOOverBudgetException', None, 'ValueError', 'OverflowError', 'NameError', 'UnboundLocalError', 'TypeError', 'KeyError', 'SyntaxError', 'AxisError', 'RuntimeError', 'ImportError', 'AttributeError', 'InvalidParameterError', 'IndexError', 'ModuleNotFoundError', 'NoCodeException', 'QhullError', 'NotFittedError', 'Timeout', 'LinAlgError']
+
+    strategy = None
+    err_type = 'IndexError'
+    num = 10
+
+    # get random num of errors for strategy and error type
+    if strategy is None:
+        err_list = err_df[err_df['err_type'] == err_type].sample(n=num).to_dict('records')
+    else:
+        err_list = err_df[(err_df['strategy'] == strategy) & (err_df['err_type'] == err_type)].sample(n=num).to_dict('records')
+
+    for i, err in enumerate(err_list):
+        print(f"{i+1}. Strategy: {err['strategy']}, n_gen: {err['n_gen']}, err_type: {err['err_type']}, algo: {err['algo']}, repeat: {err['n_repeat']}\n {err['err_msg']}\n")
 
 def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
     _all_error_df = err_df.groupby(['strategy', 'n_repeat'])['err_type'].agg(list).reset_index()
@@ -1081,19 +1102,23 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         _strategy_count[strategy_name] += 1
 
         n_generation = pop.get_current_generation()
+        n_gen_iter = 0
         n_iter = 0
+
         for gen in range(n_generation):
             # offspring generated in this generation
             gen_offsprings = pop.get_offsprings(generation=gen)
-            n_iter += len(gen_offsprings)
+            n_gen_iter += len(gen_offsprings)
             # offspring selected in this generation
             for ind in gen_offsprings:
+                n_iter += 1
                 handler = Population.get_handler_from_individual(ind)
                 if not hasattr(handler, 'query_time'):
                     continue
                 res = {
                     'strategy': strategy_name,
                     'n_gen': gen+1,
+                    'n_gen_iter': n_gen_iter,
                     'n_iter': n_iter,
                     'n_repeat': _strategy_count[strategy_name],
                     'query_time': handler.query_time,
@@ -1112,8 +1137,8 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
     # compitable with 1+1
     _unique_strategies = []
     for strategy in unique_strategies:
-        if strategy == '1+1':
-            continue
+        # if strategy == '1+1':
+        #     continue
         _unique_strategies.append(strategy)
     unique_strategies = _unique_strategies
 
@@ -1132,8 +1157,10 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         y_query_time.append(_mean_query_time)
 
     plot_y = [y_total_token_count, y_prompt_token_count, y_response_token_count]
+    # divide by 1000000 to convert to million
+    plot_y = [(np.array(ele) / 1000000).tolist() for ele in plot_y]
     labels = [unique_strategies] * len(plot_y)
-    sub_titles = ["Total token count", "Prompt token count", "Response token count"]
+    sub_titles = ["Total Token Count(M)", "Prompt Token Count(M)", "Response Token Count(M)"]
 
     plot_box_violin(
         data=plot_y,
@@ -1141,16 +1168,17 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         sub_titles=sub_titles,
         n_cols=4,
         label_fontsize=10,
-        title="Token usage per Experiment",
+        # title="Token Usage per Experiment",
         figsize=(15, 5),
         )
 
     prices = {
-        'o3-mini': (1.1, 4.4),
+        # 'o3-mini': (1.1, 4.4),
         'GPT-4o': (2.5, 10.0),
         'Claude-3.5': (3.0, 15.0),
-        'DeepSeek-R1': (0.8, 2.4),
+        'DeepSeek-R1': (0.5, 2.2),
         'Gemini-Flash-2.0': (0.1, 0.4),
+        'Qwen3-Coder': (0.3, 1.2),
     }
 
     mean_prompt_token_count = [np.mean(ele) for ele in y_prompt_token_count]
@@ -1185,7 +1213,7 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
                 group_labels=group_labels,
                 sub_titles=sub_titles,
                 n_cols=3,
-                title="Price per Experiment",
+                # title="Price per Experiment",
                 fig_size=(15,5))
 
     def _expand_list(idx_list, data_list):
@@ -1216,10 +1244,11 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         _y_response_token_count.append(_expand_list(_iter_list, _response_token_count))
     
     plot_y = [_y_total_token_count, _y_prompt_token_count, _y_response_token_count]
-    plot_y = [np.array(ele) for ele in plot_y]
+    # divide by 1000000 to convert to million
+    plot_y = [np.array(ele) / 1000000 for ele in plot_y]
     plot_x = [np.arange(len(_y_total_token_count[0]))] * len(plot_y)
     labels = [unique_strategies] * len(plot_y)
-    sub_titles = ["Total token count", "Prompt token count", "Response token count"]
+    sub_titles = ["Total Token Count (M)", "Prompt Token Count (M)", "Response Token Count (M)"]
     plot_lines(
         y = plot_y,
         x = plot_x,
@@ -1229,13 +1258,13 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
         sub_titles = sub_titles,
         n_cols=3,
         figsize=(15, 5),
-        title="Token usage",
+        # title="Token Usage",
         )
 
 def plot_search_result(result_dir, save_name=None, extract_fn=None, fig_dir=None):
     res_df, results = _load_results(result_dir, save_name=save_name, extract_fn=extract_fn)
 
-    _calculate_error_info(results)
+    # _calculate_error_info(results)
 
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
