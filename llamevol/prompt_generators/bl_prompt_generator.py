@@ -44,9 +44,11 @@ class BaselineResponseHandler(ResponseHandler):
     def extract_from_response(self, response: str, section: str, pattern=None) -> tuple[str, str]:
         error_str = ""
         res = ""
+        ignore_case = True
         if pattern is None:
             if section == "class_name":
                 pattern = r"```(?:python)?[\s\S]*?class\s+(\w+BO\w*):"
+                ignore_case = False
             elif section == "Code":
                 pattern = r"#\s*Code[\s\S]*```(?:python)?\s([\s\S]*?)```"
             elif section == "Code2":
@@ -54,7 +56,7 @@ class BaselineResponseHandler(ResponseHandler):
             else:
                 pattern = rf"#\s*{section}\s*([\s\S]*?)#\s"
                 # pattern = rf"#\s*{section}\s*:\s*(.*)"
-        match = re.search(pattern, response, re.IGNORECASE)
+        match = re.search(pattern, response, re.IGNORECASE if ignore_case else 0)
         if match:
             res = match.group(1)
         else:
@@ -67,11 +69,17 @@ class BaselinePromptGenerator(PromptGenerator):
     def __init__(self):
         super().__init__()
         self.is_bo = False
+        self.use_mini_bo = False
         self.problem_desc = "24 noiseless functions"
 
     def __str__(self):
-        is_bo = "BO" if self.is_bo else ""
-        return f"{is_bo}BaselinePromptGenerator"
+        suffix = ""
+        if self.is_bo:
+            if self.use_mini_bo:
+                suffix = "MiniBO"
+            else:
+                suffix = "BO"
+        return f"{suffix}BaselinePromptGenerator"
 
 # prompt generation
     def get_prompt(self, task:GenerationTask, problem_desc:str,
@@ -203,6 +211,8 @@ Give the response in the format:
 
     def code_structure(self):
         if self.is_bo:
+            if self.use_mini_bo:
+                return self.__mini_bo_code_structure()
             return self.__bo_code_structure()
         return self.__code_structure()
 
@@ -230,6 +240,38 @@ class RandomSearch:
                 self.x_opt = x
             
         return self.f_opt, self.x_opt
+```
+"""
+
+    def __mini_bo_code_structure(self) -> str:
+        return """
+```python
+from collections.abc import Callable
+import numpy as np
+class <AlgorithmName>:
+    def __init__(self, budget:int, dim:int):
+        self.budget = budget
+        self.dim = dim
+        # bounds has shape (2,<dimension>), bounds[0]: lower bound, bounds[1]: upper bound
+        self.bounds = np.array([[-5.0]*dim, [5.0]*dim])
+        # X has shape (n_points, n_dims), y has shape (n_points, 1)
+        self.X: np.ndarray = None
+        self.y: np.ndarray = None
+        self.n_evals = 0 # the number of function evaluations
+        self.n_init = <your_strategy>
+
+        # Do not add any other arguments without a default value
+
+    def __call__(self, func:Callable[[np.ndarray], np.float64]) -> tuple[np.float64, np.array]:
+        # Main minimize optimization loop
+        # func: takes array of shape (n_dims,) and returns np.float64. 
+        # Return a tuple (best_y, best_x)
+        
+        while self.n_evals < budget:
+            # Optimization
+            pass
+
+        return best_y, best_x
 ```
 """
 

@@ -30,13 +30,21 @@ LLMS = {
     'llama-4-maverick': ('meta-llama/llama-4-maverick-17b-128e-instruct', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 5, 'groq'),
 
     "gemini-2.0-flash-exp": ('gemini-2.0-flash-exp', GEMINI_API_KEY, GEMINI_BASE_URL, 10, 'google'),
+    "gemini-2.0-flash": ('gemini-2.0-flash', GEMINI_API_KEY, GEMINI_BASE_URL, 10, 'google'),
+    'gemini-2.5-flash': ('gemini-2.5-flash', GEMINI_API_KEY, GEMINI_BASE_URL, 10, 'google'),
 
     'onehub-gemini-2.0-flash': ('gemini-2.0-flash-exp', ONEHUB_API_KEY, ONEHUB_BASE_URL, 5, None),
     'onehub-gemma2-9b-it': ('gemma2-9b-it', ONEHUB_API_KEY, ONEHUB_BASE_URL, 5, None),
 
-    'o_deepseek-chat-v3': ('deepseek/deepseek-chat:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
-    'o_qwen3-235b-a22b': ('qwen/qwen3-235b-a22b:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
-    'o_llama-4-maverick': ('meta-llama/llama-4-maverick-17b-128e-instruct:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+    'o_deepseek-r1-free': ('deepseek/deepseek-r1-0528:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+    'o_deepseek-r1': ('deepseek/deepseek-r1-0528', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+
+    'o_qwen3-coder-free': ('qwen/qwen3-coder:free', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+    'o_qwen3-coder': ('qwen/qwen3-coder', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+
+    'o_gpt4o': ('openai/gpt-4o-2024-11-20', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+
+    'gpt-4o': ('gpt-4o-2024-11-20', OPENAI_API_KEY, None, 5, 'openai'),
 }
 
 class LLMClientResponse:

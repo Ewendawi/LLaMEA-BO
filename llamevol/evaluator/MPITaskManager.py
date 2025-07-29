@@ -94,6 +94,7 @@ class MPITaskManager(metaclass=Singleton):
         self.hostname = MPI.Get_processor_name()
 
         self.result_recv_buffer = None
+        self.task_recv_buffer = None
 
         self.sub_process_worker = False
         
@@ -114,6 +115,19 @@ class MPITaskManager(metaclass=Singleton):
         
             signal.signal(signal.SIGINT, self._handle_interrupt)
             signal.signal(signal.SIGTERM, self._handle_interrupt)
+
+    def create_task_recv_buffer(self, max_size):
+        if self.is_master:
+            return
+        
+        if self.running_as_worker:
+            return
+        
+        if max_size <= 0:
+            logger.error("Invalid buffer size %s", max_size)
+            return
+
+        self.task_recv_buffer = bytearray(max_size)
 
     def create_result_recv_buffer(self, max_size):
         if not self.is_master:
@@ -405,11 +419,22 @@ class MPITaskManager(metaclass=Singleton):
             # Check for new task if we're not running one
             if not current_task and self.comm.Iprobe(source=0, tag=Tags.TASK.value):
                 logger.debug("Worker %s is receiving task", self.rank)
-                req = self.comm.irecv(source=0, tag=Tags.TASK.value)
-                # FIXME: This is a hack to avoid deadlock
-                time.sleep(0.5)
-                current_task = req.wait()
-                logger.debug("Worker %s received task %s", self.rank, current_task.task_id)
+
+                if self.task_recv_buffer is not None:
+                    status = MPI.Status()
+                    self.comm.recv(self.task_recv_buffer, source=0, tag=Tags.TASK.value, status=status)
+
+                    data_size = status.Get_count(MPI.BYTE)
+                    current_task = MPI.pickle.loads(self.task_recv_buffer[:data_size])
+
+                    logger.debug("Worker %s received task %s with size %s from buffer", self.rank, current_task.task_id, data_size)
+                else:
+                    req = self.comm.irecv(source=0, tag=Tags.TASK.value)
+                    # FIXME: This is a hack to avoid deadlock
+                    time.sleep(0.5)
+                    current_task = req.wait()
+
+                    logger.debug("Worker %s received task %s", self.rank, current_task.task_id)
                 
                 if self.sub_process_worker:
                     import multiprocessing as mp
@@ -456,12 +481,16 @@ class MPITaskManager(metaclass=Singleton):
         self.running_as_worker = False
         logger.debug("Worker %s shut down", self.rank)
     
-    def start_worker(self):
+    def start_worker(self, task_recv_buffer_size=None):
         if not self.is_master and not self.running_as_worker:
+
+            if task_recv_buffer_size is not None and task_recv_buffer_size > 0:
+                self.create_task_recv_buffer(task_recv_buffer_size)
+
             self.worker_process()
 
 @contextmanager
-def start_mpi_task_manager(result_recv_buffer_size=None, use_sub_process_worker=False):
+def start_mpi_task_manager(task_recv_buffer_size=None, result_recv_buffer_size=None, use_sub_process_worker=False):
     task_manager = MPITaskManager()
     task_manager.sub_process_worker = use_sub_process_worker
     if task_manager.is_master:
@@ -477,7 +506,7 @@ def start_mpi_task_manager(result_recv_buffer_size=None, use_sub_process_worker=
     else:
         yield task_manager
         if not task_manager.running_as_worker:
-            task_manager.start_worker()
+            task_manager.start_worker(task_recv_buffer_size=task_recv_buffer_size)
 
 # Example usage
 def compute_intensive_task(task_id, value):
@@ -576,7 +605,7 @@ def test():
         master_test_func(task_manager)
         task_manager.shutdown(wait=True, cancel_futures=True, terminate_workers=True)
     else:
-        task_manager.start_worker()
+        task_manager.start_worker(task_recv_buffer_size=1024*10)
 
 # if __name__ == "__main__":
 #     logging.basicConfig(level=logging.DEBUG)
