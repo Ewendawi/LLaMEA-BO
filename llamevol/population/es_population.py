@@ -166,10 +166,12 @@ class ESPopulation(Population):
 
 
     def _get_query_item(self, comb_set:list, is_randam_selection, pop_list, parent_count) -> PopulationQueryItem:
-        selected_index = 0
+        parent_index = None
         if is_randam_selection:
             selected_index = np.random.randint(0, len(comb_set))
-        parent_index = comb_set.pop(selected_index)
+            parent_index = comb_set[selected_index]
+        else:
+            parent_index = comb_set.pop()
         parent = [pop_list[i] for i in parent_index]
 
         _parent_index_set = frozenset(parent_index)

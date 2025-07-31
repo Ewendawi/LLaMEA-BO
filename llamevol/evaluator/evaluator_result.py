@@ -62,7 +62,8 @@ class ConvergenceCurveAnalyzer:
 
         # Calculate AOC using trapezoidal rule
         x_vals = np.linspace(0, 1, len(norm_curve))
-        aoc = np.trapz(1-norm_curve, x_vals)
+        aoc = np.trapz(norm_curve, x_vals)
+        aoc = 1 - aoc  # Normalize to [0, 1]
 
         return aoc
 
@@ -671,6 +672,7 @@ class EvaluatorBasicResult:
 
         self.y_aoc = 0.0
         self.log_y_aoc = 0.0
+        self.log_y_aoc_ioh = 0.0
 
         self.n_initial_points = 0
         self.non_init_y_aoc = 0.0

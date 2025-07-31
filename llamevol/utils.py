@@ -809,7 +809,15 @@ def plot_group_bars(
     title:str = None,
     label_fontsize:int = 10,
     n_cols:int = 1,
+    combined_legend:bool = True,
+    combined_legend_ncols:int = 5,
+    combined_legend_fontsize:int = 10,
+    combined_legend_bottom:float = 0.1,
+    colors:list[list[str]] = None,
+    sub_title_fontsize:int = 10,
     fig_size:tuple[int,int] = (10, 6),
+    save_name:str = None,
+    show:bool = True,
     ):
 
     n_plots = len(data)
@@ -832,7 +840,6 @@ def plot_group_bars(
         _sub_title = sub_titles[i] if sub_titles is not None else ""
         _y_label = y_label[i] if y_label is not None else ""
         _group_labels = group_labels[i] if group_labels is not None else None
-        _group_labels = [_label[:10] for _label in _group_labels]
         _labels = labels[i]
         _data = data[i].T
 
@@ -840,16 +847,35 @@ def plot_group_bars(
         n_bars = _data.shape[1]
         x = np.arange(n_bars)
         width = 1/(n_groups+1)
+        colors = plt.cm.get_cmap('tab20', n_groups).colors
         for i in range(n_groups):
-            ax.bar(x + i * width, _data[i], width, label=_labels[i])
-        ax.set_xticks(x + width * (n_groups - 1) / 2, labels=_group_labels, fontsize=label_fontsize)
-        ax.legend()
+            ax.bar(x + i * width, _data[i], width, label=_labels[i], color=colors[i])
+        if _group_labels is not None:
+            ax.set_xticks(x + width * (n_groups - 1) / 2, labels=_group_labels, fontsize=label_fontsize)
+        else:
+            ax.set_xticks([])
+            ax.set_xticklabels([])  # Remove x-axis tick labels
+        if combined_legend is False:
+            ax.legend()
         ax.set_title(_sub_title)
         ax.set_ylabel(_y_label)
-    
+
     fig.suptitle(title)
     fig.tight_layout()
-    plt.show()
+
+    if combined_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='lower center', ncol=combined_legend_ncols, fontsize=combined_legend_fontsize, bbox_to_anchor=(0.5, 0.0))
+        plt.subplots_adjust(bottom=combined_legend_bottom)
+
+    if save_name:
+        _name = save_name + ".png"
+        plt.savefig(_name)
+        __name = save_name + ".pdf"
+        plt.savefig(__name)
+
+    if show:
+        plt.show()
 
 def test_group_bar():
     n_groups = 3
@@ -873,6 +899,7 @@ def plot_box_violin(
     x_labels: list[str] = None,
     y_labels: list[str] = None,
     sharex:bool = False,
+    x_label_rotation:int = 0,
     title = "",
     width:float = 0.8,
     colors: list[list] = None,
@@ -975,6 +1002,10 @@ def plot_box_violin(
         ax.set_xlabel(_x_labels, fontsize=label_fontsize)
         _y_labels = _plot_get_element_from_list(y_labels, i, "")
         ax.set_ylabel(_y_labels, fontsize=label_fontsize)
+
+        if x_label_rotation > 0:
+            for label in ax.get_xticklabels():
+                label.set_rotation(x_label_rotation)
 
     fig.suptitle(title, fontsize=label_fontsize+2)
     fig.tight_layout()

@@ -6,7 +6,9 @@ import os
 import concurrent.futures
 from tqdm import tqdm
 import numpy as np
-from ioh import get_problem 
+from ioh import get_problem, logger
+from misc import aoc_logger, correct_aoc
+
 
 from llamevol.utils import BOOverBudgetException
 
@@ -14,7 +16,45 @@ from .evaluator import AbstractEvaluator
 from .evaluator_result import EvaluatorResult, EvaluatorBasicResult
 from .exec_utils import default_exec, ExecInjector
 
+from unittest.mock import MagicMock
+ 
 _logger = logging.getLogger(__name__)
+
+
+def calculate_aoc_by_ioh(y_hist, optimum_value, budget, upper=1e4):
+    l2 = aoc_logger(budget, upper=upper, triggers=[logger.trigger.ALWAYS])
+    best_y = np.minimum.accumulate(y_hist, axis=0)
+    best_y -= optimum_value
+
+    if len(best_y) >= budget:
+        best_y = best_y[:budget-1]  
+    y_value = np.clip(best_y, l2.lower, l2.upper)
+    log_upper = l2.transform(l2.upper)
+    log_lower = l2.transform(l2.lower)
+    log_y_value = l2.transform(y_value)
+    a = (log_y_value - log_lower) / (log_upper - log_lower)
+    aoc = np.sum(a)
+    l2.aoc = aoc
+
+    # for i, _y in enumerate(best_y):
+    #     mock_log_info= MagicMock()
+    #     mock_log_info.raw_y_best = _y
+    #     mock_log_info.evaluations = i + 1
+    #     l2(mock_log_info)
+
+    # print(f"ioh sum AOC: {l2.aoc}")
+
+    pre_aoc = l2.aoc / budget
+    pre_aoc = 1 - pre_aoc
+
+    mock_func = MagicMock()
+    mock_func.state.evaluations = budget if len(best_y) == budget-1 else len(best_y)
+    mock_func.state.current_best_internal.y = best_y[-1]
+    aoc = correct_aoc(mock_func, l2, budget)
+
+    # print(f'ioh pre_aoc: {pre_aoc}, ioh aoc: {aoc}')
+
+    return aoc
 
 class IOHObjectiveFn:
     def __init__(self, problem_id, instance_id, exec_id, dim, budget, show_progress_bar=False):
@@ -37,6 +77,7 @@ class IOHObjectiveFn:
 
         self.x_hist = None
         self.y_hist = None
+        self.ioh_aoc = None
 
         self.progress_bar = None
         self.show_progress_bar = show_progress_bar
@@ -125,6 +166,9 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     obj_fn = IOHObjectiveFn(problem_id=problem_id, instance_id=instance_id, exec_id=exec_id, dim=dim, budget=budget, show_progress_bar=False)
     obj_fn.ignore_over_budget = ignore_over_budget
 
+    l2 = aoc_logger(budget, upper=1e4, triggers=[logger.trigger.ALWAYS])
+    obj_fn.obj_fn.attach_logger(l2)
+
     start_time = time.perf_counter()
 
     init_kwargs = {
@@ -143,7 +187,22 @@ def ioh_evaluate_block(problem_id, instance_id, exec_id, dim, budget, code, cls_
     res, captured_output, err, new_injector = default_exec(code=code, cls_name=cls_name, cls=cls, init_kwargs=init_kwargs, call_kwargs=call_kwargs, injector=injector) 
     exec_time = time.perf_counter() - start_time
 
+    aoc = correct_aoc(obj_fn.obj_fn, l2, budget)
+    obj_fn.ioh_aoc = aoc
     obj_fn.reset()
+
+    # _ioh_aoc = calculate_aoc_by_ioh(
+    #             y_hist=l2.history, 
+    #             optimum_value=0, 
+    #             budget=obj_fn.budget
+    #         )
+
+    # _ioh_aoc = calculate_aoc_by_ioh(
+    #             y_hist=obj_fn.y_hist, 
+    #             optimum_value=obj_fn.optimal_value, 
+    #             budget=obj_fn.budget
+    # )
+
 
     if ignore_capture:
         captured_output = None
@@ -284,6 +343,9 @@ class IOHEvaluator(AbstractEvaluator):
 
             eval_basic_result.update_stats()
             eval_basic_result.update_aoc(optimal_value=obj_fn.optimal_value, min_y=1e-8)
+
+            
+            eval_basic_result.log_y_aoc_ioh = obj_fn.ioh_aoc
 
         return eval_basic_result
 
@@ -462,6 +524,7 @@ class IOHEvaluator(AbstractEvaluator):
         _all_eval_time = time.perf_counter() - _all_eval_time_start
         if eval_result.error is None:
             eval_result.score = np.mean([r.log_y_aoc for r in eval_result.result])
+            eval_result.ioh_score = np.mean([r.log_y_aoc_ioh for r in eval_result.result])
             eval_result.total_execution_time = np.sum([r.execution_time for r in eval_result.result])
             _logger.info("Evaluated %s: %.4f executed %.2fs in %.2fs", cls_name, eval_result.score, eval_result.total_execution_time, _all_eval_time)
         else:                           

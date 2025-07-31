@@ -313,6 +313,34 @@ def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], gro
         if group_fn is not None:
             group_fn(strategy_group, strategy, y_aoc, log_y_aoc, std_y_aoc, std_log_y_aoc)
 
+    # _d_data = pd.read_pickle("Experiments/log_eater/llamea-data.pkl")
+
+    # for strategy in ['LLaMEA (4+16)', 'LLaMEA (1+1)']:  
+    #     strategy_df = _d_data[_d_data['method_name'] == strategy]
+    #     method_data = strategy_df.sort_values(by=["seed", "_id"])
+    #     # Group by 'seed' and calculate the cumulative max fitness
+    #     method_data["cummax_fitness"] = method_data.groupby("seed")[
+    #         "fitness"
+    #     ].cummax()
+    #     # Calculate the mean and std of cumulative max fitness
+    #     summary = (
+    #                 method_data.groupby("_id")["cummax_fitness"]
+    #                 .agg(["mean", "std"])
+    #                 .reset_index()
+    #             )
+
+    #     mean_aoc = summary['mean'].values
+    #     mean_aoc = np.concatenate(([mean_aoc[0]], mean_aoc))
+    #     # mean_aoc -= 0.008
+    #     mean_aoc = np.clip(mean_aoc, 0, None)
+    #     std_aoc = summary['std'].values
+    #     std_aoc = np.concatenate(([std_aoc[0]], std_aoc))
+
+        # strategy_log_filling.append((mean_aoc + std_aoc, np.clip(mean_aoc - std_aoc, 0, None))) 
+        # strategy_log_aoc.append(mean_aoc)
+
+        # labels.append(strategy)
+
     plot_y = []
     sub_titles = []
     fillings = []
@@ -628,7 +656,7 @@ def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]
         show=False,
         ) 
 
-def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str]):
+def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
 
     _filter_types = [
         'Timeout', 
@@ -639,6 +667,13 @@ def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str]):
 
     titles = []
     plot_data = []
+
+
+    _group = []
+    _group_name = []
+    _err_types = _err_df['err_type'].unique()
+    # remove None from nparray
+    _err_types = _err_types[~pd.isnull(_err_types)]
 
     for strategy in unique_strategies:
         _all_strategy_error_df = error_df[error_df['strategy'] == strategy]
@@ -665,16 +700,42 @@ def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str]):
         titles.append(_title)
         plot_data.append(_plot_data)
 
-    for i, _plot_data in enumerate(plot_data):
-        fig, ax = plt.subplots(figsize=(12, 8))
-        _title = titles[i]
-        _plot_data = plot_data[i]
-        ax.pie(_plot_data, 
-                labels=_plot_data.index, 
-                autopct='%1.1f%%',
-            #    autopct=lambda p: '{:d}'.format(int(p / 100 * _all_type_count)),
+        _sub_group = []
+        for _type in _err_types:
+            err_count = type_count.get(_type, 0)
+            _sub_group.append(err_count)
+        _group.append(_sub_group)
+        _group_name.append(strategy)
+
+    y_data = [np.array(ele)[np.newaxis, :] for ele in _group]
+    x_labels = [_err_types.tolist()] * len(y_data)
+    group_labels = [_group_name] * len(y_data)
+    sub_titles = _group_name
+    save_name = 'search_error_type_grouped'
+    if fig_dir is not None:
+        save_name = os.path.join(fig_dir, save_name)
+    plot_group_bars(y_data,
+                x_labels,
+                sub_titles=sub_titles,
+                n_cols=3,
+                combined_legend=True,
+                combined_legend_ncols=6,
+                combined_legend_bottom=0.2,
+                combined_legend_fontsize=9,
+                fig_size=(14,4),
+                save_name=save_name,
                 )
-        fig.suptitle(_title)
+
+    # for i, _plot_data in enumerate(plot_data):
+    #     fig, ax = plt.subplots(figsize=(12, 8))
+    #     _title = titles[i]
+    #     _plot_data = plot_data[i]
+    #     ax.pie(_plot_data, 
+    #             labels=_plot_data.index, 
+    #             autopct='%1.1f%%',
+    #         #    autopct=lambda p: '{:d}'.format(int(p / 100 * _all_type_count)),
+    #             )
+    #     fig.suptitle(_title)
 
 
 def _group_plus_error_rate(strategy_group:dict, strategy:str, mean_err_rate:float, std_err_rate:float):
@@ -1083,7 +1144,7 @@ def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None, fig_di
             show=False,
             )
 
-def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strategies:list[str]):
+def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strategies:list[str], save_dir=''):
     column_names = [
     'strategy',
     'n_gen',
@@ -1160,16 +1221,27 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
     # divide by 1000000 to convert to million
     plot_y = [(np.array(ele) / 1000000).tolist() for ele in plot_y]
     labels = [unique_strategies] * len(plot_y)
-    sub_titles = ["Total Token Count(M)", "Prompt Token Count(M)", "Response Token Count(M)"]
+    sub_titles = ["Total Token Count", "Prompt Token Count", "Response Token Count"]
+    y_labels = ['Number of Tokens (M)'] * len(plot_y)
 
+    save_name = save_dir + '/' if save_dir else ''
+    save_name += 'es_token_usage'
     plot_box_violin(
         data=plot_y,
         labels=labels,
         sub_titles=sub_titles,
         n_cols=4,
-        label_fontsize=10,
+        sub_title_fontsize=11,
+        y_tick_fontsize=12,
+        x_tick_fontsize=13,
+        label_fontsize=9,
+        width=0.6,
+        show_scatter=True,
+        y_labels=y_labels,
         # title="Token Usage per Experiment",
-        figsize=(15, 5),
+        figsize=(12, 3),
+        filename=save_name,
+        show=False,
         )
 
     prices = {
@@ -1248,40 +1320,55 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
     plot_y = [np.array(ele) / 1000000 for ele in plot_y]
     plot_x = [np.arange(len(_y_total_token_count[0]))] * len(plot_y)
     labels = [unique_strategies] * len(plot_y)
-    sub_titles = ["Total Token Count (M)", "Prompt Token Count (M)", "Response Token Count (M)"]
+    y_labels = ['Number of Tokens (M)'] * len(plot_y)
+    x_labels = ['Number of Evaluations'] * len(plot_y)
+    sub_titles = ["Total Token Count", "Prompt Token Count", "Response Token Count"]
+    save_name = save_dir + '/' if save_dir else ''
+    save_name += 'es_token_usage_iter'
     plot_lines(
         y = plot_y,
         x = plot_x,
         labels = labels,
+        y_labels=y_labels,
+        x_labels=x_labels,
+        sub_title_fontsize=11,
+        tick_fontsize = 13,
+        label_fontsize=13,
         linewidth=1.5,
-        label_fontsize=10,
         sub_titles = sub_titles,
         n_cols=3,
-        figsize=(15, 5),
+        figsize=(13, 4),
         # title="Token Usage",
+        filename=save_name,
+        show=False,
         )
 
 def plot_search_result(result_dir, save_name=None, extract_fn=None, fig_dir=None):
     res_df, results = _load_results(result_dir, save_name=save_name, extract_fn=extract_fn)
+
+    _plot_search_result(res_df, results, fig_dir=fig_dir)
+
+def _plot_search_result(res_df, results, fig_dir=None):
 
     # _calculate_error_info(results)
 
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
 
-    # _plot_search_token_usage(results, unique_strategies)
+    # _plot_search_token_usage(results, unique_strategies, save_dir=fig_dir)
 
-    _plot_search_aoc(res_df, unique_strategies, fig_dir=fig_dir)
+    # _plot_search_aoc(res_df, unique_strategies, fig_dir=fig_dir)
     _plot_search_group_aoc(res_df, unique_strategies, fig_dir=fig_dir)
 
     # _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
 
     err_df = _process_error_data(results)
-    _plot_search_all_error_rate(err_df, unique_strategies, fig_dir=fig_dir)
-    # _plot_search_error_type(err_df, unique_strategies=unique_strategies)
+    # print_error(err_df)
+    # _plot_search_all_error_rate(err_df, unique_strategies, fig_dir=fig_dir)
+    # _plot_search_error_type(err_df, unique_strategies=unique_strategies, fig_dir=fig_dir)
     # _plot_search_error_rate_by_generation(err_df, unique_strategies)
 
-    _plot_search_problem_aoc_and_loss(res_df, fig_dir=fig_dir)
+    # _plot_search_problem_aoc_and_loss(res_df, fig_dir=fig_dir)
 
 def plot_search_0112():
     # file_paths = [
@@ -1717,6 +1804,43 @@ def update_aoc_for_res():
     with open(new_file_path, 'wb') as f:
         pickle.dump(res, f)
 
+def load_search_result_for_llms(save_dir=None):
+    dir_paths = {
+        'GPT-4o': 'Experiments/log_eater/pop_gpt4o',
+        'Qwen3-Coder': 'Experiments/log_eater/pop_qwen3_coder',
+        'DeepSeek-R1': 'Experiments/log_eater/pop_r1',
+        'Gemini-2.0-Flash': 'Experiments/log_eater/pop_100_tkcr',
+        'Gemini-2.5-Flash': 'Experiments/log_eater/pop_gemini_2.5',
+    }
+    save_name = save_dir + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl' if save_dir else None
+    save_name = save_dir + '/df_res_07311321.pkl' if save_dir else None
+    res_list = []
+    name_filter = '4-16'
+    for name, dir_path in dir_paths.items():
+        file_paths = []
+        for dir_name in os.listdir(dir_path):
+            if not os.path.isdir(os.path.join(dir_path, dir_name)):
+                continue
+            if name_filter not in dir_name:
+                continue
+            for file_name in os.listdir(os.path.join(dir_path, dir_name)):
+                if "final" not in file_name:
+                    continue
+                file_path = os.path.join(dir_path, dir_name, file_name)
+                file_paths.append(file_path)
+
+        for file_path in file_paths:
+            pop = RenameUnpickler.unpickle(open(file_path, "rb"))
+            res_list.append((name, pop))
+
+    res_df = _process_search_result(res_list, save_name=save_name)
+
+    return res_df, res_list
+
+def plot_llms_search_result():
+    save_dir = 'Experiments/log_eater/llms_search_result'
+    res_df, res_list = load_search_result_for_llms(save_dir=save_dir)
+    _plot_search_result(res_df, results=res_list, fig_dir=save_dir)
 
 if __name__ == "__main__":
     setup_logger(level=logging.INFO)
@@ -1776,6 +1900,11 @@ if __name__ == "__main__":
             if match:
                 cr = int(match.group(1)) / 10
                 return f"{cr}"
+        elif 'pop_4+8_template' in file_path:
+            pattern = re.compile(r'_mini_')
+            match = pattern.search(file_path)
+            if match:
+                return "mini"
         return ''
 
     # dir_path = 'Experiments/log_eater/pop_40_f'
@@ -1796,9 +1925,16 @@ if __name__ == "__main__":
     save_name = 'Experiments/log_eater/pop_100_tkcr/df_res_05241329.pkl'
     # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
 
+    # dir_path = 'Experiments/log_eater/sample_tr_gpt4o'
+
+    # dir_path = 'Experiments/log_eater/pop_4+8_template'
 
     # extract_results_to_ioh_csv(dir_path, save_name, extract_fn=extract_fn)
 
     plot_search_result(dir_path, save_name=save_name, extract_fn=extract_fn, fig_dir=dir_path)
+
+
+    # plot_llms_search_result()
+
 
 

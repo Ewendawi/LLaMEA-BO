@@ -822,9 +822,9 @@ def plot_algo_result(results:list[EvaluatorResult], fig_dir=None):
 
     # _plot_algo_aoc_on_problems(res_df)
 
-    _plot_algo_problem_aoc(res_df, dim=dim, fig_dir=fig_dir)
+    # _plot_algo_problem_aoc(res_df, dim=dim, fig_dir=fig_dir)
 
-    _plot_algo_iter(res_df, dim=dim, fig_dir=fig_dir)
+    # _plot_algo_iter(res_df, dim=dim, fig_dir=fig_dir)
 
 
 def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
@@ -1044,16 +1044,17 @@ def plot_algo_0220():
         data=plot_y,
         labels=plot_labels,
         label_fontsize=8,
-        x_tick_fontsize=11,
-        y_tick_fontsize=12,
+        x_tick_fontsize=8,
+        y_tick_fontsize=9,
         colors=plot_colors,
         show_inside_box=True,
         sharex=True,
+        x_label_rotation=45,
         sub_titles=plot_sub_titles,
-        sub_title_fontsize=13,
+        sub_title_fontsize=11,
         n_cols=2,
         # title=title,
-        figsize=(13, 6),
+        figsize=(6, 5),
         show=False,
         filename=file_name,
     )
@@ -1614,10 +1615,10 @@ if __name__ == "__main__":
     # setup_logger(level=logging.DEBUG)
     setup_logger(level=logging.INFO)
 
-    # plot_algo_0220()
+    plot_algo_0220()
 
     # calculate_mannwhitneyu_test()
 
     # plot_atrbo_results()
 
-    plot_project_tr()
+    # plot_project_tr()
