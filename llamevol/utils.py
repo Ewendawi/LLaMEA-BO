@@ -5,7 +5,7 @@ import logging
 import pickle
 import os
 from matplotlib import pyplot as plt
-from matplotlib.ticker import FixedLocator, FixedFormatter
+from matplotlib.ticker import FixedLocator, FixedFormatter, MaxNLocator
 import numpy as np
 from scipy.signal import savgol_filter 
 from scipy.ndimage import gaussian_filter1d  
@@ -813,6 +813,7 @@ def plot_group_bars(
     combined_legend_ncols:int = 5,
     combined_legend_fontsize:int = 10,
     combined_legend_bottom:float = 0.1,
+    combined_legend_x:float = 0.5,
     colors:list[list[str]] = None,
     sub_title_fontsize:int = 10,
     fig_size:tuple[int,int] = (10, 6),
@@ -857,7 +858,8 @@ def plot_group_bars(
             ax.set_xticklabels([])  # Remove x-axis tick labels
         if combined_legend is False:
             ax.legend()
-        ax.set_title(_sub_title)
+        ax.tick_params(axis='y', labelsize=label_fontsize)
+        ax.set_title(_sub_title, fontsize=sub_title_fontsize)
         ax.set_ylabel(_y_label)
 
     fig.suptitle(title)
@@ -865,7 +867,7 @@ def plot_group_bars(
 
     if combined_legend:
         handles, labels = ax.get_legend_handles_labels()
-        fig.legend(handles, labels, loc='lower center', ncol=combined_legend_ncols, fontsize=combined_legend_fontsize, bbox_to_anchor=(0.5, 0.0))
+        fig.legend(handles, labels, loc='lower center', ncol=combined_legend_ncols, fontsize=combined_legend_fontsize, bbox_to_anchor=(combined_legend_x, 0.0))
         plt.subplots_adjust(bottom=combined_legend_bottom)
 
     if save_name:
@@ -894,6 +896,7 @@ def plot_box_violin(
     label_fontsize:int = 9,
     x_tick_fontsize:int = 0,
     y_tick_fontsize:int = 0,
+    y_integer_ticks:bool = False,
     sub_titles: list[str] = None,
     sub_title_fontsize:int = 10,
     x_labels: list[str] = None,
@@ -905,6 +908,8 @@ def plot_box_violin(
     colors: list[list] = None,
     show_inside_box:bool = False,
     show_scatter:bool = False,
+    scatter_colors:list[list[str]] = None,
+    scatter_alpha:float = 0.5,
     n_cols:int = 1, figsize:tuple[int,int] = (10, 6), 
     show:bool = True,
     filename=None):
@@ -981,9 +986,11 @@ def plot_box_violin(
                 _whisker2 = _box_parts['whiskers'][_box_i * 2 + 1]
                 _whisker2.set_color(_color)
         elif show_scatter:
+            _scatter_colors = scatter_colors[i] if scatter_colors is not None else None
             for _scatter_i, scatter in enumerate(data[i]):
                 _x = np.full(len(scatter), _scatter_i + 1)
-                ax.scatter(_x, scatter, color=box_colors[_scatter_i], alpha=0.5)
+                _point_colors = _scatter_colors[_scatter_i] if _scatter_colors is not None else box_colors[_scatter_i] 
+                ax.scatter(_x, scatter, color=_point_colors, alpha=scatter_alpha)
 
         ax.set_title(sub_title, fontsize=sub_title_fontsize)
 
@@ -991,6 +998,9 @@ def plot_box_violin(
             ax.tick_params(axis='y', which='major', labelsize=y_tick_fontsize)
         else:
             ax.tick_params(axis='y', which='major', labelsize=label_fontsize+2)
+
+        if y_integer_ticks:
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
         ax.yaxis.grid(True)
 

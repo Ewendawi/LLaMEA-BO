@@ -7,6 +7,7 @@ import re
 import concurrent.futures
 import numpy as np
 import pandas as pd
+import matplotlib
 from matplotlib import pyplot as plt
 
 from llamevol.utils import IndividualLogger
@@ -107,6 +108,7 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
     column_names = [
         'strategy',
         'n_strategy',
+        'pop_id',
         'problem_id',
         'instance_id',
         'exec_id',
@@ -119,7 +121,7 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
         'loss',
         ]
 
-    def res_to_row(res, gen:int, strategy_name:str, n_iter:int, n_ind:int, n_strategy:int):
+    def res_to_row(res, gen:int, strategy_name:str, n_iter:int, n_ind:int, n_strategy:int, pop_id:str):
         res_id = res.id
         res_split = res_id.split("-")
         problem_id = int(res_split[0])
@@ -128,6 +130,7 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
         row = {
             'strategy': strategy_name,
             'n_strategy': n_strategy,
+            'pop_id': pop_id,
             'problem_id': problem_id,
             'instance_id': instance_id,
             'exec_id': repeat_id,
@@ -158,6 +161,7 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
             if strategy_name not in _strategy_count:
                 _strategy_count[strategy_name] = 0
             _strategy_count[strategy_name] += 1
+            pop_id = getattr(pop, 'pop_id', f"{strategy_name}_{_strategy_count[strategy_name]}")
             n_generation = pop.get_current_generation()
             if n_generation == 0:
                 n_generation = 1
@@ -178,23 +182,58 @@ def _process_search_result(results:list[tuple[str,Population]], save_name=None):
                         continue
                     for res in handler.eval_result.result:
                         res.update_aoc_with_new_bound_if_needed()
-                        row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=n_ind, n_strategy=_count)
+                        row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=n_ind, n_strategy=_count, pop_id=pop_id)
                         res_df.loc[len(res_df)] = row
 
     if _save: 
         res_df.to_pickle(save_name)
     return res_df
 
+g_default_color_list = matplotlib.colormaps['tab10'].colors
+g_strategy_color_map = {
+
+}
+
 def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
-    max_aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
-    max_aoc_df = max_aoc_df.groupby(['strategy', 'n_strategy'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
-    max_aoc_df = max_aoc_df.groupby(['strategy'])[['log_y_aoc', 'y_aoc']].agg(list).reset_index()
+    max_aoc_df = res_df.groupby(['pop_id', 'strategy', 'n_strategy', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
+    max_aoc_df = max_aoc_df.groupby(['pop_id', 'strategy', 'n_strategy'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
+    # max_aoc_df = max_aoc_df.groupby(['strategy'])[['log_y_aoc', 'y_aoc', 'pop_id']].agg(list).reset_index()
 
     _volin_y = []
+    _scatter_colors = []
+    # generate color list for scatter color
     for strategy in unique_strategies:
         strategy_df = max_aoc_df[max_aoc_df['strategy'] == strategy]
-        _max_aoc_list = strategy_df['log_y_aoc'].values[0]
+
+        _max_aoc_list = []
+        _colors = []
+
+        _count = 0
+        for i, row in strategy_df.iterrows():
+            _max_aoc_list.append(row['log_y_aoc'])
+            _colors.append(g_default_color_list[_count])
+            pop_id = row['pop_id']
+            g_strategy_color_map[pop_id] = g_default_color_list[_count]
+            _count += 1
+
+        # get sorted indices
+        sorted_indices = np.argsort(_max_aoc_list)
+        # for overlapping point (diff < 0.001), move away for 0.001
+        unit_cap = 0.0010
+        for i, index in enumerate(sorted_indices):
+            if i == len(sorted_indices) - 1:
+                break
+            next_index = sorted_indices[i + 1]
+            _max_aoc = _max_aoc_list[index]
+            next_max_aoc = _max_aoc_list[next_index]
+            if next_max_aoc - _max_aoc < unit_cap:
+                _max_aoc_list[next_index] = _max_aoc + unit_cap
+
+        post_sorted_indices = np.argsort(_max_aoc_list)
+
+
         _volin_y.append(np.array(_max_aoc_list))
+        _scatter_colors.append(_colors)
 
     # plot_voilin_style_scatter(
     #     data=[_volin_y],
@@ -212,10 +251,14 @@ def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str], fig_dir=N
     plot_box_violin(
         data=[_volin_y],
         labels=[unique_strategies],
-        y_labels=['AOCC'],
+        # y_labels=['AOCC'],
+        sub_titles=['AOCC'],
         y_tick_fontsize=12,
         x_tick_fontsize=13,
+        x_label_rotation=15,
         show_scatter=True,
+        scatter_colors=[_scatter_colors],
+        scatter_alpha=0.8,
         width=0.6,
         n_cols=4,
         label_fontsize=11,
@@ -571,6 +614,7 @@ def _process_error_data(results:list[tuple[str,Population]]):
     # - error type
     column_names = [
     'strategy',
+    'pop_id',
     'n_gen',
     'n_repeat',
     'n_iter',
@@ -586,6 +630,7 @@ def _process_error_data(results:list[tuple[str,Population]]):
         _strategy_count[strategy_name] += 1
 
         n_generation = pop.get_current_generation()
+        pop_id = getattr(pop, 'pop_id', f"{strategy_name}_{_strategy_count[strategy_name]}")
         n_iter = 0
         for gen in range(n_generation):
             # offspring generated in this generation
@@ -596,6 +641,7 @@ def _process_error_data(results:list[tuple[str,Population]]):
                 handler = Population.get_handler_from_individual(ind)
                 res = {
                     'strategy': strategy_name,
+                    'pop_id': pop_id,
                     'n_gen': gen+1,
                     'n_iter': n_iter,
                     'n_repeat': _strategy_count[strategy_name],
@@ -624,31 +670,89 @@ def print_error(err_df:pd.DataFrame):
         print(f"{i+1}. Strategy: {err['strategy']}, n_gen: {err['n_gen']}, err_type: {err['err_type']}, algo: {err['algo']}, repeat: {err['n_repeat']}\n {err['err_msg']}\n")
 
 def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
-    _all_error_df = err_df.groupby(['strategy', 'n_repeat'])['err_type'].agg(list).reset_index()
+
+    _all_error_df = err_df[err_df['n_gen'] < 10]
+
+    _all_error_df = _all_error_df.groupby(['pop_id', 'strategy', 'n_repeat'])['err_type'].agg(list).reset_index()
     _all_error_df['err_rate'] = _all_error_df['err_type'].apply(lambda x: len([ele for ele in x if ele is not None]) / len(x))
+    _all_error_df['err_count'] = _all_error_df['err_type'].apply(lambda x: len([ele for ele in x if ele is not None]))
 
     y_err_rates = []
+    y_err_counts = []
+    scatter_colors = [] if g_strategy_color_map is not None else None
 
     for strategy in unique_strategies:
         _strategy_error_df = _all_error_df[_all_error_df['strategy'] == strategy]
-        _error_rate = _strategy_error_df['err_rate'].to_list()
+        _error_rate = []
+        _error_count = []
+        _colors = []
+        for i, row in _strategy_error_df.iterrows():
+            _error_rate.append(row['err_rate'])
+            _error_count.append(row['err_count'])
+            _pop_id = row['pop_id']
+            _color = g_strategy_color_map[_pop_id] if g_strategy_color_map is not None else None
+            _colors.append(_color)
+
         if len(_error_rate) == 0:
             _error_rate = [0]
+
+        _use_error_rate = False
+
+        if _use_error_rate:
+            target_data = _error_rate
+            unit_cap = 0.0010
+        else:
+            target_data = _error_count
+            unit_cap = 1
+
+        sorted_indices = np.argsort(target_data)
+        for i, index in enumerate(sorted_indices):
+            if i == len(sorted_indices) - 1:
+                break
+            next_index = sorted_indices[i + 1]
+            _r = target_data[index]
+            next_r = target_data[next_index]
+            if next_r - _r < unit_cap:
+                target_data[next_index] = _r + unit_cap
+        post_sorted_indices = np.argsort(target_data)
+
+        if _use_error_rate:
+            _error_rate = target_data
+        else:
+            _error_count = target_data
+
         y_err_rates.append(_error_rate)
+        y_err_counts.append(_error_count)
+        scatter_colors.append(_colors)
 
     file_name = 'overall_error_rate_voilin'
     if fig_dir is not None:
         file_name = os.path.join(fig_dir, file_name)
 
+    _y_data = [y_err_rates]
+    _y_labels = ['Error Rate']
+    _y_integer_ticks = False
+    _sub_titles = ['Error Rate']
+
+    _y_data = [y_err_counts]
+    _y_labels = ['Number of Errors']
+    _sub_titles = ['Number of Errors']
+    _y_integer_ticks = True
+
     plot_box_violin(
-        data=[y_err_rates],
+        data=_y_data,
         labels=[unique_strategies],
-        y_labels=['Error Rate'],
+        # y_labels=_y_labels,
         y_tick_fontsize=12,
         x_tick_fontsize=13,
+        y_integer_ticks=_y_integer_ticks,
+        x_label_rotation=15,
         show_scatter=True,
+        scatter_colors=[scatter_colors],
+        scatter_alpha=0.8,
         n_cols=4,
         width=0.6,
+        sub_titles=_sub_titles,
         label_fontsize=11,
         # title="Error rate by strategy",
         figsize=(8, 4),
@@ -709,6 +813,7 @@ def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str], 
 
     y_data = [np.array(ele)[np.newaxis, :] for ele in _group]
     x_labels = [_err_types.tolist()] * len(y_data)
+    y_labels = ['Numbers of Errors'] + ([''] * (len(y_data) - 1))
     group_labels = [_group_name] * len(y_data)
     sub_titles = _group_name
     save_name = 'search_error_type_grouped'
@@ -716,12 +821,16 @@ def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str], 
         save_name = os.path.join(fig_dir, save_name)
     plot_group_bars(y_data,
                 x_labels,
+                label_fontsize=13,
+                y_label=y_labels,
                 sub_titles=sub_titles,
+                sub_title_fontsize=12,
                 n_cols=3,
                 combined_legend=True,
                 combined_legend_ncols=6,
-                combined_legend_bottom=0.2,
-                combined_legend_fontsize=9,
+                combined_legend_bottom=0.255,
+                combined_legend_fontsize=12,
+                combined_legend_x=0.515,
                 fig_size=(14,4),
                 save_name=save_name,
                 )
@@ -1222,7 +1331,7 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
     plot_y = [(np.array(ele) / 1000000).tolist() for ele in plot_y]
     labels = [unique_strategies] * len(plot_y)
     sub_titles = ["Total Token Count", "Prompt Token Count", "Response Token Count"]
-    y_labels = ['Number of Tokens (M)'] * len(plot_y)
+    y_labels = ['Number of Tokens (M)'] + ([''] * len(plot_y))
 
     save_name = save_dir + '/' if save_dir else ''
     save_name += 'es_token_usage'
@@ -1320,7 +1429,7 @@ def _plot_search_token_usage(results:list[tuple[str,Population]], unique_strateg
     plot_y = [np.array(ele) / 1000000 for ele in plot_y]
     plot_x = [np.arange(len(_y_total_token_count[0]))] * len(plot_y)
     labels = [unique_strategies] * len(plot_y)
-    y_labels = ['Number of Tokens (M)'] * len(plot_y)
+    y_labels = ['Number of Tokens (M)'] + ([''] * len(plot_y))
     x_labels = ['Number of Evaluations'] * len(plot_y)
     sub_titles = ["Total Token Count", "Prompt Token Count", "Response Token Count"]
     save_name = save_dir + '/' if save_dir else ''
@@ -1354,6 +1463,15 @@ def _plot_search_result(res_df, results, fig_dir=None):
 
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
+
+    unique_strategies = [
+        'cr0.0_mini_cold',
+        'cr0.6_mini_cold',
+        'cr0.6_rich_cold',
+        'cr0.6_rich_warm',
+        'cr0.6_mini_warm',
+        'cr0.0_rich_cold',
+    ]
 
     # _plot_search_token_usage(results, unique_strategies, save_dir=fig_dir)
 
@@ -1672,9 +1790,12 @@ def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
             name = f"{n_parent}+{n_offspring}"
 
         if extract_fn is not None:
-            sub_fix = extract_fn(file_path)
+            sub_fix, exclusive = extract_fn(file_path)
             if sub_fix:
-                name += f"_{sub_fix}"
+                if exclusive:
+                    name = sub_fix
+                else:
+                    name += f"_{sub_fix}"
 
         pop_list.append((name, pop))
 
@@ -1682,7 +1803,7 @@ def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
         if cur_best is None or pop.get_best_of_all().fitness > cur_best.get_best_of_all().fitness:
             best_pop_map[name] = pop
 
-        # ind_index = 0
+        # ind_index = 1
         # for gen, keys in enumerate(pop.generations):
         #     for key in keys:
         #         ind = pop.individuals.get(key, None)
@@ -1693,6 +1814,13 @@ def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
 
         #         pop.save_on_the_fly(ind, gen, ind_index)
         #         ind_index += 1
+
+    pop_count_map = {}
+    for pop_name, pop in pop_list:
+        if pop_name not in pop_count_map:
+            pop_count_map[pop_name] = 0
+        pop_count_map[pop_name] += 1
+        setattr(pop, 'pop_id', pop_name + f"_{pop_count_map[pop_name]}")
 
     if res_df is not None:
         return res_df, pop_list
@@ -1901,11 +2029,21 @@ if __name__ == "__main__":
                 cr = int(match.group(1)) / 10
                 return f"{cr}"
         elif 'pop_4+8_template' in file_path:
-            pattern = re.compile(r'_mini_')
+            pattern = re.compile(r'evol_4\+8_(.+)_IOHEvaluator')
             match = pattern.search(file_path)
             if match:
-                return "mini"
-        return ''
+                suffix = match.group(1)
+                # remove t0.5
+                suffix = suffix.replace('_t0.5', '')
+                suffix = suffix.replace('_t05', '')
+                if 'cr0.0' in suffix:
+                    suffix = suffix.replace('_cr0.0', '')
+                    suffix = 'cr0.0_' + suffix
+                if 'cr0.6' in suffix:
+                    suffix = suffix.replace('_cr0.6', '')
+                    suffix = 'cr0.6_' + suffix
+                return suffix, True
+        return '', False
 
     # dir_path = 'Experiments/log_eater/pop_40_f'
     # save_name = 'Experiments/log_eater/pop_40_f/df_res_05250314.pkl'
@@ -1927,12 +2065,14 @@ if __name__ == "__main__":
 
     # dir_path = 'Experiments/log_eater/sample_tr_gpt4o'
 
-    # dir_path = 'Experiments/log_eater/pop_4+8_template'
+    dir_path = 'Experiments/log_eater/pop_4+8_template'
+    save_name = 'Experiments/log_eater/pop_4+8_template/df_res_08021162.pkl'
 
     # extract_results_to_ioh_csv(dir_path, save_name, extract_fn=extract_fn)
 
     plot_search_result(dir_path, save_name=save_name, extract_fn=extract_fn, fig_dir=dir_path)
 
+    # update_aoc_for_res()
 
     # plot_llms_search_result()
 
