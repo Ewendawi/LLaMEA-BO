@@ -75,6 +75,7 @@ class LLaMEvol:
                 if not response_handler.code or not response_handler.code_name:
                     logging.error("No code extracted from the model.")
                     logging.error("Retrying: %s/%s", i_try + 1, retry)
+                    logging.error("\n%s", res_content)
                 else:
                     break
         

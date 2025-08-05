@@ -126,6 +126,9 @@ def _run_exp(prompt_generator:PromptGenerator,
         if 'prompt_problem_desc' in options:
             prompt_generator.problem_desc = options['prompt_problem_desc']
 
+        if 'prompt_use_mini_bo' in options and prompt_generator.is_bo:
+            prompt_generator.use_mini_bo = options['prompt_use_mini_bo']
+
         # population
         if "pop_debug_save_on_the_fly" in options:
             population.debug_save_on_the_fly = options["pop_debug_save_on_the_fly"]
@@ -184,7 +187,8 @@ def _run_exp(prompt_generator:PromptGenerator,
                 population = Population.load(check_point_path)
                 logging.info("Load population from check point: %s", check_point_path)
                 offspring = population.get_offsprings()
-                if len(offspring) < population.n_offspring:
+                gen = population.get_current_generation()
+                if gen != 1 and len(offspring) < population.n_offspring:
                     population.revert_last_generation()
                     logging.info("Revert to last generation")
             else:
@@ -327,7 +331,7 @@ def run_mu_lambda_exp(
 
     p_name = f"{n_parent}+{n_offspring}"
     if options is not None:
-        if 'es_pop_is_elitism' in options:
+        if 'es_pop_is_elitism' in options and not options['es_pop_is_elitism']:
             p_name = f'{n_parent}-{n_offspring}'
 
     population.name = f"evol_{p_name}"
@@ -377,17 +381,13 @@ def tune_vanilla_bo(params):
     test_eval = False
     tune_algo(file_path, cls_name, res_path, params, should_eval=should_eval, plot=plot, test_eval=test_eval, pop_path=pop_path)
 
-def get_llm():
-    MODEL = 'gemini-2.0-flash-exp'
-    # MODEL = 'o_qwen3-235b-a22b'
-    # MODEL = 'llama-4-maverick'
-    # MODEL = 'o_llama-4-maverick'
-
-    llm = LLMmanager(model_key=MODEL)
+def get_llm(model_name):
+    
+    llm = LLMmanager(model_key=model_name)
 
     return llm
 
-def mock_res_provider():
+def mock_res_provider(*args, **kwargs):
     file_list = [
     ]
     file_path = np.random.choice(file_list, size=1)[0] 
@@ -398,8 +398,150 @@ def mock_res_provider():
         response = f.read()
     return response
 
+best_warmstart_handlers = [
+    'Experiments/0-2_ATRBO_0.0905_handler.pkl',
+    'Experiments/2-21_SobolEIAdaptiveTrustBO_0.4360_handler.pkl',
+    # 'Experiments/2-37_MEIGCBO_0.4024_handler.pkl',
+    'Experiments/4-61_AdaptiveEvolutionaryParetoTrustRegionBO_0.1827_handler.pkl',
+    'Experiments/5-88_AdaptiveTrustRegionEvolutionaryBO_DKAB_aDE_GE_VAE_0.2138_handler.pkl',
+    'Experiments/6-93_ABETSALSDE_ARM_MBO_0.1813_handler.pkl',
+]
+
+def _list_handlers(dir_path=None, min_order_filter=None):
+    order_filter = min_order_filter 
+    handlers = []
+    for root, dirs, files in os.walk(dir_path):
+        for file in files:
+            if file.endswith('_handler.pkl'):
+                file_number = file.split('_')[0]
+                numbers = file_number.split('-')
+                order_num = int(numbers[1])
+                if order_filter and order_num <= int(order_filter) :
+                    continue
+
+                handlers.append(os.path.join(dir_path, file))
+    return handlers
+
 def main():
-    
+    MODEL = 'gemini-2.0-flash'
+    # MODEL = 'gemini-2.5-flash'
+    # MODEL = 'o_gemini-2.0-flash'
+
+    # MODEL = 'o_qwen3-coder-free'
+    # MODEL = 'o_qwen3-coder'
+
+    # MODEL = 'o_deepseek-r1-free'
+    # MODEL = 'o_deepseek-r1'
+
+    # MODEL = 'o_gpt4o'
+    # MODEL = 'gpt-4o'
+
+    custom_opt_params = {}
+    if MODEL == 'o_qwen3-coder-free' or MODEL == 'o_qwen3-coder':
+        custom_opt_params = {
+            # exp-3
+            'pop_warmstart_handlers': _list_handlers('Experiments/pop_qwen3_coder/ESPopulation_evol_4-16_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0728185633', min_order_filter=36),
+            'pop_load_check_point_path': 'Experiments/pop_qwen3_coder/ESPopulation_evol_4-16_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0728185633/ESPopulation_gen_checkpoint_2_0728205936.pkl',
+
+            'es_pop_is_elitism': False,
+            'pop_save_dir': 'Experiments/pop_qwen3_coder',
+            'llm_params': {
+                'temperature': 0.5,
+            }
+        }
+    elif MODEL == 'o_deepseek-r1' or MODEL == 'o_deepseek-r1-free':
+        custom_opt_params = {
+
+            # # 1
+            # 'pop_warmstart_handlers': _list_handlers('Experiments/pop_r1/ESPopulation_evol_8+16_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0727180912', min_order_filter=56),
+            # 'pop_load_check_point_path': 'Experiments/pop_r1/ESPopulation_evol_8+16_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0727180912/ESPopulation_gen_checkpoint_3_0728004314.pkl',
+
+            'es_pop_is_elitism': False,
+            'pop_save_dir': 'Experiments/pop_r1',
+            'llm_params': {
+                'temperature': 0.5,
+            }
+        }
+    elif MODEL == 'gemini-2.5-flash':
+        custom_opt_params = {
+            # 'pop_warmstart_handlers': _list_handlers('Experiments/pop_2.5/ESPopulation_evol_4-16_t0.5_k60_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0729061917', min_order_filter=69),
+            # 'pop_load_check_point_path': 'Experiments/pop_2.5/ESPopulation_evol_4-16_t0.5_k60_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0729061917/ESPopulation_gen_checkpoint_4_0729133326.pkl',
+
+            'pop_save_dir': 'Experiments/pop_2.5',
+            'es_pop_is_elitism': False,
+            'pop_preorder_aware_init': True,
+            'llm_params': {
+                'temperature': 0.5,
+                'top_k': 60,
+            }
+        }
+    elif MODEL == 'gemini-2.0-flash' or MODEL == 'o_gemini-2.0-flash':
+        custom_opt_params = {
+            # 'pop_warmstart_handlers': _list_handlers('Experiments/pop_2.0_mini_warm_cr/ESPopulation_evol_4+8_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0802165903', min_order_filter=12),
+            # 'pop_load_check_point_path': 'Experiments/pop_2.0_mini_warm_cr/ESPopulation_evol_4+8_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0802165903/ESPopulation_gen_checkpoint_1_0802174433.pkl',
+
+            # 'pop_save_dir': 'Experiments/pop_2.0',
+
+            # mini: mini-template, cold start, cr=0.0. 3/5
+            # 'prompt_use_mini_bo': True,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': False,
+            # 'pop_cross_over_rate': 0.0,
+            # 'pop_save_dir': 'Experiments/pop_2.0_mini_cold',
+
+            # mini_cold_cr: mini-template, cold start, cr=0.6. 5/5
+            # 'prompt_use_mini_bo': True,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': False,
+            # 'pop_cross_over_rate': 0.6,
+
+            # rich_cold_cr: rich-template, cold start, cr=0.6. 3/5
+            # 'prompt_use_mini_bo': False,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': False,
+            # 'pop_cross_over_rate': 0.6,
+            # 'pop_save_dir': 'Experiments/pop_2.0_rich_cold_cr',
+
+            # rich_warm_cr: rich-template, warm start, cr=0.6. 5/5
+            # 'prompt_use_mini_bo': False,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': True,
+            # 'pop_cross_over_rate': 0.6,
+            # 'pop_save_dir': 'Experiments/pop_2.0_rich_warm_cr',
+
+            # mini_warm_cr: mini-template, warm start, cr=0.6. 0/5
+            # 'prompt_use_mini_bo': True,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': True,
+            # 'pop_cross_over_rate': 0.6,
+            # 'pop_save_dir': 'Experiments/pop_2.0_mini_warm_cr',
+
+            # rich_warm: rich-template, warm start, cr=0.0. 0/5
+            # 'prompt_use_mini_bo': False,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': True,
+            # 'pop_cross_over_rate': 0.0,
+
+            # rich_cold: rich-template, cold start, cr=0.0. 0/5
+            'prompt_use_mini_bo': False,  # use mini BO prompt generator
+            'pop_preorder_aware_init': False,
+            'pop_cross_over_rate': 0.0,
+            'pop_save_dir': 'Experiments/pop_2.0_rich_cold',
+
+            'es_pop_is_elitism': True,
+            'llm_params': {
+                'temperature': 0.5,
+                # 'top_k': 60,
+            }
+        }
+
+    elif MODEL == 'o_gpt4o' or MODEL == 'gpt-4o':
+        custom_opt_params = {
+            # 0
+            # 'pop_warmstart_handlers': _list_handlers('Experiments/pop_gpt4o/ESPopulation_evol_4-16_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0727220011', min_order_filter=4),
+            # 'pop_load_check_point_path': 'Experiments/pop_gpt4o/ESPopulation_evol_4-16_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0727220011/ESPopulation_gen_checkpoint_0_0727220226.pkl',
+
+            'pop_save_dir': 'Experiments/pop_gpt4o',
+            'es_pop_is_elitism': True,
+            'llm_params': {
+                'temperature': 0.5,
+            }
+        }
+
 
     _params = {
         "n_generations": np.inf,
@@ -408,7 +550,7 @@ def main():
         "n_query_threads": 0,
         "max_interval": 5,
 
-        "llm": get_llm(),
+        "llm": get_llm(MODEL),
         "prompt_generator": get_bo_prompt_generator(),
         "evaluator": get_IOHEvaluator_for_evol(),
 
@@ -422,7 +564,7 @@ def main():
             # 'pop_parent_strategy': max_divese_desc_get_parent_fn,
             # 'pop_selection_strategy': diversity_awarness_selection_fn,
             # 'pop_selection_strategy': family_competition_selection_fn(parent_size_threshold=1, is_aggressive=True),
-            'pop_save_dir': 'Experiments/pop_test',
+            'pop_save_dir': 'Experiments/pop_' + MODEL,
 
             # 'pop_replaceable_parent_selection': False,
             # 'pop_random_parent_selection': True,
@@ -434,7 +576,7 @@ def main():
 
             "n_eval_workers": 0,
             "time_out_per_eval": 60 * 30,
-            # 'use_mpi': True,
+            'use_mpi': True,
             # 'use_mpi_future': True,
 
             # 'eval_gpu_name': None,
@@ -445,15 +587,18 @@ def main():
             'test_eval_repeat': 1,
             'test_eval_budget': 100,
             # 'prompt_problem_desc': 'one noiseless function:F2 Ellipsoid Separable Function',
+            # 'prompt_use_mini_bo': True,  # use mini BO prompt generator
 
             # 'llm_mocker': mock_res_provider,
             'llm_params': {
-                # 'temperature': 0.5,
+                'temperature': 0.5,
                 # 'top_p': 0.7,
-                # 'top_k': 20,
+                # 'top_k': 60,
             }
         }
     }
+
+    _params['options'].update(custom_opt_params)
 
     N_PARENT = 1
     N_OFFSPRING = 1
@@ -478,7 +623,10 @@ if __name__ == "__main__":
     if use_mpi:
         from llamevol.evaluator.MPITaskManager import start_mpi_task_manager 
 
-        with start_mpi_task_manager(result_recv_buffer_size=1024*100) as task_manager:
+        with start_mpi_task_manager(result_recv_buffer_size=1024*200, 
+                                    task_recv_buffer_size=1024*100,
+                                    use_sub_process_worker=False,
+                                    ) as task_manager:
             if task_manager.is_master:
                 main()
     else:
