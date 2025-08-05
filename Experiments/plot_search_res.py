@@ -103,347 +103,298 @@ def compare_expressions(expr1, expr2):
                     return _cmp(a1, a2)
     return 0
 
-# plot_search_result
-def _process_search_result(results:list[tuple[str,Population]], save_name=None):
-    column_names = [
-        'strategy',
-        'n_strategy',
-        'pop_id',
-        'problem_id',
-        'instance_id',
-        'exec_id',
-        'n_gen',
-        'n_iter',
-        'n_ind',
-        "log_y_aoc",
-        "y_aoc",
-        "best_y",
-        'loss',
-        ]
+    
+def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
+    def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
+        _clip_len = int(data.shape[1] * upper_len_ratio)
+        _upper_bound = _bound
+        if bound_type == 'mean':
+            if inverse:
+                _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
+            else:
+                _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
+        elif bound_type == 'median':
+            if inverse:
+                _upper_bound = np.nanmedian(data[:, _clip_len:])
+            else:
+                _upper_bound = np.nanmedian(data[:, :_clip_len])
+        elif bound_type == 'fixed' and _bound is not None:
+            _upper_bound = _bound
 
-    def res_to_row(res, gen:int, strategy_name:str, n_iter:int, n_ind:int, n_strategy:int, pop_id:str):
-        res_id = res.id
-        res_split = res_id.split("-")
-        problem_id = int(res_split[0])
-        instance_id = int(res_split[1])
-        repeat_id = int(res_split[2])
-        row = {
-            'strategy': strategy_name,
-            'n_strategy': n_strategy,
-            'pop_id': pop_id,
-            'problem_id': problem_id,
-            'instance_id': instance_id,
-            'exec_id': repeat_id,
-            'n_gen': gen+1,
-            'n_iter': n_iter,
-            'n_ind': n_ind,
-            "log_y_aoc": res.log_y_aoc,
-            "y_aoc": res.y_aoc,
-            "best_y": res.best_y,
-            'loss': abs(res.optimal_value - res.best_y),
-        }
-        return row
+        _data = np.clip(data, 0, _upper_bound)
+        return _data, _upper_bound
+    return _clip_upper
 
+
+# change the name of that run based on the file path
+def _extract_fn(file_path):
+    if 'temperature' in file_path:
+        pattern = re.compile(r'_t(\d+)_IOHEvaluator')
+        match = pattern.search(file_path)
+        if match:
+            t = float(match.group(1)) / 10
+            return f"{t}"
+        pattern = re.compile(r'evol_\d*-\d*_(\w+)_IOHEvaluator')
+        match = pattern.search(file_path)
+        if match:
+            f = match.group(1)
+            return f"{f}"
+
+    elif 'top_k' in file_path:
+        pattern = re.compile(r'_k(\d+)_IOHEvaluator')
+        match = pattern.search(file_path)
+        if match:
+            k = int(match.group(1))
+            return f"{k}"
+    elif 'top_p' in file_path:
+        pattern = re.compile(r'_p(\d+)_IOHEvaluator')
+        match = pattern.search(file_path)
+        if match:
+            p = int(match.group(1)) / 100
+            return f"{p}"
+    elif 'pop_40_4-16' in file_path:
+        pattern = re.compile(r'evol_\d*-\d*_(.+)_IOHEvaluator')
+        match = pattern.search(file_path)
+        if match:
+            f = match.group(1)
+            return f"{f}"
+    elif 'pop_40_cr' in file_path:
+        pattern = re.compile(r'_cr(\d+)_IOHEvaluator')
+        match = pattern.search(file_path)
+        if match:
+            cr = int(match.group(1)) / 10
+            return f"{cr}"
+    elif 'pop_4+8_template' in file_path:
+        pattern = re.compile(r'evol_4\+8_(.+)_IOHEvaluator')
+        match = pattern.search(file_path)
+        if match:
+            suffix = match.group(1)
+            # remove t0.5
+            suffix = suffix.replace('_t0.5', '')
+            suffix = suffix.replace('_t05', '')
+            if 'cr0.0' in suffix:
+                suffix = suffix.replace('_cr0.0', '')
+                suffix = 'cr0.0_' + suffix
+            if 'cr0.6' in suffix:
+                suffix = suffix.replace('_cr0.6', '')
+                suffix = 'cr0.6_' + suffix
+            return suffix, True
+    return '', False
+
+def extract_results_to_ioh_csv(dir_path, pop_save_path, extract_fn=None):
+    res_df, _ = _load_results(dir_path, file_paths=None, extract_fn=extract_fn, save_name=pop_save_path)
+
+    aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_ind'])[["log_y_aoc"]].agg(np.mean).reset_index()
+
+    strategies = aoc_df['strategy'].unique()
+    repeats = aoc_df['n_strategy'].unique()
+
+    df_aoc_data = []
+
+    for strategy in strategies:
+        for repeat in repeats:
+            _strategy_df = aoc_df[(aoc_df['strategy'] == strategy) & (aoc_df['n_strategy'] == repeat)]
+            if len(_strategy_df) == 0:
+                continue
+            max_ind = _strategy_df['n_ind'].max()
+            _strategy_df = _strategy_df.sort_values(by='n_ind')
+            _strategy_df = _strategy_df.reset_index(drop=True)
+            _strategy_df = _strategy_df.drop(columns=['strategy', 'n_strategy'])
+            # n_ind should be range from 1 to 100. add the missing n_ind with 0
+            _strategy_df = _strategy_df.set_index('n_ind')
+            _strategy_df = _strategy_df.reindex(range(1, max_ind + 1), fill_value=0)
+            _strategy_df = _strategy_df.reset_index()
+            _strategy_df = _strategy_df.rename(columns={'index': 'n_ind'})
+            _strategy_df = _strategy_df.sort_values(by='n_ind')
+            _strategy_df = _strategy_df.reset_index(drop=True)
+
+            for i in range(len(_strategy_df)):
+                aoc = _strategy_df.at[i, 'log_y_aoc']
+
+                df_aoc_data.append({
+                    'Evaluation counter': i + 1,
+                    'Function values': aoc,
+                    'Function ID': 'F1-F24',
+                    'Algorithm ID': strategy,
+                    'Problem dimension': 5,
+                    'Run ID': repeat, 
+                })
+            
+    # Create a DataFrame from the list of dictionaries
+    df_aoc = pd.DataFrame(df_aoc_data)
+    df_aoc.to_csv(f"{dir_path}/es_ioh_aoc.csv", index=False)
+
+
+    p_aoc_df = res_df.groupby(['strategy', 'n_strategy', 'problem_id', 'n_ind'])[["log_y_aoc"]].agg(np.mean).reset_index()
+
+    strategies = p_aoc_df['strategy'].unique()
+    repeats = p_aoc_df['n_strategy'].unique()
+    problems = p_aoc_df['problem_id'].unique()
+
+    df_aoc_data = []
+
+    for strategy in strategies:
+        for repeat in repeats:
+            for problem in problems:
+                _strategy_df = p_aoc_df[(p_aoc_df['strategy'] == strategy) & (p_aoc_df['n_strategy'] == repeat) & (p_aoc_df['problem_id'] == problem)]
+                if len(_strategy_df) == 0:
+                    continue
+                max_ind = _strategy_df['n_ind'].max()
+                _strategy_df = _strategy_df.sort_values(by='n_ind')
+                _strategy_df = _strategy_df.reset_index(drop=True)
+                _strategy_df = _strategy_df.drop(columns=['strategy', 'n_strategy'])
+                # n_ind should be range from 1 to 100. add the missing n_ind with 0
+                _strategy_df = _strategy_df.set_index('n_ind')
+                _strategy_df = _strategy_df.reindex(range(1, max_ind + 1), fill_value=0)
+                _strategy_df = _strategy_df.reset_index()
+                _strategy_df = _strategy_df.rename(columns={'index': 'n_ind'})
+                _strategy_df = _strategy_df.sort_values(by='n_ind')
+                _strategy_df = _strategy_df.reset_index(drop=True)
+
+                for i in range(len(_strategy_df)):
+                    aoc = _strategy_df.at[i, 'log_y_aoc']
+
+                    df_aoc_data.append({
+                        'Evaluation counter': i + 1,
+                        'Function values': aoc,
+                        'Function ID': problem,
+                        'Algorithm ID': strategy,
+                        'Problem dimension': 5,
+                        'Run ID': repeat, 
+                    })
+    # Create a DataFrame from the list of dictionaries
+    df_aoc = pd.DataFrame(df_aoc_data)
+    df_aoc.to_csv(f"{dir_path}/es_ioh_p_aoc.csv", index=False)
+    
+
+def update_aoc_for_res():
+    file_path = 'Experiments/ESPopulation_evol_4-16_final_0222112835.pkl'
+    with open(file_path, 'rb') as f:
+        res = RenameUnpickler.unpickle(f)
+
+    for _, ind in res.individuals.items():
+        hanlder = Population.get_handler_from_individual(ind)
+        eval_res = hanlder.eval_result
+        if eval_res is not None:
+            for sub_res in eval_res.result:
+                sub_res.update_aoc_with_new_bound_if_needed()
+            eval_res.score = np.mean([r.log_y_aoc for r in eval_res.result])
+            ind.fitness = eval_res.score
+
+    new_file_path = file_path.replace('final', 'final_aoc')
+    with open(new_file_path, 'wb') as f:
+        pickle.dump(res, f)
+
+
+
+def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
     res_df = None
-    _save = False
-    _load = False
     if save_name is not None: 
         if os.path.exists(save_name):
-            _load = True
-        else:
-            _save = True
-    if _load:
-        res_df = pd.read_pickle(save_name)
-    else: 
-        _strategy_count = {}
-        res_df = pd.DataFrame(columns=column_names)
-        for strategy_name, pop in results:
-            if strategy_name not in _strategy_count:
-                _strategy_count[strategy_name] = 0
-            _strategy_count[strategy_name] += 1
-            pop_id = getattr(pop, 'pop_id', f"{strategy_name}_{_strategy_count[strategy_name]}")
-            n_generation = pop.get_current_generation()
-            if n_generation == 0:
-                n_generation = 1
-            n_iter = 1
-            n_ind = 0
-            for gen in range(n_generation):
-                # offspring generated in this generation
-                gen_offsprings = pop.get_offsprings(generation=gen)
-                n_iter += len(gen_offsprings)
-                # offspring selected in this generation
-                # gen_inds = pop.get_individuals(generation=gen)
-                gen_inds = gen_offsprings
-                for i, ind in enumerate(gen_inds):
-                    handler = Population.get_handler_from_individual(ind)
-                    n_ind += 1
-                    _count = _strategy_count[strategy_name]
-                    if handler.eval_result is None:
-                        continue
-                    for res in handler.eval_result.result:
-                        res.update_aoc_with_new_bound_if_needed()
-                        row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=n_ind, n_strategy=_count, pop_id=pop_id)
-                        res_df.loc[len(res_df)] = row
+            res_df = pd.read_pickle(save_name)
 
-    if _save: 
-        res_df.to_pickle(save_name)
-    return res_df
-
-g_default_color_list = matplotlib.colormaps['tab10'].colors
-g_strategy_color_map = {
-
-}
-
-def _plot_search_aoc(res_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
-    max_aoc_df = res_df.groupby(['pop_id', 'strategy', 'n_strategy', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
-    max_aoc_df = max_aoc_df.groupby(['pop_id', 'strategy', 'n_strategy'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
-    # max_aoc_df = max_aoc_df.groupby(['strategy'])[['log_y_aoc', 'y_aoc', 'pop_id']].agg(list).reset_index()
-
-    _volin_y = []
-    _scatter_colors = []
-    # generate color list for scatter color
-    for strategy in unique_strategies:
-        strategy_df = max_aoc_df[max_aoc_df['strategy'] == strategy]
-
-        _max_aoc_list = []
-        _colors = []
-
-        _count = 0
-        for i, row in strategy_df.iterrows():
-            _max_aoc_list.append(row['log_y_aoc'])
-            _colors.append(g_default_color_list[_count])
-            pop_id = row['pop_id']
-            g_strategy_color_map[pop_id] = g_default_color_list[_count]
-            _count += 1
-
-        # get sorted indices
-        sorted_indices = np.argsort(_max_aoc_list)
-        # for overlapping point (diff < 0.001), move away for 0.001
-        unit_cap = 0.0010
-        for i, index in enumerate(sorted_indices):
-            if i == len(sorted_indices) - 1:
-                break
-            next_index = sorted_indices[i + 1]
-            _max_aoc = _max_aoc_list[index]
-            next_max_aoc = _max_aoc_list[next_index]
-            if next_max_aoc - _max_aoc < unit_cap:
-                _max_aoc_list[next_index] = _max_aoc + unit_cap
-
-        post_sorted_indices = np.argsort(_max_aoc_list)
-
-
-        _volin_y.append(np.array(_max_aoc_list))
-        _scatter_colors.append(_colors)
-
-    # plot_voilin_style_scatter(
-    #     data=[_volin_y],
-    #     labels=[unique_strategies],
-    #     n_cols=4,
-    #     title="AOC",
-    #     label_fontsize=10,
-    #     figsize=(14, 8),
-    #     )
-
-    file_name = 'search_aoc_voilin'
-    if fig_dir is not None:
-        file_name = os.path.join(fig_dir, file_name)
-
-    plot_box_violin(
-        data=[_volin_y],
-        labels=[unique_strategies],
-        # y_labels=['AOCC'],
-        sub_titles=['AOCC'],
-        y_tick_fontsize=12,
-        x_tick_fontsize=13,
-        x_label_rotation=15,
-        show_scatter=True,
-        scatter_colors=[_scatter_colors],
-        scatter_alpha=0.8,
-        width=0.6,
-        n_cols=4,
-        label_fontsize=11,
-        figsize=(8, 4),
-        filename=file_name,
-        show=False
-        )
-
-def _group_plus_aoc(strategy_group:dict, strategy:str, y_aoc:np.ndarray, log_y_aoc:np.ndarray, std_y_aoc:np.ndarray, std_log_y_aoc:np.ndarray):
-    # same n_parent: 4, 8, 12, 20
-    # n_offspring: mu > lambda, mu <= lambda
-    gruoup_name_map = {
-        '4': '4+*',
-        '8': '8+*',
-        '12': '12+*',
-        '20': '20+*',
-        'mu': '$\mu$ > $\lambda$',
-        'lambda': '$\mu$ <= $\lambda$',
-    }
-
-    mu, lam = strategy.split('+') 
-    int_mu, int_lam = int(mu), int(lam)
-
-    if int_mu == 1 or mu in strategy_group:
-        _keys = []
-        if int_mu == 1:
-            _keys.extend(gruoup_name_map.keys())
-        else:
-            _keys.append(mu)
-            if int_mu > int_lam:
-                _keys.append('mu')
-            else:
-                _keys.append('lambda')
+    if file_paths is None:
+        file_paths = []
+        for dir_name in os.listdir(dir_path):
+            if not os.path.isdir(os.path.join(dir_path, dir_name)):
+                continue
+            for file_name in os.listdir(os.path.join(dir_path, dir_name)):
+                if "final" not in file_name:
+                    continue
+                file_path = os.path.join(dir_path, dir_name, file_name)
+                file_paths.append(file_path)
         
-        for _key in _keys:
-            if _key not in strategy_group:
-                _temp = {
-                    'aoc': [],
-                    'aoc_filling': [],
-                    'log_aoc': [],
-                    'log_aoc_filling': [],
-                    'labels': [], 
-                }
-                strategy_group[_key] = _temp
-                strategy_group[_key]['name'] = gruoup_name_map[_key]
-            
-            strategy_group[_key]['aoc'].append(y_aoc)
-            strategy_group[_key]['aoc_filling'].append((y_aoc + std_y_aoc, y_aoc - std_y_aoc))
-            strategy_group[_key]['log_aoc'].append(log_y_aoc)
-            strategy_group[_key]['log_aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
-            strategy_group[_key]['labels'].append(strategy)
-        
-def _plot_search_group_aoc(res_df:pd.DataFrame, unique_strategies:list[str], group_fn=None, fig_dir=None):
-    max_n_iter = res_df['n_iter'].max()
-    aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_iter', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
-
-    # aoc_df = aoc_df.groupby(['strategy', 'n_strategy', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
-    # iter_column = 'n_iter'
-
-    aoc_df = aoc_df.groupby(['strategy', 'n_strategy',])[['n_ind',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
-    iter_column = 'n_ind'
-
-    aoc_df['acc_y_aoc'] = aoc_df.apply(combine_acc('y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
-    aoc_df['acc_log_y_aoc'] = aoc_df.apply(combine_acc('log_y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
-
-    aoc_df = aoc_df.groupby(['strategy'])[['acc_y_aoc', 'acc_log_y_aoc']].agg(list).reset_index()
-
-    strategy_group = {}
-
-    strategy_aoc = []
-    strategy_filling = []
-
-    strategy_log_aoc = []
-    strategy_log_filling = []
-
-    labels = []
-
-    for strategy in unique_strategies:
-        strategy_df = aoc_df[aoc_df['strategy'] == strategy]
-
-        acc_y_aoc = np.array(strategy_df['acc_y_aoc'].values[0])
-        y_aoc = np.mean(acc_y_aoc, axis=0)
-        std_y_aoc = np.std(acc_y_aoc, axis=0)
-        strategy_aoc.append(y_aoc)
-        strategy_filling.append((y_aoc + std_y_aoc, np.clip(y_aoc - std_y_aoc, 0, None)))
-
-        acc_log_y_aoc = np.array(strategy_df['acc_log_y_aoc'].values[0])
-        log_y_aoc = np.mean(acc_log_y_aoc, axis=0)
-        std_log_y_aoc = np.std(acc_log_y_aoc, axis=0)
-        strategy_log_aoc.append(log_y_aoc)
-        strategy_log_filling.append((log_y_aoc + std_log_y_aoc, np.clip(log_y_aoc - std_log_y_aoc, 0, None)))
-
-        labels.append(strategy)
-
-        if group_fn is not None:
-            group_fn(strategy_group, strategy, y_aoc, log_y_aoc, std_y_aoc, std_log_y_aoc)
-
-    # _d_data = pd.read_pickle("Experiments/log_eater/llamea-data.pkl")
-
-    # for strategy in ['LLaMEA (4+16)', 'LLaMEA (1+1)']:  
-    #     strategy_df = _d_data[_d_data['method_name'] == strategy]
-    #     method_data = strategy_df.sort_values(by=["seed", "_id"])
-    #     # Group by 'seed' and calculate the cumulative max fitness
-    #     method_data["cummax_fitness"] = method_data.groupby("seed")[
-    #         "fitness"
-    #     ].cummax()
-    #     # Calculate the mean and std of cumulative max fitness
-    #     summary = (
-    #                 method_data.groupby("_id")["cummax_fitness"]
-    #                 .agg(["mean", "std"])
-    #                 .reset_index()
-    #             )
-
-    #     mean_aoc = summary['mean'].values
-    #     mean_aoc = np.concatenate(([mean_aoc[0]], mean_aoc))
-    #     # mean_aoc -= 0.008
-    #     mean_aoc = np.clip(mean_aoc, 0, None)
-    #     std_aoc = summary['std'].values
-    #     std_aoc = np.concatenate(([std_aoc[0]], std_aoc))
-
-        # strategy_log_filling.append((mean_aoc + std_aoc, np.clip(mean_aoc - std_aoc, 0, None))) 
-        # strategy_log_aoc.append(mean_aoc)
-
-        # labels.append(strategy)
-
-    plot_y = []
-    sub_titles = []
-    fillings = []
-    plot_labels = []
-    y_scale = []
-
-    if len(strategy_group) > 0:
-        for group_key, group_ele in strategy_group.items():
-            # plot_y.append(np.array(group_ele['aoc']))
-            # fillings.append(group_ele['aoc_filling'])
-
-            plot_y.append(np.array(group_ele['log_aoc']))
-            fillings.append(group_ele['log_aoc_filling'])
-            sub_titles.append(group_ele['name'])
-            plot_labels.append(group_ele['labels'])
+        if len(file_paths) == 0:
+            raise ValueError(f"Invalid directory path: {dir_path}")
     else:
-        plot_y = [np.array(strategy_log_aoc)]
-        fillings = [strategy_log_filling]
-        plot_labels = [labels]
-        # y_scale = [("symlog", {})]
+        if len(file_paths) == 0:
+            raise ValueError(f"Invalid file paths: {file_paths}")
 
-    file_name = 'es_aoc_lines'
-    if fig_dir is not None:
-        file_name = os.path.join(fig_dir, file_name)
+    pop_list = []
+    best_pop_map = {}
+    for file_path in file_paths:
+        pop = RenameUnpickler.unpickle(open(file_path, "rb"))
+        n_parent = pop.n_parent
+        n_offspring = pop.n_offspring
 
-    x_base = np.arange(len(strategy_aoc[0]), dtype=np.int16)
-    x = np.tile(x_base, (len(plot_y), 1))
+        name = f"{n_parent},{n_offspring}"
+        if pop.use_elitism:
+            name = f"{n_parent}+{n_offspring}"
 
-    # for main content
-    _label_fontsize = 13
-    _tick_fontsize = 13
-    _y_label_fontsize = 12
-    _line_width = 1.4
-    _figsize = (5, 4)
+        if extract_fn is not None:
+            sub_fix, exclusive = extract_fn(file_path)
+            if sub_fix:
+                if exclusive:
+                    name = sub_fix
+                else:
+                    name += f"_{sub_fix}"
 
-    # for sub content
-    _label_fontsize = 13
-    _tick_fontsize = 13
-    _y_label_fontsize = 13
-    _line_width = 1.5
-    _figsize = (8, 4)
+        pop_list.append((name, pop))
 
-    plot_lines(
-        y = plot_y,
-        x = x,
-        labels = plot_labels,
-        label_fontsize=_label_fontsize,
-        tick_fontsize=_tick_fontsize,
-        y_labels=['AOCC'],
-        y_label_fontsize=_y_label_fontsize,
-        filling=fillings,
-        # sub_titles=sub_titles,
-        y_scales=y_scale,
-        linewidth=_line_width,
-        n_cols=3,
-        figsize=_figsize,
-        filename=file_name,
-        show=False,
-        )
+        cur_best = best_pop_map.get(name, None)
+        if cur_best is None or pop.get_best_of_all().fitness > cur_best.get_best_of_all().fitness:
+            best_pop_map[name] = pop
 
+        # ind_index = 1
+        # for gen, keys in enumerate(pop.generations):
+        #     for key in keys:
+        #         ind = pop.individuals.get(key, None)
+        #         handler = Population.get_handler_from_individual(ind)
+        #         if handler.eval_result is not None:
+        #             handler.eval_result.update_aoc_with_new_bound_if_needed()
+        #             ind.fitness = handler.eval_result.score
+
+        #         pop.save_on_the_fly(ind, gen, ind_index)
+        #         ind_index += 1
+
+    pop_count_map = {}
+    for pop_name, pop in pop_list:
+        if pop_name not in pop_count_map:
+            pop_count_map[pop_name] = 0
+        pop_count_map[pop_name] += 1
+        setattr(pop, 'pop_id', pop_name + f"_{pop_count_map[pop_name]}")
+
+    if res_df is not None:
+        return res_df, pop_list
+
+    res_df = _process_search_result(pop_list, save_name=save_name)
+    return res_df, pop_list
+
+
+def load_search_result_for_llms(save_dir=None):
+    dir_paths = {
+        'GPT-4o': 'Experiments/log_eater/pop_gpt4o',
+        'Qwen3-Coder': 'Experiments/log_eater/pop_qwen3_coder',
+        'DeepSeek-R1': 'Experiments/log_eater/pop_r1',
+        'Gemini-2.0-Flash': 'Experiments/log_eater/pop_100_tkcr',
+        'Gemini-2.5-Flash': 'Experiments/log_eater/pop_gemini_2.5',
+    }
+    save_name = save_dir + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl' if save_dir else None
+    save_name = save_dir + '/df_res_07311321.pkl' if save_dir else None
+    res_list = []
+    name_filter = '4-16'
+    for name, dir_path in dir_paths.items():
+        file_paths = []
+        for dir_name in os.listdir(dir_path):
+            if not os.path.isdir(os.path.join(dir_path, dir_name)):
+                continue
+            if name_filter not in dir_name:
+                continue
+            for file_name in os.listdir(os.path.join(dir_path, dir_name)):
+                if "final" not in file_name:
+                    continue
+                file_path = os.path.join(dir_path, dir_name, file_name)
+                file_paths.append(file_path)
+
+        for file_path in file_paths:
+            pop = RenameUnpickler.unpickle(open(file_path, "rb"))
+            res_list.append((name, pop))
+
+    res_df = _process_search_result(res_list, save_name=save_name)
+
+    return res_df, res_list
+
+# Plot the similarity
 
 def _calculate_pop_sim(pop:Population, iter_sim_func, total_sim_func):
     iter_sim = []
@@ -608,6 +559,7 @@ def _plot_serach_pop_similarity(results:list[tuple[str,Population]], unique_stra
         figsize=(12, 9),
         )
 
+# Plot the error 
 def _process_error_data(results:list[tuple[str,Population]]):
     # - error rate by strategy
     # - error rate by generation
@@ -669,7 +621,7 @@ def print_error(err_df:pd.DataFrame):
     for i, err in enumerate(err_list):
         print(f"{i+1}. Strategy: {err['strategy']}, n_gen: {err['n_gen']}, err_type: {err['err_type']}, algo: {err['algo']}, repeat: {err['n_repeat']}\n {err['err_msg']}\n")
 
-def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
+def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None, colored_scatter=False, use_error_count=False):
 
     _all_error_df = err_df[err_df['n_gen'] < 10]
 
@@ -689,9 +641,11 @@ def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]
         for i, row in _strategy_error_df.iterrows():
             _error_rate.append(row['err_rate'])
             _error_count.append(row['err_count'])
-            _pop_id = row['pop_id']
-            _color = g_strategy_color_map[_pop_id] if g_strategy_color_map is not None else None
-            _colors.append(_color)
+
+            if colored_scatter:
+                _pop_id = row['pop_id']
+                _color = g_strategy_color_map[_pop_id] if g_strategy_color_map is not None else None
+                _colors.append(_color)
 
         if len(_error_rate) == 0:
             _error_rate = [0]
@@ -729,15 +683,16 @@ def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]
     if fig_dir is not None:
         file_name = os.path.join(fig_dir, file_name)
 
-    _y_data = [y_err_rates]
-    _y_labels = ['Error Rate']
-    _y_integer_ticks = False
-    _sub_titles = ['Error Rate']
-
-    _y_data = [y_err_counts]
-    _y_labels = ['Number of Errors']
-    _sub_titles = ['Number of Errors']
-    _y_integer_ticks = True
+    if use_error_count is False:
+        _y_data = [y_err_rates]
+        _y_labels = ['Error Rate']
+        _y_integer_ticks = False
+        _sub_titles = ['Error Rate']
+    else:
+        _y_data = [y_err_counts]
+        _y_labels = ['Number of Errors']
+        _sub_titles = ['Number of Errors']
+        _y_integer_ticks = True
 
     plot_box_violin(
         data=_y_data,
@@ -748,7 +703,7 @@ def _plot_search_all_error_rate(err_df:pd.DataFrame, unique_strategies:list[str]
         y_integer_ticks=_y_integer_ticks,
         x_label_rotation=15,
         show_scatter=True,
-        scatter_colors=[scatter_colors],
+        scatter_colors=[scatter_colors] if colored_scatter else None,
         scatter_alpha=0.8,
         n_cols=4,
         width=0.6,
@@ -845,7 +800,6 @@ def _plot_search_error_type(error_df:pd.DataFrame, unique_strategies:list[str], 
     #         #    autopct=lambda p: '{:d}'.format(int(p / 100 * _all_type_count)),
     #             )
     #     fig.suptitle(_title)
-
 
 def _group_plus_error_rate(strategy_group:dict, strategy:str, mean_err_rate:float, std_err_rate:float):
     # same n_parent: 4, 8, 12, 20
@@ -962,72 +916,376 @@ def _plot_search_error_rate_by_generation(err_df:pd.DataFrame, unique_strategies
         figsize=(15, 9),
         )  
 
-def _group_plus_aoc_loss(strategy_group_in_problem:dict, strategy:str, y_aoc:np.ndarray, log_y_aoc:np.ndarray, std_y_aoc:np.ndarray, std_log_y_aoc:np.ndarray, loss:np.ndarray, std_loss:np.ndarray):
-    # same n_parent: 4, 8, 12, 20
-    # n_offspring: mu > lambda, mu <= lambda
-    gruoup_name_map = {
-        '4': '4+*',
-        '8': '8+*',
-        '12': '12+*',
-        '20': '20+*',
-        'mu': '$\mu$ > $\lambda$',
-        'lambda': '$\mu$ <= $\lambda$',
-    }
 
-    mu, lam = strategy.split('+') 
-    int_mu, int_lam = int(mu), int(lam)
+def _calculate_error_info(pop_list:list[tuple[str,Population]]):
+    # total error: number / total number, P(err)
+    # initial error: number / total number, P(err|gen==1)
+    # error crossover error: number / total number, P(err|err_p == True and op == crossover)
+    # error mutation error: number / total number, P(err|err_p == True and op == mutation)
+    # non-error crossover error: number / total number, P(err|err_p == False and op == crossover)
+    # non-error mutation error: number / total number, P(err|err_p == False and op == mutation)
+    error_infos = {}
+    for name, pop in pop_list:
+        n_generation = pop.get_current_generation()
+        for gen in range(n_generation):
+            gen_offsprings = pop.get_offsprings(generation=gen)
+            for ind in gen_offsprings:
+                handler = Population.get_handler_from_individual(ind)
+                has_error = handler.eval_result is None or handler.eval_result.score == 0.0
+                error_count = 1 if has_error else 0
 
-    if int_mu == 1 or mu in strategy_group_in_problem:
-        _keys = []
-        if int_mu == 1:
-            _keys.extend(gruoup_name_map.keys())
+                if name not in error_infos:
+                    error_info = {
+                        'total': (0, 0),  # (error_count, total_count)
+                        'initial': (0, 0),  # (error_count, total_count)
+                        'error_crossover': (0, 0),  # (error_count, total_count)
+                        'error_mutation': (0, 0),  # (error_count, total_count)
+                        'non_error_crossover': (0, 0),  # (error_count, total_count)
+                        'non_error_mutation': (0, 0),  # (error_count, total_count)
+                    }
+                    error_infos[name] = error_info
+                else:
+                    error_info = error_infos[name]
+
+                # total error
+                error_info['total'] = (
+                    error_info['total'][0] + error_count,
+                    error_info['total'][1] + 1
+                )
+
+                if gen == 0:
+                    error_info['initial'] = (
+                        error_info['initial'][0] + error_count,
+                        error_info['initial'][1] + 1
+                    )
+                else:
+                    parents = pop.get_parent(ind)
+                    if len(parents) == 1:
+                        # mutation
+                        parent = parents[0]
+                        parent_handler = Population.get_handler_from_individual(parent)
+                        has_p_error = parent_handler.eval_result is None or parent_handler.eval_result.score == 0.0
+                        if has_p_error:
+                            error_info['error_mutation'] = (
+                                error_info['error_mutation'][0] + error_count,
+                                error_info['error_mutation'][1] + 1
+                            )
+                        else:
+                            error_info['non_error_mutation'] = (
+                                error_info['non_error_mutation'][0] + error_count,
+                                error_info['non_error_mutation'][1] + 1
+                            )
+                    elif len(parents) == 2:
+                        # crossover
+                        has_error = False
+                        for parent in parents:
+                            parent_handler = Population.get_handler_from_individual(parent)
+                            has_error = has_error or (parent_handler.eval_result is None or parent_handler.eval_result.score == 0.0)
+                            if has_error:
+                                break
+                        if has_error:
+                            error_info['error_crossover'] = (
+                                error_info['error_crossover'][0] + error_count,
+                                error_info['error_crossover'][1] + 1
+                            )
+                        else:
+                            error_info['non_error_crossover'] = (
+                                error_info['non_error_crossover'][0] + error_count,
+                                error_info['non_error_crossover'][1] + 1
+                            )
+
+    for name, error_info in error_infos.items():
+        print(f"Error info for {name}:")
+        for key in error_info:
+            ratio = error_info[key][0] / error_info[key][1] if error_info[key][1] > 0 else 0.0
+            print(f"  {key}: {ratio:.4f} ({error_info[key][0]} / {error_info[key][1]})")
+
+
+# plot_search_result
+def _process_search_result(results:list[tuple[str,Population]], save_name=None):
+    column_names = [
+        'strategy',
+        'n_strategy',
+        'pop_id',
+        'problem_id',
+        'instance_id',
+        'exec_id',
+        'n_gen',
+        'n_iter',
+        'n_ind',
+        "log_y_aoc",
+        "y_aoc",
+        "best_y",
+        'loss',
+        ]
+
+    def res_to_row(res, gen:int, strategy_name:str, n_iter:int, n_ind:int, n_strategy:int, pop_id:str):
+        res_id = res.id
+        res_split = res_id.split("-")
+        problem_id = int(res_split[0])
+        instance_id = int(res_split[1])
+        repeat_id = int(res_split[2])
+        row = {
+            'strategy': strategy_name,
+            'n_strategy': n_strategy,
+            'pop_id': pop_id,
+            'problem_id': problem_id,
+            'instance_id': instance_id,
+            'exec_id': repeat_id,
+            'n_gen': gen+1,
+            'n_iter': n_iter,
+            'n_ind': n_ind,
+            "log_y_aoc": res.log_y_aoc,
+            "y_aoc": res.y_aoc,
+            "best_y": res.best_y,
+            'loss': abs(res.optimal_value - res.best_y),
+        }
+        return row
+
+    res_df = None
+    _save = False
+    _load = False
+    if save_name is not None: 
+        if os.path.exists(save_name):
+            _load = True
         else:
-            _keys.append(mu)
-            if int_mu > int_lam:
-                _keys.append('mu')
-            else:
-                _keys.append('lambda')
-        
-        for _key in _keys:
-            if _key not in strategy_group_in_problem:
-                _temp = {
-                    'aoc': [],
-                    'aoc_filling': [],
-                    'loss': [],
-                    'loss_filling': [],
-                    'labels': [], 
-                }
-                strategy_group_in_problem[_key] = _temp
-                strategy_group_in_problem[_key]['name'] = gruoup_name_map[_key]
+            _save = True
+    if _load:
+        res_df = pd.read_pickle(save_name)
+    else: 
+        _strategy_count = {}
+        res_df = pd.DataFrame(columns=column_names)
+        for strategy_name, pop in results:
+            if strategy_name not in _strategy_count:
+                _strategy_count[strategy_name] = 0
+            _strategy_count[strategy_name] += 1
+            pop_id = getattr(pop, 'pop_id', f"{strategy_name}_{_strategy_count[strategy_name]}")
+            n_generation = pop.get_current_generation()
+            if n_generation == 0:
+                n_generation = 1
+            n_iter = 1
+            n_ind = 0
+            for gen in range(n_generation):
+                # offspring generated in this generation
+                gen_offsprings = pop.get_offsprings(generation=gen)
+                n_iter += len(gen_offsprings)
+                # offspring selected in this generation
+                # gen_inds = pop.get_individuals(generation=gen)
+                gen_inds = gen_offsprings
+                for i, ind in enumerate(gen_inds):
+                    handler = Population.get_handler_from_individual(ind)
+                    n_ind += 1
+                    _count = _strategy_count[strategy_name]
+                    if handler.eval_result is None:
+                        continue
+                    for res in handler.eval_result.result:
+                        res.update_aoc_with_new_bound_if_needed()
+                        row = res_to_row(res, gen, strategy_name=strategy_name, n_iter=n_iter, n_ind=n_ind, n_strategy=_count, pop_id=pop_id)
+                        res_df.loc[len(res_df)] = row
 
-            strategy_group_in_problem[_key]['aoc'].append(log_y_aoc)
-            strategy_group_in_problem[_key]['aoc_filling'].append((log_y_aoc + std_log_y_aoc, log_y_aoc - std_log_y_aoc))
-            strategy_group_in_problem[_key]['loss'].append(loss)
-            strategy_group_in_problem[_key]['loss_filling'].append((loss + std_loss, loss - std_loss))
-            strategy_group_in_problem[_key]['labels'].append(strategy)
-    
-def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
-    def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
-        _clip_len = int(data.shape[1] * upper_len_ratio)
-        _upper_bound = _bound
-        if bound_type == 'mean':
-            if inverse:
-                _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
-            else:
-                _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
-        elif bound_type == 'median':
-            if inverse:
-                _upper_bound = np.nanmedian(data[:, _clip_len:])
-            else:
-                _upper_bound = np.nanmedian(data[:, :_clip_len])
-        elif bound_type == 'fixed' and _bound is not None:
-            _upper_bound = _bound
+    if _save: 
+        res_df.to_pickle(save_name)
+    return res_df
 
-        _data = np.clip(data, 0, _upper_bound)
-        return _data, _upper_bound
-    return _clip_upper
+g_default_color_list = matplotlib.colormaps['tab10'].colors
+g_strategy_color_map = {
 
-def _plot_search_problem_aoc_and_loss(res_df:pd.DataFrame, group_fn=None, fig_dir=None):
+}
+
+def _plot_search_aoc_violin(res_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None, colored_scatter=False):
+    max_aoc_df = res_df.groupby(['pop_id', 'strategy', 'n_strategy', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
+    max_aoc_df = max_aoc_df.groupby(['pop_id', 'strategy', 'n_strategy'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
+    # max_aoc_df = max_aoc_df.groupby(['strategy'])[['log_y_aoc', 'y_aoc', 'pop_id']].agg(list).reset_index()
+
+    _volin_y = []
+    _scatter_colors = []
+    # generate color list for scatter color
+    for strategy in unique_strategies:
+        strategy_df = max_aoc_df[max_aoc_df['strategy'] == strategy]
+
+        _max_aoc_list = []
+        _colors = []
+
+        _count = 0
+        for i, row in strategy_df.iterrows():
+            _max_aoc_list.append(row['log_y_aoc'])
+
+            if colored_scatter:
+                _colors.append(g_default_color_list[_count])
+                pop_id = row['pop_id']
+                g_strategy_color_map[pop_id] = g_default_color_list[_count]
+            _count += 1
+
+        # get sorted indices
+        sorted_indices = np.argsort(_max_aoc_list)
+        # for overlapping point (diff < 0.001), move away for 0.001
+        unit_cap = 0.0010
+        for i, index in enumerate(sorted_indices):
+            if i == len(sorted_indices) - 1:
+                break
+            next_index = sorted_indices[i + 1]
+            _max_aoc = _max_aoc_list[index]
+            next_max_aoc = _max_aoc_list[next_index]
+            if next_max_aoc - _max_aoc < unit_cap:
+                _max_aoc_list[next_index] = _max_aoc + unit_cap
+
+        post_sorted_indices = np.argsort(_max_aoc_list)
+
+
+        _volin_y.append(np.array(_max_aoc_list))
+        _scatter_colors.append(_colors)
+
+    # plot_voilin_style_scatter(
+    #     data=[_volin_y],
+    #     labels=[unique_strategies],
+    #     n_cols=4,
+    #     title="AOC",
+    #     label_fontsize=10,
+    #     figsize=(14, 8),
+    #     )
+
+    file_name = 'search_aoc_voilin'
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+
+    plot_box_violin(
+        data=[_volin_y],
+        labels=[unique_strategies],
+        # y_labels=['AOCC'],
+        sub_titles=['AOCC'],
+        y_tick_fontsize=12,
+        x_tick_fontsize=13,
+        x_label_rotation=15,
+        show_scatter=True,
+        scatter_colors=[_scatter_colors] if colored_scatter else None,
+        scatter_alpha=0.8,
+        width=0.6,
+        n_cols=4,
+        label_fontsize=11,
+        figsize=(8, 4),
+        filename=file_name,
+        show=False
+        )
+
+def _plot_search_aoc_line(res_df:pd.DataFrame, unique_strategies:list[str], fig_dir=None):
+    max_n_iter = res_df['n_iter'].max()
+    aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_iter', 'n_ind'])[["log_y_aoc", "y_aoc"]].agg(np.mean).reset_index()
+
+    # aoc_df = aoc_df.groupby(['strategy', 'n_strategy', 'n_iter'])[["log_y_aoc", "y_aoc"]].agg(np.max).reset_index()
+    # iter_column = 'n_iter'
+
+    aoc_df = aoc_df.groupby(['strategy', 'n_strategy',])[['n_ind',"log_y_aoc", "y_aoc"]].agg(list).reset_index()
+    iter_column = 'n_ind'
+
+    aoc_df['acc_y_aoc'] = aoc_df.apply(combine_acc('y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
+    aoc_df['acc_log_y_aoc'] = aoc_df.apply(combine_acc('log_y_aoc', max_n_iter=max_n_iter, iter_column=iter_column), axis=1)
+
+    aoc_df = aoc_df.groupby(['strategy'])[['acc_y_aoc', 'acc_log_y_aoc']].agg(list).reset_index()
+
+    strategy_aoc = []
+    strategy_filling = []
+
+    strategy_log_aoc = []
+    strategy_log_filling = []
+
+    labels = []
+
+    for strategy in unique_strategies:
+        strategy_df = aoc_df[aoc_df['strategy'] == strategy]
+
+        acc_y_aoc = np.array(strategy_df['acc_y_aoc'].values[0])
+        y_aoc = np.mean(acc_y_aoc, axis=0)
+        std_y_aoc = np.std(acc_y_aoc, axis=0)
+        strategy_aoc.append(y_aoc)
+        strategy_filling.append((y_aoc + std_y_aoc, np.clip(y_aoc - std_y_aoc, 0, None)))
+
+        acc_log_y_aoc = np.array(strategy_df['acc_log_y_aoc'].values[0])
+        log_y_aoc = np.mean(acc_log_y_aoc, axis=0)
+        std_log_y_aoc = np.std(acc_log_y_aoc, axis=0)
+        strategy_log_aoc.append(log_y_aoc)
+        strategy_log_filling.append((log_y_aoc + std_log_y_aoc, np.clip(log_y_aoc - std_log_y_aoc, 0, None)))
+
+        labels.append(strategy)
+
+    # _d_data = pd.read_pickle("Experiments/log_eater/llamea-data.pkl")
+
+    # for strategy in ['LLaMEA (4+16)', 'LLaMEA (1+1)']:  
+    #     strategy_df = _d_data[_d_data['method_name'] == strategy]
+    #     method_data = strategy_df.sort_values(by=["seed", "_id"])
+    #     # Group by 'seed' and calculate the cumulative max fitness
+    #     method_data["cummax_fitness"] = method_data.groupby("seed")[
+    #         "fitness"
+    #     ].cummax()
+    #     # Calculate the mean and std of cumulative max fitness
+    #     summary = (
+    #                 method_data.groupby("_id")["cummax_fitness"]
+    #                 .agg(["mean", "std"])
+    #                 .reset_index()
+    #             )
+
+    #     mean_aoc = summary['mean'].values
+    #     mean_aoc = np.concatenate(([mean_aoc[0]], mean_aoc))
+    #     # mean_aoc -= 0.008
+    #     mean_aoc = np.clip(mean_aoc, 0, None)
+    #     std_aoc = summary['std'].values
+    #     std_aoc = np.concatenate(([std_aoc[0]], std_aoc))
+
+        # strategy_log_filling.append((mean_aoc + std_aoc, np.clip(mean_aoc - std_aoc, 0, None))) 
+        # strategy_log_aoc.append(mean_aoc)
+
+        # labels.append(strategy)
+
+    plot_y = []
+    sub_titles = []
+    fillings = []
+    plot_labels = []
+    y_scale = []
+
+    plot_y = [np.array(strategy_log_aoc)]
+    fillings = [strategy_log_filling]
+    plot_labels = [labels]
+    # y_scale = [("symlog", {})]
+
+    file_name = 'es_aoc_lines'
+    if fig_dir is not None:
+        file_name = os.path.join(fig_dir, file_name)
+
+    x_base = np.arange(len(strategy_aoc[0]), dtype=np.int16)
+    x = np.tile(x_base, (len(plot_y), 1))
+
+    # for main content
+    _label_fontsize = 13
+    _tick_fontsize = 13
+    _y_label_fontsize = 12
+    _line_width = 1.4
+    _figsize = (5, 4)
+
+    # for sub content
+    _label_fontsize = 13
+    _tick_fontsize = 13
+    _y_label_fontsize = 13
+    _line_width = 1.5
+    _figsize = (8, 4)
+
+    plot_lines(
+        y = plot_y,
+        x = x,
+        labels = plot_labels,
+        label_fontsize=_label_fontsize,
+        tick_fontsize=_tick_fontsize,
+        y_labels=['AOCC'],
+        y_label_fontsize=_y_label_fontsize,
+        filling=fillings,
+        # sub_titles=sub_titles,
+        y_scales=y_scale,
+        linewidth=_line_width,
+        n_cols=3,
+        figsize=_figsize,
+        filename=file_name,
+        show=False,
+        )
+
+def _plot_search_aoc_and_loss_by_problem(res_df:pd.DataFrame, group_fn=None, fig_dir=None):
     def _min_max_agg(x):
         if 'aoc' in x.name:
             return np.max(x)
@@ -1459,511 +1717,32 @@ def plot_search_result(result_dir, save_name=None, extract_fn=None, fig_dir=None
 
 def _plot_search_result(res_df, results, fig_dir=None):
 
-    # _calculate_error_info(results)
 
     unique_strategies = res_df['strategy'].unique()
     unique_strategies = sorted(unique_strategies, key=cmp_to_key(compare_expressions))
 
-    unique_strategies = [
-        'cr0.0_mini_cold',
-        'cr0.6_mini_cold',
-        'cr0.6_rich_cold',
-        'cr0.6_rich_warm',
-        'cr0.6_mini_warm',
-        'cr0.0_rich_cold',
-    ]
+    # unique_strategies = [
+    #     'cr0.0_mini_cold',
+    #     'cr0.6_mini_cold',
+    #     'cr0.6_rich_cold',
+    #     'cr0.6_rich_warm',
+    #     'cr0.6_mini_warm',
+    #     'cr0.0_rich_cold',
+    # ]
 
     # _plot_search_token_usage(results, unique_strategies, save_dir=fig_dir)
 
-    # _plot_search_aoc(res_df, unique_strategies, fig_dir=fig_dir)
-    _plot_search_group_aoc(res_df, unique_strategies, fig_dir=fig_dir)
+    _plot_search_aoc_violin(res_df, unique_strategies, fig_dir=fig_dir)
+    _plot_search_aoc_line(res_df, unique_strategies, fig_dir=fig_dir)
 
-    # _plot_serach_pop_similarity(results, unique_strategies, save_name=save_name)
-
+    # _calculate_error_info(results)
     err_df = _process_error_data(results)
     # print_error(err_df)
-    # _plot_search_all_error_rate(err_df, unique_strategies, fig_dir=fig_dir)
+    _plot_search_all_error_rate(err_df, unique_strategies, fig_dir=fig_dir)
     # _plot_search_error_type(err_df, unique_strategies=unique_strategies, fig_dir=fig_dir)
     # _plot_search_error_rate_by_generation(err_df, unique_strategies)
 
-    # _plot_search_problem_aoc_and_loss(res_df, fig_dir=fig_dir)
-
-def plot_search_0112():
-    # file_paths = [
-    #     # ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0121222958.pkl", "bo"),
-    #     ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0124195614.pkl", "es-1+1"),
-    #     ("logs_bbob/bbob_exp_gemini-2.0-flash-exp_0124195643.pkl", "es-1+1"),
-    # ]
-    # strategy_list = []
-    # for file_path, name in file_paths:
-    #     ind_logger = IndividualLogger.load(file_path)
-    #     ind_ids = list(ind_logger.experiment_map.values())[0]["id_list"]
-    #     inds = [ind_logger.get_individual(ind_id) for ind_id in ind_ids]
-    #     res_list = [ind.metadata["res_handler"].eval_result for ind in inds]
-    #     strategy_list.append((name, res_list))
-
-    # 1+1
-    file_paths_1_1 = [
-        ('population_logs/ESPopulation_bbob_1+1_gemini-2.0-flash-exp_BaselinePromptGenerator_0127065904.pkl', "EA-1+1"),
-        ('population_logs/ESPopulation_bbob_1+1_gemini-2.0-flash-exp_BaselinePromptGenerator_0127071455.pkl', "EA-1+1"),
-        ('population_logs/ESPopulation_bbob_1+1_gemini-2.0-flash-exp_BOBaselinePromptGenerator_sklearn_0127100500.pkl', "BO-1+1-Sklearn"),
-        ('population_logs/ESPopulation_bbob_1+1_gemini-2.0-flash-exp_BOBaselinePromptGenerator_sklearn_0127230651.pkl', "BO-1+1-Sklearn"),
-        ('population_logs/ESPopulation_bbob_1+1_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0127075128.pkl', "BO-1+1-GPytorch"),
-        ('population_logs/ESPopulation_bbob_1+1_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0127230526.pkl', "BO-1+1-GPytorch"),
-    ]
-
-    # 2+1
-    file_paths_2_1 = [
-        ('population_logs/ESPopulation_bbob_2+1_gemini-2.0-flash-exp_BaselinePromptGenerator_0127064159.pkl', "EA-2+1"),
-        ('population_logs/ESPopulation_bbob_2+1_gemini-2.0-flash-exp_BaselinePromptGenerator_0127064736.pkl', "EA-2+1"),
-        ('population_logs/ESPopulation_bbob_2+1_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0127120051.pkl', "BO-2+1-GPytorch"),
-        ('population_logs/ESPopulation_bbob_2+1_gemini-2.0-flash-exp_BOBaselinePromptGenerator_sklearn_0127155755.pkl', "BO-2+1-Sklearn"),
-        ('population_logs/ESPopulation_bbob_2+1_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0128105531.pkl', "BO-2+1-GPytorch"),
-    ]
-    
-    # 2+1_warmstart_diversity
-    file_paths_2_1_wd = [
-        ('population_logs/ESPopulation_bbob_2+1+warm+diverse_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0127092335.pkl', "BO-2+1-wd-GPytorch"),
-        ('population_logs/ESPopulation_bbob_2+1+warm+diverse_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0127203251.pkl', "BO-2+1-wd-GPytorch"),
-        ('population_logs/ESPopulation_bbob_2+1+warmstart+diversity_gemini-2.0-flash-exp_BaselinePromptGenerator_0127073309.pkl', "EA-2+1-wd"),
-        ('population_logs/ESPopulation_bbob_2+1+warmstart+diversity_gemini-2.0-flash-exp_BaselinePromptGenerator_0127074034.pkl', "EA-2+1-wd"),
-        ('population_logs/ESPopulation_bbob_2+1+warmstart+diversity_gemini-2.0-flash-exp_BOBaselinePromptGenerator_sklearn_0127234617.pkl', "BO-2+1-wd-Sklearn"),
-        ('population_logs/ESPopulation_bbob_2+1+warmstart+diversity_gemini-2.0-flash-exp_BOBaselinePromptGenerator_sklearn_0128002616.pkl', "BO-2+1-wd-Sklearn"),
-    ]
-
-    
-    # island
-    file_paths_island = [
-        ('population_logs/IslandESPopulation_bbob_island_gemini-2.0-flash-exp_BaselinePromptGenerator_0127073608.pkl', "EA-Island"),
-        ('population_logs/IslandESPopulation_bbob_island_gemini-2.0-flash-exp_BaselinePromptGenerator_0127081002.pkl', "EA-Island"),
-        ('population_logs/IslandESPopulation_bbob_island_gemini-2.0-flash-exp_BOBaselinePromptGenerator_sklearn_0128022539.pkl', "BO-Island-Sklearn"),
-        ('population_logs/IslandESPopulation_bbob_island_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0127085652.pkl', "BO-Island-GPytorch"),
-        ('population_logs/IslandESPopulation_bbob_island_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0127103428.pkl', "BO-Island-GPytorch"),
-        ('population_logs/IslandESPopulation_bbob_island_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0127172700.pkl', "BO-Island-GPytorch"),
-        ('population_logs/IslandESPopulation_bbob_island_gemini-2.0-flash-exp_BOBaselinePromptGenerator_torch_0128071243.pkl', "BO-Island-GPytorch"),
-    ]
-
-
-    all_file_paths = file_paths_1_1 + file_paths_2_1_wd + file_paths_island + file_paths_2_1
-
-    file_paths_ea = []
-    file_paths_bo_sklearn = []
-    file_paths_bo_torch = []
-    for file_path, name in all_file_paths:
-        if "EA" in name:
-            file_paths_ea.append((file_path, name))
-        elif "Sklearn" in name:
-            file_paths_bo_sklearn.append((file_path, name))
-        elif "GPytorch" in name:
-            file_paths_bo_torch.append((file_path, name))
-
-    file_paths = file_paths_bo_torch
-    
-    strategy_list = []
-    ea_offspring = []
-    sklearn_offspring = []
-    torch_offspring = []
-    for file_path, name in file_paths:
-        pop = ESPopulation.load(file_path)
-        strategy_list.append((name, pop))
-        if "EA" in name:
-            ea_offspring.extend(pop.all_individuals())
-        elif "Sklearn" in name:
-            sklearn_offspring.extend(pop.all_individuals())
-        elif "GPytorch" in name:
-            torch_offspring.extend(pop.all_individuals())
-
-    sorted_ea_offspring = sorted(ea_offspring, key=lambda x: x.fitness, reverse=True)
-    sorted_sklearn_offspring = sorted(sklearn_offspring, key=lambda x: x.fitness, reverse=True)
-    sorted_torch_offspring = sorted(torch_offspring, key=lambda x: x.fitness, reverse=True)
-
-    
-    ind_logger = IndividualLogger()
-    for ind in sorted_torch_offspring:
-        ind_logger.log_individual(ind)
-    ind_logger.save_reader_format()
-
-    # plot_results(results=strategy_list, other_results=None)
-
-def plot_light_evol_and_final():
-    file_paths = [
-
-        # 0.04
-        ('NoisyBanditBOv1', [
-            'Experiments/final_eval_res/NoisyBanditBOv1_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0210230205.pkl', 
-            'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-10_NoisyBanditBOv1_handler.pkl'
-                             ]),
-
-        ('ParetoActiveBOv1', [
-            'Experiments/final_eval_res/ParetoActiveBOv1_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211000723.pkl', 
-            'Experiments/pop_40_f/ESPopulation_evol_4+2_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210025714/0-3_ParetoActiveBOv1_handler.pkl'
-            ]),
-
-        # 0.05
-        ('AdaptiveBatchUCBLocalSearchBOv2', [
-            'Experiments/final_eval_res/AdaptiveBatchUCBLocalSearchBOv2_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211005941.pkl', 
-            'Experiments/pop_40_f/ESPopulation_evol_4+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0210043822/4-20_AdaptiveBatchUCBLocalSearchBOv2_handler.pkl'
-            ]),
-
-        ('AdaptiveControlVariateBOv4', [
-            'Experiments/final_eval_res/AdaptiveControlVariateBOv4_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211014052.pkl', 
-            'Experiments/pop_40_f/ESPopulation_evol_8+4_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209152106/6-29_AdaptiveControlVariateBOv4_handler.pkl'
-            ]),
-
-        # 0.06
-        ('AdaptiveEvoBatchHybridBOv2', [
-            'Experiments/pop_40_f/ESPopulation_evol_12+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208224540/4-32_AdaptiveEvoBatchHybridBOv2_handler.pkl',
-            'Experiments/final_eval_res/AdaptiveEvoBatchHybridBOv2_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211020052.pkl'
-        ]),
-        
-        ('MultiObjectiveBOv1', [
-            'Experiments/final_eval_res/MultiObjectiveBOv1_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211024828.pkl',
-            'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065417/0-19_MultiObjectiveBOv1_handler.pkl'
-        ]),
-
-        ('AdaptiveTrustRegionDynamicAllocationBOv2:', [
-            'Experiments/pop_40_f/ESPopulation_evol_8+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065623/2-22_AdaptiveTrustRegionDynamicAllocationBOv2_handler.pkl',
-            'Experiments/final_eval_res/AdaptiveTrustRegionDynamicAllocationBOv2_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211043407.pkl'
-        ]),
-
-        ('AdaptiveHybridBOv6', [
-            'Experiments/pop_40_f/ESPopulation_evol_1+1_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0211000947/10-11_AdaptiveHybridBOv6_handler.pkl',
-            'Experiments/final_eval_res/AdaptiveHybridBOv6_IOHEvaluator: f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211045527.pkl'
-        ]),
-
-        # 0.08
-        ('AdaptiveTrustImputationBOv2:', [
-            'Experiments/pop_40_f/ESPopulation_evol_20+8_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209065238/2-31_AdaptiveTrustImputationBOv2_handler.pkl',
-            'Experiments/final_eval_res/AdaptiveTrustImputationBOv2_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211002041.pkl'
-        ]),
-            
-        ('TrustRegionAdaptiveTempBOv2', [
-            'Experiments/pop_40_f/ESPopulation_evol_4+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0209173952/4-23_TrustRegionAdaptiveTempBOv2_handler.pkl',
-            'Experiments/final_eval_res/TrustRegionAdaptiveTempBOv2_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211000039.pkl'
-        ]),
-
-        ('BayesLocalAdaptiveAnnealBOv1', [
-            'Experiments/pop_40_temp/ESPopulation_evol_10+6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0208164605/3-24_BayesLocalAdaptiveAnnealBOv1_handler.pkl',
-            'Experiments/final_eval_res/BayesLocalAdaptiveAnnealBOv1_IOHEvaluator_ f1_f2_f3_f4_f5_f6_f7_f8_f9_f10_f11_f12_f13_f14_f15_f16_f17_f18_f19_f20_f21_f22_f23_f24_dim-5_budget-100_instances-[4, 5, 6]_repeat-5_0211012527.pkl'
-    ])
-    ]
-
-    groups = []
-    group_names = []
-    for group_name, file_paths in file_paths:
-        _temp = [0,0]
-        for file_path in file_paths:
-            target = RenameUnpickler.unpickle(open(file_path, "rb"))
-            if isinstance(target, EvaluatorResult):
-                _temp[1] = target.score
-            elif isinstance(target, ResponseHandler):
-                _temp[0] = target.eval_result.score
-        group_names.append(group_name)
-        groups.append(_temp)
-    
-    y_data = [np.array(groups)]
-    x_labels = [['Partial Eval', 'ALL Eval']]
-
-    plot_group_bars(y_data, 
-                   x_labels, 
-                   group_names, 
-                   title='Comparison of Partial and All Evaluations',
-                   fig_size=(15,9))
-
-
-def _calculate_error_info(pop_list:list[tuple[str,Population]]):
-    # total error: number / total number, P(err)
-    # initial error: number / total number, P(err|gen==1)
-    # error crossover error: number / total number, P(err|err_p == True and op == crossover)
-    # error mutation error: number / total number, P(err|err_p == True and op == mutation)
-    # non-error crossover error: number / total number, P(err|err_p == False and op == crossover)
-    # non-error mutation error: number / total number, P(err|err_p == False and op == mutation)
-    error_infos = {}
-    for name, pop in pop_list:
-        n_generation = pop.get_current_generation()
-        for gen in range(n_generation):
-            gen_offsprings = pop.get_offsprings(generation=gen)
-            for ind in gen_offsprings:
-                handler = Population.get_handler_from_individual(ind)
-                has_error = handler.eval_result is None or handler.eval_result.score == 0.0
-                error_count = 1 if has_error else 0
-
-                if name not in error_infos:
-                    error_info = {
-                        'total': (0, 0),  # (error_count, total_count)
-                        'initial': (0, 0),  # (error_count, total_count)
-                        'error_crossover': (0, 0),  # (error_count, total_count)
-                        'error_mutation': (0, 0),  # (error_count, total_count)
-                        'non_error_crossover': (0, 0),  # (error_count, total_count)
-                        'non_error_mutation': (0, 0),  # (error_count, total_count)
-                    }
-                    error_infos[name] = error_info
-                else:
-                    error_info = error_infos[name]
-
-                # total error
-                error_info['total'] = (
-                    error_info['total'][0] + error_count,
-                    error_info['total'][1] + 1
-                )
-
-                if gen == 0:
-                    error_info['initial'] = (
-                        error_info['initial'][0] + error_count,
-                        error_info['initial'][1] + 1
-                    )
-                else:
-                    parents = pop.get_parent(ind)
-                    if len(parents) == 1:
-                        # mutation
-                        parent = parents[0]
-                        parent_handler = Population.get_handler_from_individual(parent)
-                        has_p_error = parent_handler.eval_result is None or parent_handler.eval_result.score == 0.0
-                        if has_p_error:
-                            error_info['error_mutation'] = (
-                                error_info['error_mutation'][0] + error_count,
-                                error_info['error_mutation'][1] + 1
-                            )
-                        else:
-                            error_info['non_error_mutation'] = (
-                                error_info['non_error_mutation'][0] + error_count,
-                                error_info['non_error_mutation'][1] + 1
-                            )
-                    elif len(parents) == 2:
-                        # crossover
-                        has_error = False
-                        for parent in parents:
-                            parent_handler = Population.get_handler_from_individual(parent)
-                            has_error = has_error or (parent_handler.eval_result is None or parent_handler.eval_result.score == 0.0)
-                            if has_error:
-                                break
-                        if has_error:
-                            error_info['error_crossover'] = (
-                                error_info['error_crossover'][0] + error_count,
-                                error_info['error_crossover'][1] + 1
-                            )
-                        else:
-                            error_info['non_error_crossover'] = (
-                                error_info['non_error_crossover'][0] + error_count,
-                                error_info['non_error_crossover'][1] + 1
-                            )
-
-    for name, error_info in error_infos.items():
-        print(f"Error info for {name}:")
-        for key in error_info:
-            ratio = error_info[key][0] / error_info[key][1] if error_info[key][1] > 0 else 0.0
-            print(f"  {key}: {ratio:.4f} ({error_info[key][0]} / {error_info[key][1]})")
-
-
-def _load_results(dir_path, file_paths=None, extract_fn=None, save_name=None):
-    res_df = None
-    if save_name is not None: 
-        if os.path.exists(save_name):
-            res_df = pd.read_pickle(save_name)
-
-    if file_paths is None:
-        file_paths = []
-        for dir_name in os.listdir(dir_path):
-            if not os.path.isdir(os.path.join(dir_path, dir_name)):
-                continue
-            for file_name in os.listdir(os.path.join(dir_path, dir_name)):
-                if "final" not in file_name:
-                    continue
-                file_path = os.path.join(dir_path, dir_name, file_name)
-                file_paths.append(file_path)
-        
-        if len(file_paths) == 0:
-            raise ValueError(f"Invalid directory path: {dir_path}")
-    else:
-        if len(file_paths) == 0:
-            raise ValueError(f"Invalid file paths: {file_paths}")
-
-    pop_list = []
-    best_pop_map = {}
-    for file_path in file_paths:
-        pop = RenameUnpickler.unpickle(open(file_path, "rb"))
-        n_parent = pop.n_parent
-        n_offspring = pop.n_offspring
-
-        name = f"{n_parent},{n_offspring}"
-        if pop.use_elitism:
-            name = f"{n_parent}+{n_offspring}"
-
-        if extract_fn is not None:
-            sub_fix, exclusive = extract_fn(file_path)
-            if sub_fix:
-                if exclusive:
-                    name = sub_fix
-                else:
-                    name += f"_{sub_fix}"
-
-        pop_list.append((name, pop))
-
-        cur_best = best_pop_map.get(name, None)
-        if cur_best is None or pop.get_best_of_all().fitness > cur_best.get_best_of_all().fitness:
-            best_pop_map[name] = pop
-
-        # ind_index = 1
-        # for gen, keys in enumerate(pop.generations):
-        #     for key in keys:
-        #         ind = pop.individuals.get(key, None)
-        #         handler = Population.get_handler_from_individual(ind)
-        #         if handler.eval_result is not None:
-        #             handler.eval_result.update_aoc_with_new_bound_if_needed()
-        #             ind.fitness = handler.eval_result.score
-
-        #         pop.save_on_the_fly(ind, gen, ind_index)
-        #         ind_index += 1
-
-    pop_count_map = {}
-    for pop_name, pop in pop_list:
-        if pop_name not in pop_count_map:
-            pop_count_map[pop_name] = 0
-        pop_count_map[pop_name] += 1
-        setattr(pop, 'pop_id', pop_name + f"_{pop_count_map[pop_name]}")
-
-    if res_df is not None:
-        return res_df, pop_list
-
-    res_df = _process_search_result(pop_list, save_name=save_name)
-    return res_df, pop_list
-
-def extract_results_to_ioh_csv(dir_path, pop_save_path, extract_fn=None):
-    res_df, _ = _load_results(dir_path, file_paths=None, extract_fn=extract_fn, save_name=pop_save_path)
-
-    aoc_df = res_df.groupby(['strategy', 'n_strategy', 'n_ind'])[["log_y_aoc"]].agg(np.mean).reset_index()
-
-    strategies = aoc_df['strategy'].unique()
-    repeats = aoc_df['n_strategy'].unique()
-
-    df_aoc_data = []
-
-    for strategy in strategies:
-        for repeat in repeats:
-            _strategy_df = aoc_df[(aoc_df['strategy'] == strategy) & (aoc_df['n_strategy'] == repeat)]
-            if len(_strategy_df) == 0:
-                continue
-            max_ind = _strategy_df['n_ind'].max()
-            _strategy_df = _strategy_df.sort_values(by='n_ind')
-            _strategy_df = _strategy_df.reset_index(drop=True)
-            _strategy_df = _strategy_df.drop(columns=['strategy', 'n_strategy'])
-            # n_ind should be range from 1 to 100. add the missing n_ind with 0
-            _strategy_df = _strategy_df.set_index('n_ind')
-            _strategy_df = _strategy_df.reindex(range(1, max_ind + 1), fill_value=0)
-            _strategy_df = _strategy_df.reset_index()
-            _strategy_df = _strategy_df.rename(columns={'index': 'n_ind'})
-            _strategy_df = _strategy_df.sort_values(by='n_ind')
-            _strategy_df = _strategy_df.reset_index(drop=True)
-
-            for i in range(len(_strategy_df)):
-                aoc = _strategy_df.at[i, 'log_y_aoc']
-
-                df_aoc_data.append({
-                    'Evaluation counter': i + 1,
-                    'Function values': aoc,
-                    'Function ID': 'F1-F24',
-                    'Algorithm ID': strategy,
-                    'Problem dimension': 5,
-                    'Run ID': repeat, 
-                })
-            
-    # Create a DataFrame from the list of dictionaries
-    df_aoc = pd.DataFrame(df_aoc_data)
-    df_aoc.to_csv(f"{dir_path}/es_ioh_aoc.csv", index=False)
-
-
-    p_aoc_df = res_df.groupby(['strategy', 'n_strategy', 'problem_id', 'n_ind'])[["log_y_aoc"]].agg(np.mean).reset_index()
-
-    strategies = p_aoc_df['strategy'].unique()
-    repeats = p_aoc_df['n_strategy'].unique()
-    problems = p_aoc_df['problem_id'].unique()
-
-    df_aoc_data = []
-
-    for strategy in strategies:
-        for repeat in repeats:
-            for problem in problems:
-                _strategy_df = p_aoc_df[(p_aoc_df['strategy'] == strategy) & (p_aoc_df['n_strategy'] == repeat) & (p_aoc_df['problem_id'] == problem)]
-                if len(_strategy_df) == 0:
-                    continue
-                max_ind = _strategy_df['n_ind'].max()
-                _strategy_df = _strategy_df.sort_values(by='n_ind')
-                _strategy_df = _strategy_df.reset_index(drop=True)
-                _strategy_df = _strategy_df.drop(columns=['strategy', 'n_strategy'])
-                # n_ind should be range from 1 to 100. add the missing n_ind with 0
-                _strategy_df = _strategy_df.set_index('n_ind')
-                _strategy_df = _strategy_df.reindex(range(1, max_ind + 1), fill_value=0)
-                _strategy_df = _strategy_df.reset_index()
-                _strategy_df = _strategy_df.rename(columns={'index': 'n_ind'})
-                _strategy_df = _strategy_df.sort_values(by='n_ind')
-                _strategy_df = _strategy_df.reset_index(drop=True)
-
-                for i in range(len(_strategy_df)):
-                    aoc = _strategy_df.at[i, 'log_y_aoc']
-
-                    df_aoc_data.append({
-                        'Evaluation counter': i + 1,
-                        'Function values': aoc,
-                        'Function ID': problem,
-                        'Algorithm ID': strategy,
-                        'Problem dimension': 5,
-                        'Run ID': repeat, 
-                    })
-    # Create a DataFrame from the list of dictionaries
-    df_aoc = pd.DataFrame(df_aoc_data)
-    df_aoc.to_csv(f"{dir_path}/es_ioh_p_aoc.csv", index=False)
-    
-
-def update_aoc_for_res():
-    file_path = 'Experiments/ESPopulation_evol_4-16_final_0222112835.pkl'
-    with open(file_path, 'rb') as f:
-        res = RenameUnpickler.unpickle(f)
-
-    for _, ind in res.individuals.items():
-        hanlder = Population.get_handler_from_individual(ind)
-        eval_res = hanlder.eval_result
-        if eval_res is not None:
-            for sub_res in eval_res.result:
-                sub_res.update_aoc_with_new_bound_if_needed()
-            eval_res.score = np.mean([r.log_y_aoc for r in eval_res.result])
-            ind.fitness = eval_res.score
-
-    new_file_path = file_path.replace('final', 'final_aoc')
-    with open(new_file_path, 'wb') as f:
-        pickle.dump(res, f)
-
-def load_search_result_for_llms(save_dir=None):
-    dir_paths = {
-        'GPT-4o': 'Experiments/log_eater/pop_gpt4o',
-        'Qwen3-Coder': 'Experiments/log_eater/pop_qwen3_coder',
-        'DeepSeek-R1': 'Experiments/log_eater/pop_r1',
-        'Gemini-2.0-Flash': 'Experiments/log_eater/pop_100_tkcr',
-        'Gemini-2.5-Flash': 'Experiments/log_eater/pop_gemini_2.5',
-    }
-    save_name = save_dir + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl' if save_dir else None
-    save_name = save_dir + '/df_res_07311321.pkl' if save_dir else None
-    res_list = []
-    name_filter = '4-16'
-    for name, dir_path in dir_paths.items():
-        file_paths = []
-        for dir_name in os.listdir(dir_path):
-            if not os.path.isdir(os.path.join(dir_path, dir_name)):
-                continue
-            if name_filter not in dir_name:
-                continue
-            for file_name in os.listdir(os.path.join(dir_path, dir_name)):
-                if "final" not in file_name:
-                    continue
-                file_path = os.path.join(dir_path, dir_name, file_name)
-                file_paths.append(file_path)
-
-        for file_path in file_paths:
-            pop = RenameUnpickler.unpickle(open(file_path, "rb"))
-            res_list.append((name, pop))
-
-    res_df = _process_search_result(res_list, save_name=save_name)
-
-    return res_df, res_list
+    # _plot_search_aoc_and_loss_by_problem(res_df, fig_dir=fig_dir)
 
 def plot_llms_search_result():
     save_dir = 'Experiments/log_eater/llms_search_result'
@@ -1991,60 +1770,6 @@ if __name__ == "__main__":
     # dir_path = 'Experiments/log_eater/pop_40_cr'
     # save_name = 'Experiments/log_eater/pop_40_cr/df_res_05240416.pkl'
 
-    def _extract_fn(file_path):
-        if 'temperature' in file_path:
-            pattern = re.compile(r'_t(\d+)_IOHEvaluator')
-            match = pattern.search(file_path)
-            if match:
-                t = float(match.group(1)) / 10
-                return f"{t}"
-            pattern = re.compile(r'evol_\d*-\d*_(\w+)_IOHEvaluator')
-            match = pattern.search(file_path)
-            if match:
-                f = match.group(1)
-                return f"{f}"
-
-        elif 'top_k' in file_path:
-            pattern = re.compile(r'_k(\d+)_IOHEvaluator')
-            match = pattern.search(file_path)
-            if match:
-                k = int(match.group(1))
-                return f"{k}"
-        elif 'top_p' in file_path:
-            pattern = re.compile(r'_p(\d+)_IOHEvaluator')
-            match = pattern.search(file_path)
-            if match:
-                p = int(match.group(1)) / 100
-                return f"{p}"
-        elif 'pop_40_4-16' in file_path:
-            pattern = re.compile(r'evol_\d*-\d*_(.+)_IOHEvaluator')
-            match = pattern.search(file_path)
-            if match:
-                f = match.group(1)
-                return f"{f}"
-        elif 'pop_40_cr' in file_path:
-            pattern = re.compile(r'_cr(\d+)_IOHEvaluator')
-            match = pattern.search(file_path)
-            if match:
-                cr = int(match.group(1)) / 10
-                return f"{cr}"
-        elif 'pop_4+8_template' in file_path:
-            pattern = re.compile(r'evol_4\+8_(.+)_IOHEvaluator')
-            match = pattern.search(file_path)
-            if match:
-                suffix = match.group(1)
-                # remove t0.5
-                suffix = suffix.replace('_t0.5', '')
-                suffix = suffix.replace('_t05', '')
-                if 'cr0.0' in suffix:
-                    suffix = suffix.replace('_cr0.0', '')
-                    suffix = 'cr0.0_' + suffix
-                if 'cr0.6' in suffix:
-                    suffix = suffix.replace('_cr0.6', '')
-                    suffix = 'cr0.6_' + suffix
-                return suffix, True
-        return '', False
-
     # dir_path = 'Experiments/log_eater/pop_40_f'
     # save_name = 'Experiments/log_eater/pop_40_f/df_res_05250314.pkl'
                 
@@ -2060,13 +1785,13 @@ if __name__ == "__main__":
     extract_fn = _extract_fn
 
     dir_path = 'Experiments/log_eater/pop_100_tkcr'
-    save_name = 'Experiments/log_eater/pop_100_tkcr/df_res_05241329.pkl'
+    save_name = 'Experiments/log_eater/pop_100_tkcr/df_res_05241330.pkl'
     # save_name = dir_path + '/' + f'df_res_{datetime.now().strftime("%m%d%H%M")}.pkl'
 
     # dir_path = 'Experiments/log_eater/sample_tr_gpt4o'
 
-    dir_path = 'Experiments/log_eater/pop_4+8_template'
-    save_name = 'Experiments/log_eater/pop_4+8_template/df_res_08021162.pkl'
+    # dir_path = 'Experiments/log_eater/pop_4+8_template'
+    # save_name = 'Experiments/log_eater/pop_4+8_template/df_res_08021162.pkl'
 
     # extract_results_to_ioh_csv(dir_path, save_name, extract_fn=extract_fn)
 

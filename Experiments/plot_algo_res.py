@@ -21,6 +21,8 @@ from llamevol.evaluator.evaluator_result import EvaluatorResult
 from llamevol.population.es_population import ESPopulation
 
 
+# utilities 
+
 def dynamical_access(obj, attr_path):
     attrs = attr_path.split(".")
     target = obj
@@ -69,6 +71,63 @@ def fill_nan_with_left(arr):
         else:
             last_valid = val
     return filled_arr
+
+
+def _shorthand_algo_name(algo:str):
+    if 'EvolutionaryBO' in algo:
+        return 'TREvol'
+    elif 'Optimistic' in algo:
+        return 'TROpt'
+    elif 'Pareto' in algo:
+        return 'TRPareto'
+    elif 'ARM' in algo:
+        return 'ARM'
+    elif 'MaternVanilla' in algo:
+        return 'VanillaBO'
+    elif 'VanillaEIBO' in algo:
+        return 'Vanilla'
+
+    if 'BL' in algo:
+        return algo.replace("BL", "")
+
+    if 'A_' in algo:
+        return algo.replace("A_", "")
+
+    return algo
+
+
+
+def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
+    def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
+        _clip_len = int(data.shape[1] * upper_len_ratio)
+        _upper_bound = _bound
+        if bound_type == 'mean':
+            if inverse:
+                _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
+            else:
+                _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
+        elif bound_type == 'median':
+            if inverse:
+                _upper_bound = np.nanmedian(data[:, _clip_len:])
+            else:
+                _upper_bound = np.nanmedian(data[:, :_clip_len])
+        elif bound_type == 'fixed' and _bound is not None:
+            _upper_bound = _bound
+
+        _data = np.clip(data, 0, _upper_bound)
+        return _data, _upper_bound
+    return _clip_upper
+
+def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
+    def _smooth_data(data):
+        if smooth_type == 'savgol':
+            return savgol_smoothing(data, window_size, polyorder)
+        elif smooth_type == 'moving':
+            return moving_average(data, window_size)
+        elif smooth_type == 'gaussian':
+            return gaussian_smoothing(data, sigma)
+    return _smooth_data
+
 
 def plot_contour(problem_id, instance, points, x1_range=None, x2_range=None, levels=200, figsize=(15, 9), title=None):
     if x1_range is None:
@@ -133,28 +192,6 @@ def plot_contour(problem_id, instance, points, x1_range=None, x2_range=None, lev
     plt.show()
 
 # plot_contour(2, 1, [(0, 0), (1, 1), (-1, -1)])
-
-def _shorthand_algo_name(algo:str):
-    if 'EvolutionaryBO' in algo:
-        return 'TREvol'
-    elif 'Optimistic' in algo:
-        return 'TROpt'
-    elif 'Pareto' in algo:
-        return 'TRPareto'
-    elif 'ARM' in algo:
-        return 'ARM'
-    elif 'MaternVanilla' in algo:
-        return 'VanillaBO'
-    elif 'VanillaEIBO' in algo:
-        return 'Vanilla'
-
-    if 'BL' in algo:
-        return algo.replace("BL", "")
-
-    if 'A_' in algo:
-        return algo.replace("A_", "")
-
-    return algo
 
 def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
     # dynamic access from EvaluatorBasicResult. None means it should be handled separately
@@ -274,36 +311,6 @@ def _process_algo_result(results:list[EvaluatorResult], column_name_map=None):
                 res_df.loc[len(res_df)] = row
     return res_df
 
-def _plot_algo_aoc_on_problems(res_df:pd.DataFrame):
-    all_aoc_df = res_df.groupby(['algorithm', 'problem_id'])[['y_aoc', 'log_y_aoc']].agg(np.mean).reset_index()
-    all_aoc_df = all_aoc_df.groupby(['algorithm'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
-    prop_cycle = plt.rcParams['axes.prop_cycle']
-    _default_colors = prop_cycle.by_key()['color']
-    colors = []
-    labels = []
-    all_log_plot_data = []
-    
-    for algo in all_aoc_df['algorithm']:
-        _temp_df = all_aoc_df[all_aoc_df['algorithm'] == algo].agg(list)
-        all_log_plot_data.append(_temp_df['log_y_aoc'].values[0])
-        labels.append(algo)
-
-        if 'BL' in algo:
-            colors.append(_default_colors[0])
-        else:
-            colors.append(_default_colors[1])
-
-    labels = [label.replace("BL", "") for label in labels]
-    # plot aoc
-    plot_box_violin(
-        data=[all_log_plot_data],
-        labels=[labels],
-        colors=[colors],
-        show_inside_box=True,
-        title="AOC Catorized by Problems",
-        figsize=(15, 9),
-    )
-
 def _plot_algo_aoc(res_df:pd.DataFrame, dim:int, problem_filters=None, file_name=None, fig_dir=None):
     # filter the problem in problem_filters
     all_aoc_df = res_df
@@ -364,7 +371,7 @@ def _plot_algo_aoc(res_df:pd.DataFrame, dim:int, problem_filters=None, file_name
         'filter': problem_filters,
     }
 
-def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int, fig_dir=None):
+def _plot_algo_aoc_by_problems(res_df:pd.DataFrame, dim:int, fig_dir=None):
     problem_id_list = res_df['problem_id'].unique()
     problem_id_list.sort()
     aoc_df = res_df.groupby(['algorithm','problem_id'])[['y_aoc', 'log_y_aoc']].agg(list).reset_index()
@@ -429,38 +436,7 @@ def _plot_algo_problem_aoc(res_df:pd.DataFrame, dim:int, fig_dir=None):
                         filename=file_name,
                         )
 
-def clip_upper_factory(bound_type='mean', upper_len_ratio=0.25, inverse=False, _bound=None):
-    def _clip_upper(data, bound_type=bound_type, upper_len_ratio=upper_len_ratio, inverse=inverse, _bound=_bound):
-        _clip_len = int(data.shape[1] * upper_len_ratio)
-        _upper_bound = _bound
-        if bound_type == 'mean':
-            if inverse:
-                _upper_bound = np.nanmean(data[:, _clip_len:]) + np.nanstd(data[:, _clip_len:])
-            else:
-                _upper_bound = np.nanmean(data[:, :_clip_len]) + np.nanstd(data[:, :_clip_len])
-        elif bound_type == 'median':
-            if inverse:
-                _upper_bound = np.nanmedian(data[:, _clip_len:])
-            else:
-                _upper_bound = np.nanmedian(data[:, :_clip_len])
-        elif bound_type == 'fixed' and _bound is not None:
-            _upper_bound = _bound
-
-        _data = np.clip(data, 0, _upper_bound)
-        return _data, _upper_bound
-    return _clip_upper
-
-def smooth_factory(smooth_type='savgol', window_size=5, polyorder=2, sigma=1.0):
-    def _smooth_data(data):
-        if smooth_type == 'savgol':
-            return savgol_smoothing(data, window_size, polyorder)
-        elif smooth_type == 'moving':
-            return moving_average(data, window_size)
-        elif smooth_type == 'gaussian':
-            return gaussian_smoothing(data, sigma)
-    return _smooth_data
-
-def _plot_algo_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=None, need_seperate_plot=True, file_name_suffix='', title=None):
+def _plot_algo_loss_iter(res_df:pd.DataFrame, dim:int, fig_dir=None, data_col_map=None, need_seperate_plot=True, file_name_suffix='', title=None):
     # handle y
     _data_col_map = {
         'n_init': '',
@@ -820,11 +796,9 @@ def plot_algo_result(results:list[EvaluatorResult], fig_dir=None):
     algo_filter_aoc = _plot_algo_aoc(res_df, dim=dim, problem_filters=problem_filters, file_name=f"algo_aoc_{dim}D_except_{problem_filters}", fig_dir=fig_dir)
     algo_filter_aoc_list.append(algo_filter_aoc)
 
-    # _plot_algo_aoc_on_problems(res_df)
+    # _plot_algo_aoc_by_problems(res_df, dim=dim, fig_dir=fig_dir)
 
-    # _plot_algo_problem_aoc(res_df, dim=dim, fig_dir=fig_dir)
-
-    # _plot_algo_iter(res_df, dim=dim, fig_dir=fig_dir)
+    # _plot_algo_loss_iter(res_df, dim=dim, fig_dir=fig_dir)
 
 
 def plot_algo(file_paths=None, dir_path=None, pop_path=None, fig_dir=None):
