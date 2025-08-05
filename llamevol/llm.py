@@ -44,6 +44,8 @@ LLMS = {
 
     'o_gpt4o': ('openai/gpt-4o-2024-11-20', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
 
+    'o_gemini-2.0-flash': ('google/gemini-2.0-flash-001', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
+
     'gpt-4o': ('gpt-4o-2024-11-20', OPENAI_API_KEY, None, 5, 'openai'),
 }
 

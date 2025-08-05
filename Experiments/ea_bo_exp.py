@@ -423,8 +423,9 @@ def _list_handlers(dir_path=None, min_order_filter=None):
     return handlers
 
 def main():
-    # MODEL = 'gemini-2.0-flash'
-    MODEL = 'gemini-2.5-flash'
+    MODEL = 'gemini-2.0-flash'
+    # MODEL = 'gemini-2.5-flash'
+    # MODEL = 'o_gemini-2.0-flash'
 
     # MODEL = 'o_qwen3-coder-free'
     # MODEL = 'o_qwen3-coder'
@@ -474,16 +475,54 @@ def main():
                 'top_k': 60,
             }
         }
-    elif MODEL == 'gemini-2.0-flash':
+    elif MODEL == 'gemini-2.0-flash' or MODEL == 'o_gemini-2.0-flash':
         custom_opt_params = {
-            'pop_warmstart_handlers': _list_handlers('Experiments/pop_2.0/ESPopulation_evol_4+8_t0.5_cr0.0_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0729175814', min_order_filter=20),
-            'pop_load_check_point_path': 'Experiments/pop_2.0/ESPopulation_evol_4+8_t0.5_cr0.0_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0729175814/ESPopulation_gen_checkpoint_2_0729200551.pkl',
+            # 'pop_warmstart_handlers': _list_handlers('Experiments/pop_2.0_mini_warm_cr/ESPopulation_evol_4+8_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0802165903', min_order_filter=12),
+            # 'pop_load_check_point_path': 'Experiments/pop_2.0_mini_warm_cr/ESPopulation_evol_4+8_t0.5_cr0.6_IOHEvaluator_f2_f4_f6_f8_f12_f14_f18_f15_f21_f23_dim-5_budget-100_instances-[1]_repeat-3_0802165903/ESPopulation_gen_checkpoint_1_0802174433.pkl',
 
-            'pop_save_dir': 'Experiments/pop_2.0',
-            'es_pop_is_elitism': True,
+            # 'pop_save_dir': 'Experiments/pop_2.0',
+
+            # mini: mini-template, cold start, cr=0.0. 3/5
+            # 'prompt_use_mini_bo': True,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': False,
+            # 'pop_cross_over_rate': 0.0,
+            # 'pop_save_dir': 'Experiments/pop_2.0_mini_cold',
+
+            # mini_cold_cr: mini-template, cold start, cr=0.6. 5/5
+            # 'prompt_use_mini_bo': True,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': False,
+            # 'pop_cross_over_rate': 0.6,
+
+            # rich_cold_cr: rich-template, cold start, cr=0.6. 3/5
+            # 'prompt_use_mini_bo': False,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': False,
+            # 'pop_cross_over_rate': 0.6,
+            # 'pop_save_dir': 'Experiments/pop_2.0_rich_cold_cr',
+
+            # rich_warm_cr: rich-template, warm start, cr=0.6. 5/5
+            # 'prompt_use_mini_bo': False,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': True,
+            # 'pop_cross_over_rate': 0.6,
+            # 'pop_save_dir': 'Experiments/pop_2.0_rich_warm_cr',
+
+            # mini_warm_cr: mini-template, warm start, cr=0.6. 0/5
+            # 'prompt_use_mini_bo': True,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': True,
+            # 'pop_cross_over_rate': 0.6,
+            # 'pop_save_dir': 'Experiments/pop_2.0_mini_warm_cr',
+
+            # rich_warm: rich-template, warm start, cr=0.0. 0/5
+            # 'prompt_use_mini_bo': False,  # use mini BO prompt generator
+            # 'pop_preorder_aware_init': True,
+            # 'pop_cross_over_rate': 0.0,
+
+            # rich_cold: rich-template, cold start, cr=0.0. 0/5
+            'prompt_use_mini_bo': False,  # use mini BO prompt generator
             'pop_preorder_aware_init': False,
-            'prompt_use_mini_bo': True,  # use mini BO prompt generator
             'pop_cross_over_rate': 0.0,
+            'pop_save_dir': 'Experiments/pop_2.0_rich_cold',
+
+            'es_pop_is_elitism': True,
             'llm_params': {
                 'temperature': 0.5,
                 # 'top_k': 60,
