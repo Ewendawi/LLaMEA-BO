@@ -9,6 +9,7 @@ from typing import Optional, Any
 from collections.abc import Callable
 import requests
 import openai
+import anthropic
 import aisuite as ai
 from aisuite.providers.groq_provider import GroqMessageConverter
 from google import genai
@@ -24,6 +25,7 @@ OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL")
 ONEHUB_API_KEY = os.getenv("ONEHUB_API_KEY")
 ONEHUB_BASE_URL = os.getenv("ONEHUB_BASE_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 LLMS = {
     'llama3-70b-8192': ('llama3-70b-8192', GROQ_API_KEY, GROQ_BASE_URL_FOR_OPENAI_CLIENT, 2, 'groq'),
@@ -48,6 +50,10 @@ LLMS = {
     'o_gemini-2.0-flash': ('google/gemini-2.0-flash-001', OPENROUTER_API_KEY, OPENROUTER_BASE_URL, 5, 'openrouter'),
 
     'gpt-4o': ('gpt-4o-2024-11-20', OPENAI_API_KEY, None, 5, 'openai'),
+
+    'claude-opus-5-5': ('claude-opus-5-5', ANTHROPIC_API_KEY, None, 5, 'anthropic'),
+    'claude-sonnet-5-5': ('claude-sonnet-5-5', ANTHROPIC_API_KEY, None, 5, 'anthropic'),
+    'claude-haiku-5-5': ('claude-haiku-5-5', ANTHROPIC_API_KEY, None, 5, 'anthropic'),
 }
 
 class LLMClientResponse:
@@ -244,6 +250,49 @@ class OpenAIClient(LLMClient):
             res.error = e
             return res
 
+class AnthropicClient(LLMClient):
+    """Anthropic Claude backend implementation."""
+
+    # The Messages API requires max_tokens; used when the caller does not pass one.
+    DEFAULT_MAX_TOKENS = 16000
+
+    def __init__(self, api_key: str, model_name: str, base_url: Optional[str] = None):
+        super().__init__(api_key, model_name, base_url)
+        self.client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
+
+    def raw_completion(
+        self,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> LLMClientResponse:
+        """Generate a raw completion using Anthropic's Messages API."""
+        res = None
+        try:
+            # Anthropic takes the system prompt as a separate parameter, not as a message.
+            sys_prompt = "\n".join(_msg['content'] for _msg in messages if _msg['role'] == 'system')
+            chat_messages = [
+                {'role': _msg['role'], 'content': _msg['content']}
+                for _msg in messages if _msg['role'] != 'system'
+            ]
+            if sys_prompt:
+                kwargs['system'] = sys_prompt
+            kwargs.setdefault('max_tokens', self.DEFAULT_MAX_TOKENS)
+
+            response = self.client.messages.create(
+                model=self.model_name,
+                messages=chat_messages,
+                **kwargs
+            )
+            res = LLMClientResponse(response)
+            res.text = "".join(block.text for block in response.content if block.type == "text")
+            res.prompt_token_count = response.usage.input_tokens
+            res.response_token_count = response.usage.output_tokens
+            return res
+        except Exception as e:
+            res = LLMClientResponse(None)
+            res.error = e
+            return res
+
 class RequestClient(LLMClient):
     def raw_completion(
         self,
@@ -300,6 +349,8 @@ class LLMmanager:
             self.client = OpenAIClient(api_key, model_name, base_url)
         elif client_str == "openrouter":
             self.client = OpenAIClient(api_key, model_name, base_url)
+        elif client_str == "anthropic":
+            self.client = AnthropicClient(api_key, model_name, base_url)
         elif client_str == "request":
             self.client = RequestClient(api_key, model_name, base_url)
         elif client_str == "google":
